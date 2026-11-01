@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.2.1 (unreleased)
+## 0.2.2 (unreleased)
+
+- Releases are automatic. Merging to main with a new version tags it, creates the GitHub release from
+  that version's changelog section, and publishes the packages to npm with provenance through trusted
+  publishing once the repository variable `NPM_TRUSTED_PUBLISHING` is set (`.github/workflows/release.yml`).
+  `npm run release` does the same by hand, and refuses to move a tag that exists.
+
+## 0.2.1 (1 November 2026)
 
 - The packages ship JavaScript. 0.2.0 shipped TypeScript, which Node refuses to run from inside
   node_modules, so `npx dbtour` failed on install. `npm run build` now compiles each package into `dist/`

@@ -1,0 +1,50 @@
+name: Release
+
+# Every push to main whose version has no tag yet becomes a tag, a GitHub release with that version's
+# changelog section as its notes, and a publish of the three packages to npm. One pull request is one
+# release, so this runs on the merge. A version that is already tagged does nothing.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # the tag and the release
+  id-token: write # npm trusted publishing: npm trusts this workflow, so no token or 2FA code is involved
+
+# One release at a time, in order; a second merge waits rather than cancelling the first.
+concurrency:
+  group: release-main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Actions are pinned to a commit, not a tag that can be moved; Dependabot keeps the pins current.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - id: version
+        run: node scripts/release.mjs --check
+      # What a user installs, checked once more on the exact commit that ships.
+      - if: steps.version.outputs.new == 'true'
+        run: npm run smoke
+      - if: steps.version.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v${{ steps.version.outputs.version }}" --target "$GITHUB_SHA" --title "${{ steps.version.outputs.version }}" --notes-file "${{ steps.version.outputs.notes }}"
+      # Trusted publishing needs npm 11.5 or newer; the runner's Node 22 ships an older one. The publish
+      # runs once the repository variable NPM_TRUSTED_PUBLISHING is "true", which says each package on
+      # npmjs.com trusts this workflow (Settings, Trusted publisher: GitHub Actions, victorsaly/dbtour,
+      # release.yml). Until then, publish by hand: node scripts/release.mjs --publish.
+      - if: steps.version.outputs.new == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+        run: npm install -g npm@latest
+      - if: steps.version.outputs.new == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+        run: npm publish --workspace packages/core --workspace packages/source-mssql --workspace packages/addon-explorer --access public --provenance
