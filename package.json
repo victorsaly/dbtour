@@ -12,9 +12,9 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "pretest": "npm run build",
-    "test": "node --test 'packages/*/test/**/*.test.ts'",
+    "test": "node --test 'packages/*/test/**/*.test.ts' 'scripts/test/*.test.ts'",
     "pretest:coverage": "npm run build",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include='packages/*/src/**/*.ts' --test-coverage-exclude='packages/*/src/cli.ts' --test-coverage-lines=90 --test-coverage-branches=80 'packages/*/test/**/*.test.ts'",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include='packages/*/src/**/*.ts' --test-coverage-exclude='packages/*/src/cli.ts' --test-coverage-lines=90 --test-coverage-branches=80 'packages/*/test/**/*.test.ts' 'scripts/test/*.test.ts'",
     "pretest:e2e": "npm run build",
     "test:e2e": "node --test 'packages/*/test/e2e/*.e2e.ts'",
     "lint": "eslint .",

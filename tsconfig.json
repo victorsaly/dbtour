@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "strict": true
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "packages/*/bin/*.mjs", "eslint.config.mjs"]
+  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "packages/*/bin/*.mjs", "scripts/test/*.ts", "eslint.config.mjs"]
 }

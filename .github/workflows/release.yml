@@ -43,7 +43,9 @@ jobs:
       # Trusted publishing needs npm 11.5 or newer; the runner's Node 22 ships an older one. The publish
       # runs once the repository variable NPM_TRUSTED_PUBLISHING is "true", which says each package on
       # npmjs.com trusts this workflow (Settings, Trusted publisher: GitHub Actions, victorsaly/dbtour,
-      # release.yml). Until then, publish by hand: node scripts/release.mjs --publish.
+      # release.yml). Until then, or when this step fails after the release was made, publish by hand from a
+      # checkout of the tag: npm run release -- --publish. Re-running this workflow will not, since the
+      # version is tagged by then.
       - if: steps.version.outputs.new == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
         run: npm install -g npm@latest
       - if: steps.version.outputs.new == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
