@@ -10,8 +10,9 @@ import { buildIndex, search } from '../src/page/search.ts';
 import { neighbours, withNeighbours, expand, subgraph } from '../src/page/graph.ts';
 import { layout, nodeHeight, nodeWidth } from '../src/page/layout.ts';
 import { prompt } from '../src/page/prompt.ts';
-import { catalogue, neighboursOf } from '../src/page/catalogue.ts';
+import { catalogue, neighboursOf, ordered, orders, rememberOrder, sized, storedOrder } from '../src/page/catalogue.ts';
 import { profile, plotPath, tickWidth, tickCentre } from '../src/page/plot.ts';
+import { barShares, ordinal, rankByRows, sizeTerms } from '../src/page/size.ts';
 import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
 
 const shop = (): Model => JSON.parse(readFileSync(new URL('../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
@@ -177,6 +178,73 @@ test('the catalogue numbers every table in model order and gives each schema a c
   assert.equal(neighboursOf(cat, 'dbo.Customers').next?.ref, 'dbo.Orders');
   assert.equal(neighboursOf(cat, 'billing.Invoices').next, undefined);
   assert.deepEqual(neighboursOf(cat, 'dbo.Ghost'), {});
+});
+
+test('the index orders by rows or by size, largest first, keeping each number, with views after', () => {
+  const cat = catalogue(shop());
+  assert.equal(sized(cat), true);
+  assert.deepEqual(cat.byRef.get('dbo.Customers')?.stats, { rows: 48213, dataBytes: 7397376, indexBytes: 1654784 });
+  assert.deepEqual(orders.map((o) => o.id), ['catalogue', 'rows', 'size']);
+  assert.deepEqual(ordered(cat, 'catalogue').map((e) => e.number), ['001', '002', '003', '004', '005', '006']);
+  assert.deepEqual(ordered(cat, 'rows').map((e) => `${e.number} ${e.table}`), [
+    '003 OrderLines',
+    '002 Orders',
+    '006 Invoices',
+    '001 Customers',
+    '004 Products',
+    '005 vOrderTotals',
+  ]);
+  // By bytes, Invoices (40 MB, no index) passes Orders (29 MB of data and 9 MB of indexes).
+  assert.deepEqual(ordered(cat, 'size').map((e) => e.table), ['OrderLines', 'Invoices', 'Orders', 'Customers', 'Products', 'vOrderTotals']);
+  assert.deepEqual(cat.entries.map((e) => e.number), ['001', '002', '003', '004', '005', '006'], 'ordering copies, never reorders the catalogue');
+
+  const bare = shop();
+  for (const schema of bare.databases[0].schemas) for (const table of schema.tables) delete table.stats;
+  assert.equal(sized(catalogue(bare)), false, 'without stats there is nothing to order by');
+});
+
+test('the order is remembered and an unknown one falls back to the catalogue', () => {
+  const store = new Map<string, string>();
+  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+  assert.equal(storedOrder(storage), 'catalogue');
+  rememberOrder('size', storage);
+  assert.equal(storedOrder(storage), 'size');
+  store.set('dbtour.indexOrder', 'colour');
+  assert.equal(storedOrder(storage), 'catalogue');
+  assert.equal(storedOrder(undefined), 'catalogue', 'no storage at all is fine');
+  const refusing = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };
+  assert.equal(storedOrder(refusing), 'catalogue');
+  assert.doesNotThrow(() => rememberOrder('rows', refusing));
+});
+
+test('a size bar is the table\'s bytes against the largest, split into data and indexes', () => {
+  const largest = 107085824;
+  assert.deepEqual(barShares({ rows: 1, dataBytes: 81920000, indexBytes: 25165824 }, largest), { data: 81920000 / largest, indexes: 25165824 / largest });
+  const half = barShares({ rows: 1, dataBytes: largest / 4, indexBytes: largest / 4 }, largest);
+  assert.equal(half.data + half.indexes, 0.5, 'linear: half the bytes is half the length');
+  assert.deepEqual(barShares({ rows: 0, dataBytes: 0, indexBytes: 0 }, largest), { data: 0, indexes: 0 });
+  assert.deepEqual(barShares({ rows: 0, dataBytes: 0, indexBytes: 0 }, 0), { data: 0, indexes: 0 }, 'nothing to measure against');
+  assert.deepEqual(barShares({ rows: 3, dataBytes: 8192, indexBytes: 0 }, 8192), { data: 1, indexes: 0 }, 'its own split, against itself');
+});
+
+test('a table\'s place by rows reads as words, and only tables with stats are counted', () => {
+  const cat = catalogue(shop());
+  assert.equal(rankByRows(cat, 'dbo.OrderLines'), 'the largest of 5 tables by rows');
+  assert.equal(rankByRows(cat, 'dbo.Orders'), 'the 2nd largest of 5 tables by rows');
+  assert.equal(rankByRows(cat, 'dbo.Customers'), 'the 4th largest of 5 tables by rows');
+  assert.equal(rankByRows(cat, 'dbo.Products'), 'the smallest of 5 tables by rows');
+  assert.equal(rankByRows(cat, 'dbo.vOrderTotals'), undefined, 'a view has no place');
+  const one = shop();
+  for (const schema of one.databases[0].schemas) for (const table of schema.tables) if (table.name !== 'Orders') delete table.stats;
+  assert.equal(rankByRows(catalogue(one), 'dbo.Orders'), undefined, 'one table alone has no place among others');
+  assert.deepEqual([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111].map(ordinal), ['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd', '101st', '111th']);
+});
+
+test('the size terms say what each figure is, naming the database', () => {
+  const terms = sizeTerms('SQL Server');
+  assert.equal(terms.rows, "SQL Server's own count of the rows, an estimate: no row is read to make it.");
+  assert.match(terms.data, /^The pages the rows sit on/);
+  assert.match(terms.indexes, /^The pages every other index takes/);
 });
 
 test('a profile rises for keys and the plot path has one pulse per column', () => {

@@ -1,6 +1,6 @@
 // Markdown GitHub shows: an index with every table, and one page per table with its columns, keys,
 // relations both ways, indexes, constraints and the diagram of its neighbourhood.
-import { findTable, isUniqueColumn, relationsOf, tableRef, type Database, type Model, type Table } from '../model.ts';
+import { findTable, isUniqueColumn, relationsOf, tableRef, type Database, type Model, type Table, type TableStats } from '../model.ts';
 import { erDiagram, neighbourhood } from './mermaid.ts';
 
 // Mermaid lays out a whole database only while it is small; above this many tables the index shows the
@@ -13,7 +13,7 @@ export function renderMarkdown(model: Model): Record<string, string> {
     for (const schema of database.schemas) {
       for (const table of schema.tables) {
         const ref = tableRef(schema.name, table.name);
-        files[`tables/${ref}.md`] = renderTable(model, ref, table);
+        files[`tables/${ref}.md`] = renderTable(model, ref, table, database);
       }
     }
   }
@@ -28,11 +28,14 @@ function renderIndex(model: Model): string {
     parts.push(`${single ? '#' : '##'} ${database.name}\n`);
     if (database.description) parts.push(`${database.description}\n`);
     parts.push(`${driverLine(database)}\n`);
-    parts.push('| Table | Kind | Columns | Description |\n|---|---|---|---|');
+    // Rows and size only when the source read them; a view, which keeps no rows of its own, leaves them blank.
+    const sized = database.schemas.some((s) => s.tables.some((t) => t.stats));
+    parts.push(sized ? '| Table | Kind | Columns | Rows | Size | Description |\n|---|---|---|---|---|---|' : '| Table | Kind | Columns | Description |\n|---|---|---|---|');
     for (const schema of database.schemas) {
       for (const table of schema.tables) {
         const ref = tableRef(schema.name, table.name);
-        parts.push(`| [${ref}](tables/${ref}.md) | ${table.kind} | ${table.columns.length} | ${cell(table.description)} |`);
+        const size = !sized ? '' : table.stats ? ` ${formatCount(table.stats.rows)} | ${formatBytes(table.stats.dataBytes + table.stats.indexBytes)} |` : '  |  |';
+        parts.push(`| [${ref}](tables/${ref}.md) | ${table.kind} | ${table.columns.length} |${size} ${cell(table.description)} |`);
       }
     }
     parts.push('');
@@ -64,16 +67,42 @@ function driverLine(database: Database): string {
   return database.version ? `${name} ${database.version}.` : `${name}.`;
 }
 
+/** 1,204,377: thousands grouped the same way wherever it runs, so the docs do not change with the machine. */
+export function formatCount(n: number): string {
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+const byteUnits = ['B', 'KB', 'MB', 'GB', 'TB'];
+
+/** 480 KB, 7.1 MB, 102 MB: binary units, as the database counts its pages, with one decimal below ten. */
+export function formatBytes(bytes: number): string {
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < byteUnits.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const text = unit === 0 || value >= 10 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, '');
+  return `${text} ${byteUnits[unit]}`;
+}
+
+/** The sentence under a table's title: the count is the database's estimate, so it says about, and when. */
+export function statsLine(stats: TableStats, readAt?: string): string {
+  const when = readAt ? `, as the database counted them on ${readAt.slice(0, 10)}` : '';
+  return `About ${formatCount(stats.rows)} rows · ${formatBytes(stats.dataBytes)} of data · ${formatBytes(stats.indexBytes)} of indexes${when}.`;
+}
+
 /** One table's page on its own: what the page hands to an agent. */
 export function renderTableMarkdown(model: Model, ref: string): string {
   const found = findTable(model, ref);
   if (!found) throw new Error(`${ref} is not a table in the model`);
-  return renderTable(model, ref, found.table);
+  return renderTable(model, ref, found.table, found.database);
 }
 
-function renderTable(model: Model, ref: string, table: Table): string {
+function renderTable(model: Model, ref: string, table: Table, database: Database): string {
   const parts: string[] = [`# ${ref}\n`];
   if (table.description) parts.push(`${table.description}\n`);
+  if (table.stats) parts.push(`${statsLine(table.stats, database.statsReadAt)}\n`);
   const relations = relationsOf(model, ref);
 
   parts.push('| Column | Type | Nullable | Default | Key | Description |\n|---|---|---|---|---|---|');

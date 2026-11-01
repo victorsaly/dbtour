@@ -43,6 +43,24 @@ test('columns keep their order, type, nullability, default, identity, computed e
   assert.equal(customers.columns[2].type, 'varchar(max)');
 });
 
+test('each table carries its rows and bytes, bigint strings made numbers, with the moment they were read', () => {
+  const database = mapRecordsets(rows());
+  const model = { ...emptyModel(), databases: [database] };
+  assert.deepEqual(findTable(model, 'dbo.Customers')!.table.stats, { rows: 48213, dataBytes: 7397376, indexBytes: 1654784 });
+  assert.deepEqual(findTable(model, 'dbo.Orders')!.table.stats, { rows: 312904, dataBytes: 30859264, indexBytes: 9764864 });
+  assert.deepEqual(findTable(model, 'dbo.Shipments')!.table.stats, { rows: 0, dataBytes: 0, indexBytes: 0 }, 'an empty table is counted, not absent');
+  assert.equal(findTable(model, 'dbo.vOrderTotals')!.table.stats, undefined, 'a view keeps no rows of its own');
+  assert.equal(database.statsReadAt, '2026-11-01T09:30:00.1234567Z');
+});
+
+test('a server that gave no sizes leaves stats and their moment out', () => {
+  const sets = rows();
+  for (const table of sets.tables) Object.assign(table, { rows: null, dataBytes: null, indexBytes: null });
+  const database = mapRecordsets(sets);
+  assert.equal(database.schemas.flatMap((s) => s.tables).some((t) => t.stats), false);
+  assert.equal(database.statsReadAt, undefined);
+});
+
 test('formatType spells sizes as CREATE TABLE would', () => {
   assert.equal(formatType({ type: 'nvarchar', maxLength: -1, precision: 0, scale: 0 }), 'nvarchar(max)');
   assert.equal(formatType({ type: 'char', maxLength: 10, precision: 0, scale: 0 }), 'char(10)');

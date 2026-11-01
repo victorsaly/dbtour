@@ -46,7 +46,20 @@ Strategy: restrained. No gradient, no shadow, no radius.
 - **Search**: a hairline box with a mono caps placeholder and the `/` key drawn as a kbd.
 - **Plot** (`Plot.tsx`, `plot.ts`): one path per table, drawn at the box's real pixel width. A tick per
   column; peaks at 1.0 (primary key), 0.6 (foreign key), 0.45 (unique), 0.18 (column). Tick width is clamped
-  between 6 and 72px. On the entry page every tick is a link to its column.
+  between 6 and 72px. On the entry page every tick is a link to its column. The line means the columns and
+  keys and nothing else; size is never drawn into it.
+- **Size bar** (`SizeBar.tsx`, `size.ts`): a table's bytes as length, linear, data solid `--ink` and indexes
+  a hairline outline, on a `--line` hairline that marks the full length; 8px tall on the home, 10px on an
+  entry; a part with any bytes keeps 1px. On the home a 220px column (112px on a phone) to the right of
+  each plot, against the largest table, with the rows and size written above it (below it on a phone) and
+  "no rows of its own" for a view. Its key sits under the index label, with swatches, and "Reading a bar"
+  in the panel defines rows, data and indexes.
+- **Index order**: with sizes, a segmented control above the home's index reads it by Catalogue, Rows or
+  Size, largest first; numbers never change, and the choice is remembered in the browser.
+- **Size block**: on an entry with sizes, between the header and the plot: a "Size" label over a hairline
+  with the date it was counted at the right, the rows as a 20px mono figure with the table's place by rows
+  beside it, the bar of its own bytes, the parts named with their swatches, and the three terms side by
+  side (stacked on a phone).
 - **Facts**: four mono-caps labels with 20px mono values, in two columns, each over a hairline: columns,
   keys, references, referenced by. Every entry shows the same four in the same place.
 - **Map nodes**: 240px wide, a 34px head with block, number and name, 22px rows, 6px padding; sizes

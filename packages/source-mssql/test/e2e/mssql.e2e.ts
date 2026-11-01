@@ -39,6 +39,7 @@ CREATE TABLE dbtour_e2e.Shipments (
 GO
 CREATE VIEW dbtour_e2e.vOrderTotals AS SELECT OrderId, SUM(Quantity) AS Total FROM dbtour_e2e.OrderLines GROUP BY OrderId;
 GO
+INSERT INTO dbtour_e2e.Customers (Email) VALUES ('a@example.com'), ('b@example.com'), ('c@example.com');
 EXEC sys.sp_addextendedproperty @name = 'MS_Description', @value = 'One row per account.', @level0type = 'SCHEMA', @level0name = 'dbtour_e2e', @level1type = 'TABLE', @level1name = 'Customers';
 EXEC sys.sp_addextendedproperty @name = 'MS_Description', @value = 'Login address.', @level0type = 'SCHEMA', @level0name = 'dbtour_e2e', @level1type = 'TABLE', @level1name = 'Customers', @level2type = 'COLUMN', @level2name = 'Email';
 `;
@@ -81,6 +82,12 @@ test('extract reads a real SQL Server', { skip: connection ? false : 'DBTOUR_E2E
     const shipments = database.relations.find((r) => r.name === 'FK_e2e_Shipments_OrderLines')!;
     assert.deepEqual(shipments.from.columns, ['OrderId', 'LineNo']);
     assert.equal(database.relations.find((r) => r.name === 'FK_e2e_OrderLines_Orders')!.onDelete, 'CASCADE');
+    // Sizes from the catalogue: the three rows inserted, at least a page for them, and none for the view.
+    assert.equal(customers.stats!.rows, 3);
+    assert.ok(customers.stats!.dataBytes >= 8192 && customers.stats!.dataBytes % 8192 === 0, `whole pages, got ${customers.stats!.dataBytes}`);
+    assert.deepEqual(orders.stats, { rows: 0, dataBytes: 0, indexBytes: 0 });
+    assert.equal(schema.tables[4].stats, undefined);
+    assert.match(database.statsReadAt!, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
   } finally {
     await run(teardown);
   }

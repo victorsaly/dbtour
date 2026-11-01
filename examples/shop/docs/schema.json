@@ -6,6 +6,7 @@
       "driver": "mssql",
       "version": "16.0.1000",
       "description": "The web shop.",
+      "statsReadAt": "2026-11-01T09:30:00Z",
       "schemas": [
         {
           "name": "dbo",
@@ -13,6 +14,7 @@
             {
               "name": "Customers",
               "kind": "table",
+              "stats": { "rows": 48213, "dataBytes": 7397376, "indexBytes": 1654784 },
               "description": "One row per account.",
               "columns": [
                 { "name": "Id", "type": "int", "nullable": false, "identity": true },
@@ -31,6 +33,7 @@
             {
               "name": "Orders",
               "kind": "table",
+              "stats": { "rows": 312904, "dataBytes": 30859264, "indexBytes": 9764864 },
               "columns": [
                 { "name": "Id", "type": "int", "nullable": false, "identity": true },
                 { "name": "CustomerId", "type": "int", "nullable": false },
@@ -50,6 +53,7 @@
             {
               "name": "OrderLines",
               "kind": "table",
+              "stats": { "rows": 1204377, "dataBytes": 81920000, "indexBytes": 25165824 },
               "columns": [
                 { "name": "OrderId", "type": "int", "nullable": false },
                 { "name": "ProductId", "type": "int", "nullable": false },
@@ -64,6 +68,7 @@
             {
               "name": "Products",
               "kind": "table",
+              "stats": { "rows": 1874, "dataBytes": 491520, "indexBytes": 65536 },
               "columns": [
                 { "name": "Id", "type": "int", "nullable": false, "identity": true },
                 { "name": "Sku", "type": "varchar(32)", "nullable": false },
@@ -94,6 +99,7 @@
             {
               "name": "Invoices",
               "kind": "table",
+              "stats": { "rows": 298551, "dataBytes": 41943040, "indexBytes": 0 },
               "columns": [
                 { "name": "Id", "type": "int", "nullable": false, "identity": true },
                 { "name": "OrderId", "type": "int", "nullable": false },
