@@ -1,9 +1,10 @@
 // Releases what main holds: the version in packages/core/package.json becomes a tag and a GitHub release
 // whose notes are that version's changelog section, then the three packages go to npm.
 //
-//   node scripts/release.mjs --check     say whether the version is untagged and whether npm lacks it; in
-//                                        GitHub Actions, write the outputs `version`, `new`, `unpublished`
-//                                        and `notes` for the release workflow
+//   node scripts/release.mjs --check     say whether the version is untagged, whether npm lacks it and
+//                                        whether the checkout is the tag's commit; in GitHub Actions, write
+//                                        the outputs `version`, `new`, `unpublished`, `at_tag` and `notes`
+//                                        for the release workflow
 //   node scripts/release.mjs             tag, push the tag and create the release, from a clean, current main
 //   node scripts/release.mjs --publish   the same, then publish the packages (needs npm login with 2FA);
 //                                        on a version already tagged, from a checkout of that tag, only
@@ -46,8 +47,11 @@ function notes() {
   return match[1].trim() + '\n';
 }
 
-const remoteTags = run('git', ['ls-remote', '--tags', 'origin', tag]);
-const released = remoteTags.includes(`refs/tags/${tag}`);
+// An annotated tag (made by hand) is listed twice, the second time as `^{}` with the commit it points to;
+// a lightweight one (made by the workflow's gh release create) once, with the commit itself.
+const remoteTags = new Map(run('git', ['ls-remote', '--tags', 'origin', tag, `${tag}^{}`]).split('\n').filter(Boolean).map((line) => line.split('\t').reverse()));
+const released = remoteTags.has(`refs/tags/${tag}`);
+const tagCommit = remoteTags.get(`refs/tags/${tag}^{}`) ?? remoteTags.get(`refs/tags/${tag}`);
 
 /**
  * The workspaces npm does not have at this version. A publish that stopped part way leaves some on npm,
@@ -80,7 +84,13 @@ if (args.has('--check')) {
   } catch (error) {
     console.error(error.message);
   }
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nnew=${released ? 'false' : 'true'}\nunpublished=${unpublished}\nnotes=${notesPath}\n`);
+  // npm's provenance names the commit and ref the run was started on, not what is checked out, so the
+  // workflow publishes only from the tag's commit: the run that makes the tag, or one started on the tag.
+  const atTag = released && tagCommit === run('git', ['rev-parse', 'HEAD']);
+  if (released && !atTag && unpublished === 'true') {
+    console.log(`This checkout is not ${tag}, so it does not publish. Publish from the tag: gh workflow run release.yml --ref ${tag}`);
+  }
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nnew=${released ? 'false' : 'true'}\nunpublished=${unpublished}\nat_tag=${atTag}\nnotes=${notesPath}\n`);
   process.exit(0);
 }
 

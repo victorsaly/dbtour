@@ -4,7 +4,7 @@ name: Release
 # changelog section as its notes, and a publish of the three packages to npm. One pull request is one
 # release, so this runs on the merge. The tag and the publish are decided apart: a version already tagged
 # is not tagged again, and a version npm lacks is published even when it was tagged earlier, so a failed
-# publish is retried by running the workflow again (Actions, Release, Run workflow).
+# publish is retried by running the workflow on the tag: gh workflow run release.yml --ref v<version>.
 on:
   push:
     branches: [main]
@@ -45,16 +45,14 @@ jobs:
       # The publish runs when npm lacks the version and the repository variable NPM_TRUSTED_PUBLISHING is
       # "true", which says each package on npmjs.com trusts this workflow (Settings, Trusted publisher:
       # GitHub Actions, victorsaly/dbtour, release.yml; npm answers 404 on publish when that is not so).
-      # It ships exactly what the tag holds: the tag's commit is checked out first, which matters on a rerun
-      # after commits that did not bump the version. Trusted publishing needs npm 11.5 or newer; the
-      # runner's Node 22 ships an older one.
-      - if: steps.version.outputs.unpublished == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
-        name: Check out the tag
-        run: |
-          git -c http.extraheader="AUTHORIZATION: bearer ${{ github.token }}" fetch -q origin "refs/tags/v${{ steps.version.outputs.version }}:refs/tags/v${{ steps.version.outputs.version }}"
-          git checkout -q "v${{ steps.version.outputs.version }}"
-          npm ci
-      - if: steps.version.outputs.unpublished == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+      # It publishes only from the tag's commit: the run that just made the tag, or one started on the tag.
+      # npm's provenance names the commit and ref the run was started on (GITHUB_SHA, GITHUB_REF), not what
+      # is checked out, so checking the tag out inside a run on main would sign it as main's commit. A run
+      # on a later commit warns instead, naming the command that publishes from the tag. Trusted publishing
+      # needs npm 11.5 or newer; the runner's Node 22 ships an older one.
+      - if: steps.version.outputs.unpublished == 'true' && steps.version.outputs.new == 'false' && steps.version.outputs.at_tag != 'true'
+        run: echo "::warning::npm lacks ${{ steps.version.outputs.version }}, but this run is not on its tag, so it did not publish. Publish from the tag with gh workflow run release.yml --ref v${{ steps.version.outputs.version }}"
+      - if: steps.version.outputs.unpublished == 'true' && (steps.version.outputs.new == 'true' || steps.version.outputs.at_tag == 'true') && vars.NPM_TRUSTED_PUBLISHING == 'true'
         run: npm install -g npm@latest
-      - if: steps.version.outputs.unpublished == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+      - if: steps.version.outputs.unpublished == 'true' && (steps.version.outputs.new == 'true' || steps.version.outputs.at_tag == 'true') && vars.NPM_TRUSTED_PUBLISHING == 'true'
         run: node scripts/release.mjs --publish --provenance

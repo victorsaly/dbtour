@@ -73,10 +73,14 @@ function repository({ published = [] as string[], registryDown = false } = {}) {
 /** The workspaces npm was asked to publish, in order. */
 const publishes = (called: string) => [...called.matchAll(/^npm publish --workspace (\S+)/gm)].map((m) => m[1]).join(' ');
 
-/** A repository whose v0.2.2 is tagged on origin, as the workflow leaves it. */
-function tagged(options: Parameters<typeof repository>[0] = {}) {
+/**
+ * A repository whose v0.2.2 is tagged on origin: annotated, as the script tags by hand, or lightweight, as
+ * `gh release create` tags for the workflow.
+ */
+function tagged({ lightweight = false, ...options }: Parameters<typeof repository>[0] & { lightweight?: boolean } = {}) {
   const repo = repository(options);
-  repo.git('tag', '-a', 'v0.2.2', '-m', 'dbtour 0.2.2');
+  if (lightweight) repo.git('tag', 'v0.2.2');
+  else repo.git('tag', '-a', 'v0.2.2', '-m', 'dbtour 0.2.2');
   repo.git('push', '-q', 'origin', 'v0.2.2');
   return repo;
 }
@@ -96,6 +100,25 @@ test('--check on a tagged version says it is not new but still unpublished, so t
   const output = readFileSync(join(repo.root, 'output'), 'utf8');
   assert.match(output, /^new=false$/m);
   assert.match(output, /^unpublished=true$/m);
+  assert.match(output, /^at_tag=true$/m);
+});
+
+test('--check says at_tag for a lightweight tag too, the kind the workflow makes', () => {
+  const repo = tagged({ lightweight: true });
+  assert.equal(repo.release('--check').status, 0);
+  assert.match(readFileSync(join(repo.root, 'output'), 'utf8'), /^at_tag=true$/m);
+});
+
+test('--check on a commit after the tag says at_tag=false, and how to publish from the tag instead', () => {
+  // npm's provenance names the commit the run was started on, so the workflow publishes only from the tag's.
+  const repo = tagged();
+  repo.git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-q', '--allow-empty', '-m', 'later');
+  const result = repo.release('--check');
+  assert.equal(result.status, 0);
+  const output = readFileSync(join(repo.root, 'output'), 'utf8');
+  assert.match(output, /^unpublished=true$/m);
+  assert.match(output, /^at_tag=false$/m);
+  assert.match(result.stdout, /gh workflow run release\.yml --ref v0\.2\.2/);
 });
 
 test('--check says unpublished=false once npm has every package, and unknown when npm cannot be asked', () => {
