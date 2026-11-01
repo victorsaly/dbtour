@@ -1508,3 +1508,59 @@ code.sql {
 table.columns tr.is-pointed td {
   background: var(--fill);
 }
+
+/* The SQL link sits under the map's, the two a pair. */
+.side-map + .side-map {
+  margin-top: -10px;
+}
+/* The editor's bar: Copy, Copy for …, Reset, side by side at its right. */
+.sql-actions {
+  display: flex;
+  gap: 6px;
+}
+.sql-editor .cm-editor {
+  min-height: 140px;
+}
+.sql-editor .cm-editor.cm-focused {
+  outline: var(--hair) solid var(--ink);
+}
+.sql-editor .cm-cursor {
+  border-left-color: var(--ink);
+}
+.sql-editor .cm-selectionBackground,
+.sql-editor .cm-editor.cm-focused .cm-selectionBackground {
+  background: var(--fill);
+}
+.sql-hint {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: var(--hair) solid var(--line);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.query-section {
+  margin-top: 28px;
+}
+.sql-database {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+/* Autocomplete's list, re-inked: a hairline box on the field, the chosen option in --fill. */
+.cm-tooltip.cm-tooltip-autocomplete {
+  background: var(--bg);
+  border: var(--hair) solid var(--line-strong);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.cm-tooltip.cm-tooltip-autocomplete > ul > li {
+  color: var(--ink);
+}
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--fill);
+  color: var(--ink);
+}
+.cm-completionDetail {
+  color: var(--ink-2);
+}

@@ -10,7 +10,8 @@ import { Plot } from './Plot.tsx';
 import { profile, tickTips } from './plot.ts';
 import { aboutOf, anyProtected, protection } from './about.ts';
 import { rankByRows, sizeTerms } from './size.ts';
-import { SqlBlock, SqlInline } from './Sql.tsx';
+import { SqlBlock, SqlEditor, SqlInline } from './Sql.tsx';
+import { starterQuery } from './query.ts';
 import { SizeBar, Swatch } from './SizeBar.tsx';
 import { prompt } from './prompt.ts';
 import { diagramHash, groupHash, tableHash } from './route.ts';
@@ -230,6 +231,12 @@ export function TableView({ model, cat, tableRef, column }: Props) {
           </tbody>
         </table>
         </div>
+
+        {/* A query to start from, the table with what it references; edited here, run elsewhere. */}
+        <details open className="query-section">
+          <summary>Query</summary>
+          <SqlEditor key={tableRef} model={model} database={found.database.name} initial={starterQuery(model, tableRef)} draft={tableRef} />
+        </details>
 
         {table.indexes.length > 0 && (
           <details>

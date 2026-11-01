@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.8.0 (unreleased)
+## 0.9.0 (unreleased)
+
+- The page's SQL editor, the last of the plan's fifth milestone. Every entry has a Query section after its
+  columns: an editable CodeMirror editor that starts from the table and a LEFT JOIN to each table it
+  references that has a name-like column (Name, Title, Code, Sku…), newest first by the primary key, with
+  masked, encrypted and labelled columns left out and named in a comment. "Write SQL" in the rail opens
+  `#sql`, an editor for any query, with a database picker when there are several.
+- Autocomplete knows the database's schemas, tables and columns by the names SQL uses there (Sales:dbo is
+  dbo), case-insensitive as SQL Server is, quoting a name that needs it with [brackets].
+- Copy query, Copy query for the remembered agent (the query, what to check in it, and the tables it reads
+  as the docs write them), and Reset; the reader's draft is kept in their browser. The page says it cannot
+  reach the database and that `dbtour sql` or the MCP `query` tool runs the query.
+- The plan moves on to the sixth milestone, OpenAPI and table-to-endpoint links.
+
+## 0.8.0 (1 November 2026)
 
 - Running a query, the first half of the SQL add-on. A source gets a `reader` in `dbtour.yaml`: the
   environment variable for a login of its own with `db_datareader` alone. `dbtour sql "<query>"` runs one

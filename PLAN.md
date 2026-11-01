@@ -175,8 +175,8 @@ shop window, and nothing goes on the page before it is released.
    them.
 5. The skill and the SQL add-on, with the stats telling the agent where to look first. `dbtour mcp` came
    first (0.5.0), then the skill (0.6.0), then tables named with their database when there are
-   several (0.7.0), then running a query through a reader (0.8.0); the page's SQL editor is next. ← here
-6. `source-openapi` and table-to-endpoint links.
+   several (0.7.0), running a query through a reader (0.8.0), and the page's SQL editor (0.9.0).
+6. `source-openapi` and table-to-endpoint links. ← here
 7. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
    and the comments its database keeps.
 8. Deploy workflow, `check`, `addon-lint`.

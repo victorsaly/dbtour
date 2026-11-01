@@ -301,3 +301,58 @@ test('two databases with a table of the same name: each is its own entry, an old
     await browser.close();
   }
 });
+
+test('the Query section: a starter from the model, autocomplete of its tables, a draft kept, Copy for agent, and the SQL page', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  try {
+    const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+    const dir = mkdtempSync(join(tmpdir(), 'dbtour-page-'));
+    writeFileSync(join(dir, 'index.html'), render(model)['index.html']);
+    const url = pathToFileURL(join(dir, 'index.html')).href;
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${url}#dbo.Orders`);
+
+    const editor = page.locator('.query-section .cm-content');
+    await editor.waitFor();
+    assert.match((await editor.textContent()) ?? '', /LEFT JOIN dbo\.Customers AS c ON c\.Id = o\.CustomerId/);
+    assert.equal(await editor.getAttribute('contenteditable'), 'true', 'it can be written in');
+
+    // Autocomplete offers the model's tables as a name is typed, and Enter takes one.
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+End');
+    await page.keyboard.type('\nSELECT * FROM dbo.OrderL');
+    const options = page.locator('.cm-tooltip-autocomplete li');
+    await options.first().waitFor();
+    assert.match((await options.allTextContents()).join(' '), /OrderLines/);
+    await page.keyboard.press('Enter');
+    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines$/);
+
+    // The draft is kept in the browser, and Reset goes back to the starter.
+    await page.reload();
+    await editor.waitFor();
+    assert.match((await editor.textContent()) ?? '', /dbo\.OrderLines$/, 'kept across a reload');
+    await page.locator('.query-section button', { hasText: 'Copy query for' }).click();
+    const copied = await page.evaluate('navigator.clipboard.readText()') as string;
+    assert.match(copied, /^The query below runs on the Shop database \(SQL Server\)\./);
+    assert.match(copied, /# dbo\.Orders\n[\s\S]*# dbo\.Customers\n[\s\S]*# dbo\.OrderLines\n/, 'the tables it reads, as the docs write them');
+    await page.locator('.query-section button', { hasText: 'Reset' }).click();
+    assert.doesNotMatch((await editor.textContent()) ?? '', /OrderLines/);
+
+    // The SQL page, from the rail.
+    await page.locator('a', { hasText: 'Write SQL' }).click();
+    await page.locator('h1', { hasText: 'SQL' }).waitFor();
+    assert.equal(new URL(page.url()).hash, '#sql');
+    assert.match((await page.locator('.sql-page .cm-content').textContent()) ?? '', /A query against Shop/);
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});

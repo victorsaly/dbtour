@@ -9,6 +9,7 @@ import { Sidebar } from './Sidebar.tsx';
 import { Home } from './Home.tsx';
 import { TableView } from './TableView.tsx';
 import { DiagramView } from './Diagram.tsx';
+import { SqlPage } from './SqlPage.tsx';
 
 function subscribe(onChange: () => void): () => void {
   window.addEventListener('hashchange', onChange);
@@ -49,6 +50,9 @@ export function App({ model }: { model: Model }) {
       break;
     case 'map':
       view = <DiagramView model={model} cat={cat} refs={allTables(model)} title="The whole catalogue" description="Every table and every relation. Names keeps it readable; Keys and Columns add detail." defaultMode="names" />;
+      break;
+    case 'sql':
+      view = <SqlPage model={model} />;
       break;
     case 'group': {
       const group = model.groups.find((g) => g.name === route.name);

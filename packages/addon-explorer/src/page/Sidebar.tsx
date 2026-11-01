@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObjec
 import { tableRef, type Model } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
 import { Mark, Wordmark } from './Logo.tsx';
-import { groupHash, mapHash, tableHash, type Route } from './route.ts';
+import { groupHash, mapHash, sqlHash, tableHash, type Route } from './route.ts';
 import { search, type Entry, type Hit } from 'dbtour/search';
 
 /** Below this width the index folds; the same breakpoint as the stylesheet's. */
@@ -145,6 +145,9 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
       </div>
       <a className={`side-map${route.kind === 'map' ? ' is-current' : ''}`} href={mapHash} aria-current={route.kind === 'map' ? 'page' : undefined}>
         Map of the whole catalogue
+      </a>
+      <a className={`side-map${route.kind === 'sql' ? ' is-current' : ''}`} href={sqlHash} aria-current={route.kind === 'sql' ? 'page' : undefined}>
+        Write SQL
       </a>
       {searching ? (
         <ul className="hits" id="search-hits" ref={list} role="listbox" aria-label="Results">

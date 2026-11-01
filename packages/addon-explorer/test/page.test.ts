@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { relationsOf, type Model } from 'dbtour/model';
 import { pageHtml, render } from '../src/index.ts';
-import { canonicalRoute, parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, type Route } from '../src/page/route.ts';
+import { canonicalRoute, parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, sqlHash, type Route } from '../src/page/route.ts';
 import { allTables, mergeParallel, relationId } from '../src/page/graph.ts';
 import { tools, toolById, storedTool, rememberTool } from '../src/page/tools.ts';
 import { neighbours, withNeighbours, expand, subgraph } from '../src/page/graph.ts';
@@ -14,6 +14,7 @@ import { profile, plotPath, tickTips, tickWidth, tickCentre } from '../src/page/
 import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/page/size.ts';
 import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
+import { completionSchema, quoteName, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
 
@@ -30,9 +31,12 @@ test('every route round-trips through the hash, and an odd hash falls back to ho
     { kind: 'diagram', refs: ['dbo.Orders', 'billing.Invoices'] },
     { kind: 'group', name: 'Money in/out, now' },
     { kind: 'map' },
+    { kind: 'sql' },
   ];
   for (const route of routes) assert.deepEqual(parseRoute(routeHash(route)), route);
   assert.equal(mapHash, '#map');
+  assert.equal(sqlHash, '#sql');
+  assert.deepEqual(parseRoute('#sql/x'), { kind: 'home' }, 'only the bare word is the SQL page');
   assert.deepEqual(parseRoute('#map/x'), { kind: 'home' }, 'only the bare word is the map, and map/x is no ref');
   assert.equal(tableHash('dbo.Orders'), '#dbo.Orders');
   assert.equal(tableHash('dbo.Orders', 'Status'), '#dbo.Orders.Status');
@@ -395,4 +399,68 @@ test('the review: compression that differs by partition says so', () => {
   const table = shop().databases[0].schemas[0].tables[0];
   const said = Object.fromEntries(aboutOf({ ...table, compression: 'none, page' }).terms.map((t) => [t.term, t.sentence]));
   assert.equal(said.Compressed, 'Compression differs by partition: none, page.');
+});
+
+test('a starter query: the table\'s columns, a join for a name-like column of each table it references, newest first', () => {
+  assert.equal(
+    starterQuery(shop(), 'dbo.Orders'),
+    [
+      '-- dbo.Orders with what it references.',
+      'SELECT TOP (100)',
+      '    o.Id,',
+      '    o.CustomerId,',
+      '    o.Status,',
+      '    o.CreatedAt,',
+      '    o.Total,',
+      '    c.Name AS CustomerName',
+      'FROM dbo.Orders AS o',
+      'LEFT JOIN dbo.Customers AS c ON c.Id = o.CustomerId',
+      'ORDER BY o.Id DESC;',
+    ].join('\n'),
+  );
+  // OrderLines references Orders (nothing name-like to show, so no join) and Products (its Sku); its key has two columns.
+  const lines = starterQuery(shop(), 'dbo.OrderLines');
+  assert.match(lines, /^-- dbo\.OrderLines with what it references\.\nSELECT TOP \(100\)\n {4}ol\.OrderId,\n {4}ol\.ProductId,\n {4}ol\.Quantity,\n {4}p\.Sku AS ProductSku\nFROM dbo\.OrderLines AS ol\nLEFT JOIN dbo\.Products AS p ON p\.Id = ol\.ProductId\nORDER BY ol\.OrderId DESC, ol\.ProductId DESC;$/);
+  assert.doesNotMatch(lines, /dbo\.Orders AS/);
+  // A view has no key to order by; a table referencing nothing says only its name.
+  assert.equal(starterQuery(shop(), 'dbo.vOrderTotals'), '-- dbo.vOrderTotals.\nSELECT TOP (100)\n    vot.OrderId,\n    vot.Total\nFROM dbo.vOrderTotals AS vot;');
+  assert.match(starterQuery(shop(), 'dbo.Customers'), /^-- dbo\.Customers\.\n/);
+});
+
+test('a starter leaves protected columns out and says which, quotes a name SQL would misread, and uses local names', () => {
+  const described = starterQuery(describe(shop()), 'dbo.Orders');
+  assert.match(described, /^-- dbo\.Orders with what it references\.\n-- Masked, encrypted and labelled columns are left out: Status, CreatedAt\. Add them if the question needs them\.\n/);
+  assert.doesNotMatch(described, /o\.Status|o\.CreatedAt/);
+  assert.equal(quoteName('Orders'), 'Orders');
+  assert.equal(quoteName('Order'), '[Order]', 'a keyword');
+  assert.equal(quoteName('Line No'), '[Line No]');
+  assert.equal(quoteName('a]b'), '[a]]b]');
+  const two = scope(twoDatabases());
+  assert.match(starterQuery(two, 'Sales:dbo.Invoices'), /FROM dbo\.Invoices AS i\n/);
+  assert.doesNotMatch(starterQuery(two, 'Sales:dbo.Invoices'), /Sales:/);
+});
+
+test('autocomplete knows one database\'s schemas, tables and columns by the names SQL uses there', () => {
+  const { schema, defaultSchema } = completionSchema(shop(), 'Shop');
+  assert.equal(defaultSchema, 'dbo');
+  assert.deepEqual((schema.dbo as Record<string, string[]>).Orders, ['Id', 'CustomerId', 'Status', 'CreatedAt', 'Total']);
+  assert.deepEqual(Object.keys(schema).sort(), ['billing', 'dbo']);
+  const sales = completionSchema(scope(twoDatabases()), 'Sales').schema;
+  assert.deepEqual(Object.keys(sales), ['dbo'], 'the database prefix is not SQL');
+  assert.deepEqual(Object.keys(sales.dbo as object).sort(), ['Customers', 'Invoices']);
+});
+
+test('the tables a query reads, found by their names outside strings and comments, for Copy for agent', () => {
+  const sql = "SELECT o.Id FROM dbo.Orders AS o JOIN [dbo].[Customers] c ON c.Id = o.CustomerId -- not dbo.Products\nWHERE o.Status <> 'billing.Invoices'";
+  assert.deepEqual(queryTables(shop(), sql, 'Shop'), ['dbo.Orders', 'dbo.Customers']);
+  assert.deepEqual(queryTables(shop(), 'SELECT * FROM OrderLines', 'Shop'), ['dbo.OrderLines'], 'a bare name in the default schema');
+  assert.deepEqual(queryTables(scope(twoDatabases()), 'SELECT * FROM dbo.Payments', 'Billing'), ['Billing:dbo.Payments']);
+});
+
+test('Copy for agent frames the query with the tables it reads, as the docs write them', () => {
+  const text = sqlPrompt(shop(), 'SELECT Id FROM dbo.Orders', 'Shop');
+  assert.match(text, /^The query below runs on the Shop database \(SQL Server\)\. Check it against the tables it reads, from dbtour, and improve it:/);
+  assert.match(text, /```sql\nSELECT Id FROM dbo\.Orders\n```/);
+  assert.match(text, /# dbo\.Orders\n/);
+  assert.match(sqlPrompt(shop(), 'SELECT 1', 'Shop'), /It names no table dbtour knows/);
 });
