@@ -26,7 +26,8 @@
     "e2e:mssql": "node scripts/e2e-mssql.mjs",
     "e2e:page": "npm run build && node --test packages/addon-explorer/test/e2e/page.e2e.ts",
     "smoke": "node scripts/smoke-install.mjs",
-    "brand": "node scripts/brand.mjs"
+    "brand": "node scripts/brand.mjs",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

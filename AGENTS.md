@@ -45,6 +45,8 @@ npm run smoke   # the packed packages installed and run as a user would
 - Write the failing test first, then the fix.
 - One pull request is one release: bump every package's version, the README badge and a changelog entry
   marked `(unreleased)` in the same pull request. Find the number from what is released (`gh release list`).
-- Never move or replace a published tag; ship a new patch instead.
+  Merging to main does the rest: `release.yml` tags the version, creates the GitHub release from the
+  changelog section and publishes to npm. `npm run release` is the same by hand, for when it could not.
+- Never move or replace a published tag; ship a new patch instead. The release script refuses to.
 - Tests that commit pass their own identity (`git -c user.name=… -c user.email=…`).
 - Other sessions may work in the main checkout at the same time: work in a `git worktree` of your own.
