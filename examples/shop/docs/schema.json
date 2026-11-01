@@ -17,18 +17,20 @@
               "stats": { "rows": 48213, "dataBytes": 7397376, "indexBytes": 1654784 },
               "description": "One row per account.",
               "columns": [
-                { "name": "Id", "type": "int", "nullable": false, "identity": true },
-                { "name": "Email", "type": "nvarchar(320)", "nullable": false, "description": "Login address." },
+                { "name": "Id", "type": "int", "nullable": false, "identity": true, "identitySeed": "1", "identityIncrement": "1" },
+                { "name": "Email", "type": "nvarchar(320)", "nullable": false, "description": "Login address.", "masked": "email()", "sensitivity": { "label": "Confidential", "informationType": "Contact Info", "rank": "medium" }, "properties": { "Source": "sign-up form" } },
                 { "name": "Name", "type": "nvarchar(100)", "nullable": true }
               ],
               "primaryKey": ["Id"],
               "indexes": [
-                { "name": "UX_Customers_Email", "columns": ["Email"], "unique": true }
+                { "name": "UX_Customers_Email", "columns": ["Email"], "unique": true, "type": "nonclustered" }
               ],
               "constraints": [
                 { "name": "PK_Customers", "kind": "primary", "columns": ["Id"] },
                 { "name": "UX_Customers_Email", "kind": "unique", "columns": ["Email"] }
-              ]
+              ],
+              "created": "2024-01-08T09:12:30.900",
+              "properties": { "Owner": "Accounts" }
             },
             {
               "name": "Orders",
@@ -43,11 +45,20 @@
               ],
               "primaryKey": ["Id"],
               "indexes": [
-                { "name": "IX_Orders_CustomerId", "columns": ["CustomerId"], "unique": false }
+                { "name": "IX_Orders_CustomerId", "columns": ["CustomerId"], "unique": false, "type": "nonclustered" }
               ],
               "constraints": [
                 { "name": "PK_Orders", "kind": "primary", "columns": ["Id"] },
-                { "name": "CK_Orders_Status", "kind": "check", "columns": ["Status"], "definition": "([Status]<=(9))" }
+                { "name": "CK_Orders_Status", "kind": "check", "columns": ["Status"], "definition": "([Status]<=(9))", "untrusted": true }
+              ],
+              "properties": { "Retention": "7 years", "Steward": "Finance" },
+              "created": "2024-01-08T09:12:31.200",
+              "altered": "2026-10-30T17:04:11.517",
+              "partitioning": { "scheme": "psOrdersByYear", "function": "pfOrdersByYear", "column": "CreatedAt", "partitions": 6 },
+              "compression": "page",
+              "changeTracking": true,
+              "triggers": [
+                { "name": "trOrdersAudit", "timing": "after", "events": ["insert", "update"], "enabled": true, "definition": "CREATE TRIGGER dbo.trOrdersAudit ON dbo.Orders AFTER INSERT, UPDATE AS\nSET NOCOUNT ON;\nINSERT INTO audit.Changes (TableName, RowId, ChangedAt)\nSELECT N'dbo.Orders', i.Id, SYSUTCDATETIME() FROM inserted i;" }
               ]
             },
             {
@@ -91,7 +102,8 @@
               "constraints": [],
               "definition": "CREATE VIEW dbo.vOrderTotals AS SELECT OrderId, SUM(Quantity) AS Total FROM dbo.OrderLines GROUP BY OrderId"
             }
-          ]
+          ],
+          "properties": { "Purpose": "Trading: customers, orders and what they buy" }
         },
         {
           "name": "billing",
@@ -109,7 +121,9 @@
               "indexes": [],
               "constraints": [
                 { "name": "PK_Invoices", "kind": "primary", "columns": ["Id"] }
-              ]
+              ],
+              "ledger": "append-only",
+              "created": "2025-03-02T11:40:05.000"
             }
           ]
         }
@@ -119,7 +133,9 @@
         { "name": "FK_OrderLines_Orders", "from": { "table": "dbo.OrderLines", "columns": ["OrderId"] }, "to": { "table": "dbo.Orders", "columns": ["Id"] } },
         { "name": "FK_OrderLines_Products", "from": { "table": "dbo.OrderLines", "columns": ["ProductId"] }, "to": { "table": "dbo.Products", "columns": ["Id"] } },
         { "name": "FK_Invoices_Orders", "from": { "table": "billing.Invoices", "columns": ["OrderId"] }, "to": { "table": "dbo.Orders", "columns": ["Id"] } }
-      ]
+      ],
+      "collation": "Latin1_General_CI_AS",
+      "properties": { "Owner": "Shop team" }
     }
   ],
   "apis": [],

@@ -1,21 +1,21 @@
 // One entry: its number and name, its plot, its columns ruled beneath; the facts, relations and the sequence
 // on the right. Indexes, constraints and a view's definition fold below.
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { driverName, formatBytes, formatCount } from 'dbtour/markdown';
 import { findTable, isUniqueColumn, relationsOf, type Column, type Model, type Relation, type Table, type TableStats } from 'dbtour/model';
 import { neighboursOf, type Catalogue } from './catalogue.ts';
 import { DiagramView } from './Diagram.tsx';
 import { withNeighbours } from './graph.ts';
 import { Plot } from './Plot.tsx';
-import { profile } from './plot.ts';
+import { profile, tickTips } from './plot.ts';
+import { aboutOf, anyProtected, protection } from './about.ts';
 import { rankByRows, sizeTerms } from './size.ts';
+import { SqlBlock, SqlInline } from './Sql.tsx';
 import { SizeBar, Swatch } from './SizeBar.tsx';
 import { prompt } from './prompt.ts';
 import { diagramHash, groupHash, tableHash } from './route.ts';
 import { rememberTool, storedTool, toolById, tools } from './tools.ts';
-
-/** How long the button says "Copied" before it offers to copy again. */
-const copiedForMs = 1500;
+import { copiedForMs, copyText } from './Copy.tsx';
 
 /** The entry opened last, so the home can lift its line; kept for the tab, never beyond it. */
 const lastKey = 'dbtour.last';
@@ -47,6 +47,10 @@ export function TableView({ model, cat, tableRef, column }: Props) {
   const found = findTable(model, tableRef);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'refused'>('idle');
   const [tool, setTool] = useState(() => storedTool());
+  // The column the reader points at, in the plot or in the table, and where: the tooltip shows only for the
+  // plot, the lifted tick and the lit row for both.
+  const [pointed, setPointed] = useState<{ column: string; from: 'plot' | 'table' }>();
+  useEffect(() => setPointed(undefined), [tableRef]);
 
   useEffect(() => {
     remember(tableRef);
@@ -133,8 +137,19 @@ export function TableView({ model, cat, tableRef, column }: Props) {
 
         {table.stats && <Size stats={table.stats} rank={rankByRows(cat, tableRef)} readAt={found.database.statsReadAt} driver={found.database.driver} />}
 
+        <AboutBlock table={table} colour={cat.colours.get(schema.name)} />
+
         <div className="entry-plot" key={tableRef}>
-          <Plot ticks={profile(table, foreign)} height={plotHeight} tableRef={tableRef} activeColumn={column} />
+          <Plot
+            ticks={profile(table, foreign)}
+            height={plotHeight}
+            tableRef={tableRef}
+            activeColumn={column}
+            tips={tickTips(table, relations.out)}
+            hover={pointed?.column}
+            showTip={pointed?.from === 'plot'}
+            onHover={(c) => setPointed(c === undefined ? undefined : { column: c, from: 'plot' })}
+          />
         </div>
 
         {around.length > 1 ? (
@@ -152,20 +167,48 @@ export function TableView({ model, cat, tableRef, column }: Props) {
               <th>Null</th>
               <th>Default</th>
               <th>Key</th>
+              {anyProtected(table) && <th>Protection</th>}
               <th>Description</th>
             </tr>
           </thead>
           <tbody>
             {table.columns.map((col) => (
-              <tr key={col.name} id={`column-${col.name}`} className={col.name === column ? 'is-highlighted' : ''}>
+              <tr
+                key={col.name}
+                id={`column-${col.name}`}
+                className={[col.name === column ? 'is-highlighted' : '', col.name === pointed?.column ? 'is-pointed' : ''].filter(Boolean).join(' ') || undefined}
+                onMouseEnter={() => setPointed({ column: col.name, from: 'table' })}
+                onMouseLeave={() => setPointed(undefined)}
+              >
                 <td className="mono">{col.name}</td>
-                <td className="mono type">{col.type}</td>
+                <td className="mono type">
+                  {col.type}
+                  {(col.sparse || col.collation) && <span className="cell-note">{[col.sparse ? 'sparse' : '', col.collation ? `collation ${col.collation}` : ''].filter(Boolean).join(' · ')}</span>}
+                </td>
                 <td className="muted">{col.nullable ? 'yes' : ''}</td>
-                <td className="mono">{col.default}</td>
+                <td className="mono">{col.default !== undefined && <SqlInline code={col.default} />}</td>
                 <td>
                   <Keys table={table} column={col} out={relations.out} />
                 </td>
-                <td>{col.description}</td>
+                {anyProtected(table) && (
+                  <td>
+                    {protection(col).map((tag) => (
+                      <span key={tag.text} className="tag protect">
+                        {tag.rank && <span className={`rank-dot rank-${tag.rank}`} aria-hidden="true" />}
+                        {tag.text.split(' · ').map((part, i) => (
+                          <Fragment key={i}>
+                            {i > 0 && ' · '}
+                            <span className="part">{part}</span>
+                          </Fragment>
+                        ))}
+                      </span>
+                    ))}
+                  </td>
+                )}
+                <td>
+                  {col.description}
+                  <Properties properties={col.properties} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -183,6 +226,7 @@ export function TableView({ model, cat, tableRef, column }: Props) {
                   <th>Name</th>
                   <th>Columns</th>
                   <th>Unique</th>
+                  {table.indexes.some(indexKinded) && <th>Kind</th>}
                 </tr>
               </thead>
               <tbody>
@@ -194,6 +238,18 @@ export function TableView({ model, cat, tableRef, column }: Props) {
                       {index.included?.length ? <span className="muted"> includes {index.included.join(', ')}</span> : null}
                     </td>
                     <td className="muted">{index.unique ? 'yes' : ''}</td>
+                    {table.indexes.some(indexKinded) && (
+                      <td>
+                        {index.type}
+                        {index.filter && (
+                          <span className="cell-note">
+                            filtered <SqlInline code={index.filter} />
+                          </span>
+                        )}
+                        {index.disabled && <span className="tag warn">disabled</span>}
+                        <Properties properties={index.properties} />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -219,9 +275,67 @@ export function TableView({ model, cat, tableRef, column }: Props) {
                 {table.constraints.map((constraint) => (
                   <tr key={constraint.name}>
                     <td className="mono">{constraint.name}</td>
-                    <td>{constraint.kind}</td>
+                    <td>
+                      {constraint.kind}
+                      <Enforcement item={constraint} />
+                      <Properties properties={constraint.properties} />
+                    </td>
                     <td className="mono">{constraint.columns.join(', ')}</td>
-                    <td className="mono">{constraint.definition}</td>
+                    <td className="mono">
+                      {constraint.definition !== undefined && (constraint.kind === 'check' ? <SqlInline code={constraint.definition} /> : constraint.definition)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        )}
+
+        {table.triggers && table.triggers.length > 0 && (
+          <details>
+            <summary>
+              Triggers <span className="count">{table.triggers.length}</span>
+            </summary>
+            {table.triggers.map((trigger) => (
+              <div key={trigger.name} className="trigger">
+                <p>
+                  <span className="mono">{trigger.name}</span>
+                  <span className="muted">
+                    {' '}
+                    runs {trigger.timing} {trigger.events.join(', ')}
+                  </span>
+                  {!trigger.enabled && <span className="tag warn">disabled</span>}
+                </p>
+                {trigger.definition ? <SqlBlock code={trigger.definition} /> : <p className="muted">Its definition is encrypted.</p>}
+              </div>
+            ))}
+          </details>
+        )}
+
+        {table.security && table.security.length > 0 && (
+          <details>
+            <summary>
+              Row-level security <span className="count">{table.security.length}</span>
+            </summary>
+            <table>
+              <thead>
+                <tr>
+                  <th>Policy</th>
+                  <th>Kind</th>
+                  <th>Predicate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {table.security.map((s, i) => (
+                  <tr key={i}>
+                    <td className="mono">
+                      {s.policy}
+                      {!s.enabled && <span className="tag warn">off</span>}
+                    </td>
+                    <td>{s.operation ? `${s.kind}, ${s.operation}` : s.kind}</td>
+                    <td className="mono">
+                      <SqlInline code={s.predicate} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -232,7 +346,7 @@ export function TableView({ model, cat, tableRef, column }: Props) {
         {table.definition !== undefined && (
           <details>
             <summary>Definition</summary>
-            <pre>{table.definition.trim()}</pre>
+            <SqlBlock code={table.definition} />
           </details>
         )}
       </article>
@@ -253,6 +367,7 @@ export function TableView({ model, cat, tableRef, column }: Props) {
                   <a href={tableHash(r.to.table)}>{r.to.table}</a>
                   <span className="mono muted">.{r.to.columns.join(', ')}</span>
                   {r.virtual && <span className="tag">notes</span>}
+                  <Enforcement item={r} />
                   <Action relation={r} />
                 </li>
               ))}
@@ -327,15 +442,19 @@ function Keys({ table, column, out }: { table: Table; column: Column; out: Relat
         FK → <a href={tableHash(relation.to.table, target)}>{relation.to.table}</a>
         <span className="muted">.{target}</span>
         {relation.virtual && <span className="tag">notes</span>}
+        <Enforcement item={relation} />
       </span>,
     );
   }
   if (isUniqueColumn(table, column.name)) keys.push(<span key="unique" className="key">unique</span>);
-  if (column.identity) keys.push(<span key="identity" className="key">identity</span>);
+  if (column.identity) {
+    const seed = column.identitySeed === undefined ? '' : `(${column.identitySeed},${column.identityIncrement ?? '1'})`;
+    keys.push(<span key="identity" className="key">identity{seed}</span>);
+  }
   if (column.computed !== undefined) {
     keys.push(
       <span key="computed" className="key">
-        computed <code>{column.computed}</code>
+        computed <SqlInline code={column.computed} />
       </span>,
     );
   }
@@ -349,27 +468,6 @@ function Action({ relation }: { relation: Relation }) {
     if (action && !/^no[_ ]?action$/i.test(action)) parts.push(`on ${event} ${action.toLowerCase().replace(/_/g, ' ')}`);
   }
   return parts.length === 0 ? null : <span className="muted"> {parts.join(', ')}</span>;
-}
-
-/** True when the text reached the clipboard; the old way answers false rather than throwing when refused. */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // The clipboard API is refused on some file: pages; the old way still works.
-    const area = document.createElement('textarea');
-    area.value = text;
-    document.body.append(area);
-    try {
-      area.select();
-      return document.execCommand('copy');
-    } catch {
-      return false;
-    } finally {
-      area.remove();
-    }
-  }
 }
 
 /**
@@ -408,4 +506,87 @@ function Size({ stats, rank, readAt, driver }: { stats: TableStats; rank?: strin
       </dl>
     </section>
   );
+}
+
+/** What the catalogue says about the table beyond its columns: each feature in a plain sentence, the dates,
+ *  and the extended properties a team recorded. Not drawn when there is nothing to say. */
+function AboutBlock({ table, colour }: { table: Table; colour?: string }) {
+  const about = aboutOf(table);
+  if (about.empty) return null;
+  return (
+    <section className="about-block" aria-label="About">
+      <div className="size-head">
+        <span className="label">About</span>
+        {about.dates && <span className="label">{about.dates}</span>}
+      </div>
+      {about.terms.length > 0 && (
+        <dl className="about-terms">
+          {about.terms.map((t) => (
+            <div key={t.term}>
+              <dt>
+                <span className="block" style={{ background: colour }} aria-hidden="true" />
+                {t.term}
+              </dt>
+              <dd>{t.ref ? linkRef(t.sentence, t.ref) : t.sentence}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {about.properties.length > 0 && (
+        <>
+          <div className="label about-sub">Properties</div>
+          <dl className="about-terms">
+            {about.properties.map(([name, value]) => (
+              <div key={name}>
+                <dt className="prop-name">{name}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** The sentence with the table it names as a link. */
+function linkRef(text: string, ref: string) {
+  const at = text.indexOf(ref);
+  if (at === -1) return text;
+  return (
+    <>
+      {text.slice(0, at)}
+      <a href={tableHash(ref)}>{ref}</a>
+      {text.slice(at + ref.length)}
+    </>
+  );
+}
+
+/** A key or check the database no longer enforces, or no longer trusts, said in words. */
+function Enforcement({ item }: { item: { disabled?: boolean; untrusted?: boolean } }) {
+  return (
+    <>
+      {item.disabled && <span className="tag warn">disabled</span>}
+      {item.untrusted && <span className="tag warn">not trusted</span>}
+    </>
+  );
+}
+
+/** Extended properties under what they describe, name and value. */
+function Properties({ properties }: { properties?: Record<string, string> }) {
+  const entries = Object.entries(properties ?? {});
+  if (entries.length === 0) return null;
+  return (
+    <span className="cell-props">
+      {entries.map(([name, value]) => (
+        <span key={name} className="cell-note">
+          <span className="prop-name">{name}:</span> {value}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function indexKinded(index: Table['indexes'][number]): boolean {
+  return Boolean(index.type || index.filter || index.disabled || index.properties);
 }

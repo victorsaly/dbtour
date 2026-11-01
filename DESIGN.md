@@ -48,6 +48,14 @@ Strategy: restrained. No gradient, no shadow, no radius.
   column; peaks at 1.0 (primary key), 0.6 (foreign key), 0.45 (unique), 0.18 (column). Tick width is clamped
   between 6 and 72px. On the entry page every tick is a link to its column. The line means the columns and
   keys and nothing else; size is never drawn into it.
+- **Tick tooltip**: on an entry, hovering or focusing a tick opens a hairline box under the baseline
+  (`.plot-tip`, never the browser's title): the column in mono with its type, the tick's own peak drawn small
+  beside what the peak means in the key's words (primary key, foreign key → its target, unique, column),
+  then the description, the facts (null, default, identity, computed, sparse, collation, not trusted), the
+  protection tags, the properties, and a hint: click or Enter for its row, ← → for the next column. Near
+  either end it anchors to that end. The column pointed at is shared with the columns table: the tick is
+  lifted to 2px ink and the row takes `--fill`, whichever side is pointed at; the tooltip shows only when
+  the tick is, so a row never covers the map with one.
 - **Size bar** (`SizeBar.tsx`, `size.ts`): a table's bytes as length, linear, data solid `--ink` and indexes
   a hairline outline, on a `--line` hairline that marks the full length; 8px tall on the home, 10px on an
   entry; a part with any bytes keeps 1px. On the home a 220px column (112px on a phone) to the right of
@@ -60,6 +68,29 @@ Strategy: restrained. No gradient, no shadow, no radius.
   with the date it was counted at the right, the rows as a 20px mono figure with the table's place by rows
   beside it, the bar of its own bytes, the parts named with their swatches, and the three terms side by
   side (stacked on a phone).
+- **About block**: on an entry the catalogue says more about, after the Size block: an "About" label over a
+  hairline with the created and altered dates at the right, then each feature as a term in mono caps (the
+  names core's `features()` gives) in a 180px column beside one plain sentence, a table it names a link;
+  then "Properties", each a name in mono, in its own case, beside its value. Stacked on a phone. Not drawn
+  when there is nothing to say.
+- **Protection column**: in the columns table, only when some column has any: a column's sensitivity label,
+  mask and encryption as hairline tags in mono, never upper-cased, since a label is the team's name and a
+  mask a function. Sparse and a column's own collation are a second line in the Type cell, an identity's
+  seed rides in the Key cell, and a column's properties are "Name: value" lines under its description.
+- **Not enforced, not trusted**: a key or check the database no longer enforces carries a `disabled` tag,
+  one it no longer trusts a `not trusted` tag, in the Key cell, the constraints and the References panel.
+  A warning tag (`.tag.warn`) leads with a small red triangle.
+- **Marks by shape**: a square block is a schema, a round dot a sensitivity rank (low `--rank-low` grey,
+  medium amber, high orange, critical `--red`, its words always written beside it), a triangle a warning.
+  The shape says what kind of mark it is, the colour how much. About terms lead with their schema's block.
+- **SQL** (`sql.ts`, `Sql.tsx`): CodeMirror's MSSQL parser reads it, and one set of `sql-*` classes colours
+  it in VS Code's Dark+ and Light+ colours, chosen by the owner over a palette of the page's own because
+  developers already read SQL in them: keywords blue, built-ins yellow, types teal, names pale blue,
+  strings salmon, numbers pale green, comments green. A definition (a view's, a trigger's) is a read-only
+  CodeMirror editor in a hairline frame, a bar across its top with "T-SQL" and a Copy button, line numbers
+  and folding: the editor a SQL generator will later write in. A check, filter, predicate, default or
+  computed expression in a cell is coloured text. Monaco was weighed and left for the SQL add-on: it would
+  more than double the page.
 - **Facts**: four mono-caps labels with 20px mono values, in two columns, each over a hairline: columns,
   keys, references, referenced by. Every entry shows the same four in the same place.
 - **Map nodes**: 240px wide, a 34px head with block, number and name, 22px rows, 6px padding; sizes
@@ -88,6 +119,8 @@ home) and the entry's plot redraws when the entry changes. The button block scal
 motion removes both. Nothing else moves.
 
 ## Browser surfaces
+
+An identifier inside a caps line, such as the collation in the home's meta line, keeps its own case.
 
 Selection inverts (`--ink` on `--bg`); the caret is `--ink`; focus is a 1px `--ink` outline offset 2px;
 scrollbars are thin in `--line`; the search's native cancel button is removed.

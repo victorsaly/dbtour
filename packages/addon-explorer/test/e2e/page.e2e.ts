@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { chromium, type Browser } from 'playwright-core';
 import type { Model } from 'dbtour/model';
 import { render } from '../../src/index.ts';
+import { describe } from '../../../core/test/fixtures/described.ts';
 
 /** Evaluated in the page, where the DOM is; written as text because this file is typed for Node. */
 const nodeCount = (n: number): string => `document.querySelectorAll('.react-flow__node').length === ${n}`;
@@ -167,6 +168,88 @@ test('with sizes, a bar beside each line shows the bytes, the index orders and r
     await page.goto(`${pathToFileURL(join(dir, 'bare.html')).href}#dbo.Customers`);
     await page.locator('h1', { hasText: 'Customers' }).waitFor();
     assert.equal(await page.getByRole('region', { name: 'Size' }).count(), 0);
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('what the catalogue says: an About block in sentences, a Protection column, triggers, and what was not read', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  try {
+    const model = describe(JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8')));
+    const dir = mkdtempSync(join(tmpdir(), 'dbtour-page-'));
+    writeFileSync(join(dir, 'index.html'), render(model)['index.html']);
+    const url = pathToFileURL(join(dir, 'index.html')).href;
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+
+    await page.goto(url);
+    await page.getByRole('heading', { name: 'Shop' }).waitFor();
+    assert.match((await page.locator('.entry-head').textContent()) ?? '', /collation Latin1_General_CI_AS/);
+    assert.match((await page.locator('.unread').textContent()) ?? '', /Not read: sensitivity labels: the login lacks VIEW ANY SENSITIVITY CLASSIFICATION\./);
+    assert.match((await page.locator('.panel').textContent()) ?? '', /Shop · Owner\s*Data team/);
+
+    await page.goto(`${url}#dbo.Orders`);
+    const about = page.getByRole('region', { name: 'About' });
+    await about.waitFor();
+    const text = (await about.textContent()) ?? '';
+    assert.match(text, /Created 2024-01-02 · altered 2026-10-30/);
+    assert.match(text, /System-versioned\s*Every change is kept in dbo\.OrdersHistory/);
+    assert.match(text, /Triggers\s*trOrdersAudit runs after insert and update/);
+    assert.match(text, /Retention\s*7 years/);
+
+    assert.equal(await page.locator('table.columns th', { hasText: 'Protection' }).count(), 1);
+    const createdAt = page.locator('tr', { hasText: 'CreatedAt' });
+    assert.match((await createdAt.locator('.tag.protect').allTextContents()).join(' | '), /Confidential · Financial · rank medium \| Encrypted, deterministic/);
+    assert.equal(await createdAt.locator('.rank-dot.rank-medium').count(), 1, 'the rank has its dot, its words beside it');
+    assert.match((await page.locator('tr', { hasText: 'Status' }).first().textContent()) ?? '', /sparse · collation Latin1_General_BIN2/);
+
+    await page.locator('summary', { hasText: 'Triggers' }).click();
+    assert.match((await page.locator('.trigger').textContent()) ?? '', /trOrdersAudit runs after insert, update/);
+    // The definition is in a read-only CodeMirror editor, coloured by the MSSQL parser.
+    const editor = page.locator('.trigger .sql-block .cm-editor');
+    await editor.waitFor();
+    assert.equal(await editor.locator('.cm-content').getAttribute('contenteditable'), 'false');
+    assert.ok((await editor.locator('.sql-keyword').count()) > 0, 'keywords are coloured');
+    await page.locator('.trigger .sql-copy').click();
+    await page.locator('.trigger .sql-copy', { hasText: 'Copied' }).waitFor();
+    await page.locator('summary', { hasText: 'Constraints' }).click();
+    assert.match((await page.locator('tr', { hasText: 'CK_Orders_Status' }).textContent()) ?? '', /disabled.*not trusted/);
+    assert.equal(await page.locator('tr', { hasText: 'CK_Orders_Status' }).locator('.tag.warn').count(), 2);
+    assert.ok((await page.locator('tr', { hasText: 'CK_Orders_Status' }).locator('code.sql .sql-name').count()) > 0, 'the check is SQL, coloured');
+
+    // The plot and the columns table point at the same column: a tick's tooltip and its row, a row's tick.
+    await page.goto(`${url}#dbo.Orders`);
+    await page.locator('.entry-plot a.plot-tick').first().waitFor();
+    await page.locator('.entry-plot a.plot-tick').nth(1).hover();
+    const tip = page.getByRole('tooltip');
+    await tip.waitFor();
+    assert.match((await tip.textContent()) ?? '', /CustomerId\s*int.*Foreign key → dbo\.Customers\.Id.*not null · not trusted/);
+    assert.match((await page.locator('table.columns tr.is-pointed').textContent()) ?? '', /^CustomerId/, 'the tick lights its row');
+    await page.locator('.entry-plot a.plot-tick').nth(1).focus();
+    await page.keyboard.press('ArrowRight');
+    assert.match((await tip.textContent()) ?? '', /^Status\s*tinyint/, '→ moves to the next column');
+    assert.match((await tip.textContent()) ?? '', /Masked default\(\)/);
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    assert.match((await tip.textContent()) ?? '', /^Id\s*int.*Primary key.*identity\(1,1\).*Source: checkout/);
+    await page.locator('table.columns tr', { hasText: 'CreatedAt' }).hover();
+    assert.equal(await page.locator('.entry-plot a.plot-tick.is-hover').count(), 1, 'a row lifts its tick');
+    assert.equal(await page.getByRole('tooltip').count(), 0, 'without a tooltip over the map');
+    assert.match((await page.locator('table.columns tr.is-pointed').textContent()) ?? '', /CreatedAt/);
+
+    // A table the catalogue says nothing more about has no About block and no Protection column.
+    await page.goto(`${url}#dbo.Products`);
+    await page.locator('h1', { hasText: 'Products' }).waitFor();
+    assert.equal(await page.getByRole('region', { name: 'About' }).count(), 0);
+    assert.equal(await page.locator('table.columns th', { hasText: 'Protection' }).count(), 0);
 
     assert.deepEqual(errors, []);
   } finally {

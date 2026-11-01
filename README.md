@@ -5,7 +5,7 @@
 
 **Tour your database and its API.**
 
-[![version](https://img.shields.io/badge/version-0.3.0-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.4.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -27,7 +27,12 @@ npx dbtour render                                # → docs/dbtour/README.md, on
 
 The SQL Server source reads the catalogue and nothing else: a login with `VIEW DEFINITION` on the database is
 enough. Each table's rows and bytes come from the catalogue too, as SQL Server counts them, without reading a
-row.
+row. So does everything else the database keeps about its objects: every extended property, under any name;
+whether a table is temporal, memory-optimised, a ledger, partitioned or compressed, its triggers, change
+tracking, change data capture and row-level security; a column's collation, identity seed, masking and
+Always Encrypted; index kinds and filters, and keys no longer trusted. Sensitivity labels want `VIEW ANY
+SENSITIVITY CLASSIFICATION` as well; without it, `extract` says they were not read. Features an older
+SQL Server lacks are simply absent.
 
 `dbtour.yaml`:
 
@@ -66,6 +71,10 @@ It holds the structure and never the rows.
   the largest, split into data and indexes, with its rows written over it; the index can be read by
   **Rows** or **Size**, largest first, as well as in catalogue order; and an entry opens on its size, its
   place among the tables, and what each figure means.
+- What the catalogue says: an entry's **About** block puts each feature of the table in a plain sentence
+  (system-versioned, partitioned, triggers and the rest), with when it was created and its properties; a
+  **Protection** column shows a column's sensitivity label, mask and encryption; triggers and row-level
+  security are sections of their own, like indexes and constraints.
 
 `dbtour.notes.yaml` adds what the database cannot say, and wins over it:
 
