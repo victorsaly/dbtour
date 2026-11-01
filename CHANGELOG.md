@@ -8,8 +8,10 @@
   first, then its outer query's, and statements are scoped apart with or without a semicolon. After an alias
   and a dot, that table's columns alone, inside a subquery too, and no keywords. After ON, the condition the
   keys give between the joined table and those before it, as a join writes it. The joins after JOIN keep
-  their order (what a table points at first) rather than the alphabet's. `test/complete.test.ts` holds it
-  to cases, run as the editor runs them.
+  their order (what a table points at first) rather than the alphabet's. A subquery's alias hides an outer
+  table of the same name, a comment between a table and its alias changes nothing, and ON for a table the
+  model does not know, or a subquery, offers no condition. `test/complete.test.ts` holds it to cases, run as
+  the editor runs them.
 
 ## 0.9.0 (1 November 2026)
 

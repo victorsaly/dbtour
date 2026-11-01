@@ -133,3 +133,20 @@ test('in one of several databases, its own tables by their local names', async (
   const invoices = model.databases.find((d) => d.name === 'Sales')!.schemas[0].tables.find((t) => t.name === 'Invoices')!;
   assert.deepEqual(listed.slice(0, invoices.columns.length), invoices.columns.map((c) => c.name));
 });
+
+test('a comment between FROM, a table and its alias changes nothing', async () => {
+  assert.equal((await applies('SELECT Cu| FROM /* source */ dbo.Orders o'))[0], 'CustomerId');
+  assert.deepEqual(await applies('SELECT o.Cu| FROM dbo.Orders -- the orders\n o'), ['CustomerId']);
+});
+
+test('a subquery\'s alias hides the outer query\'s table of the same name', async () => {
+  const listed = await applies('SELECT * FROM dbo.Orders x WHERE EXISTS (SELECT 1 FROM dbo.Customers x WHERE Tot|)');
+  assert.ok(!listed.some((a) => /Total/.test(a)), 'x is Customers here, which has no Total');
+  assert.deepEqual(await applies('SELECT * FROM dbo.Orders x WHERE EXISTS (SELECT 1 FROM dbo.Customers x WHERE x.|)', { explicit: true }), ['Id', 'Email', 'Name']);
+});
+
+test('after ON for a table the model does not know, or a derived one, no condition from an earlier join', async () => {
+  const joined = 'SELECT * FROM dbo.Orders o JOIN dbo.Customers c ON c.Id = o.CustomerId ';
+  assert.deepEqual(await applies(`${joined}JOIN dbo.UnknownTable x ON |`), []);
+  assert.deepEqual(await applies(`${joined}JOIN (SELECT 1 AS a) d ON |`), []);
+});

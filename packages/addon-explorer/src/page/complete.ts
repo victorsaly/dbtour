@@ -186,11 +186,15 @@ function readAt(state: EditorState, pos: number, index: Map<string, Known>): Rea
   const word = /\w*$/.exec(state.sliceDoc(Math.max(0, pos - 250), pos))![0];
   const wordFrom = pos - word.length;
   let anchor = wordFrom;
+  // Names a query nearer the caret binds: an outer table of the same name is hidden by it, as in SQL.
+  const bound = new Set<string>();
   levels.forEach((level, depth) => {
-    const tokens = children(level).filter((t) => t.name !== '(' && t.name !== ')');
+    // Comments are not the query: a table and its alias read the same with one between them.
+    const tokens = children(level).filter((t) => !/^(\(|\)|LineComment|BlockComment)$/.test(t.name));
     const segment = segmentAround(tokens, anchor, text);
     const items = fromItems(segment, text, index);
-    for (const item of items) if (item.known) reading.scope.push({ name: item.name, known: item.known, depth });
+    for (const item of items) if (item.known && !bound.has(item.name.toLowerCase())) reading.scope.push({ name: item.name, known: item.known, depth });
+    for (const item of items) bound.add(item.name.toLowerCase());
     if (depth === 0) {
       const before = segment.filter((t) => t.to <= wordFrom);
       const prev = before[before.length - 1];
@@ -199,8 +203,12 @@ function readAt(state: EditorState, pos: number, index: Map<string, Known>): Rea
       reading.tableSpot =
         tableStarts.has(prevWord) || (isComma(prev, text) && inFrom) || items.some((item) => item.ends.includes(prev?.to ?? -1));
       if (prevWord === 'ON') {
-        const known = items.filter((item) => item.known && item.at < wordFrom).map((item) => ({ name: item.name, known: item.known!, depth }));
-        if (known.length > 1) reading.on = { joined: known[known.length - 1], earlier: known.slice(0, -1) };
+        // The table this ON is for is the last one named; when the model does not know it, or it is a
+        // subquery, there is no key to offer, and an earlier join's condition would leave it unconstrained.
+        const named = items.filter((item) => item.at < wordFrom);
+        const joined = named[named.length - 1];
+        const earlier = named.slice(0, -1).flatMap((item) => (item.known ? [{ name: item.name, known: item.known, depth }] : []));
+        if (joined?.known && earlier.length) reading.on = { joined: { name: joined.name, known: joined.known, depth }, earlier };
       }
     }
     anchor = level.from;
@@ -257,7 +265,10 @@ function fromListAt(tokens: Node[], text: (n: Node) => string): boolean {
   return inFrom;
 }
 
-/** A table the query names after FROM, JOIN and the like, with the alias it gives it, known to the model or not. */
+/**
+ * A table the query names after FROM, JOIN and the like, with the alias it gives it: known to the model, or
+ * not (a CTE, a table it has not read, or a subquery, which has only its alias).
+ */
 interface FromItem {
   name: string;
   known?: Known;
@@ -283,13 +294,13 @@ function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string,
       expect = true;
       continue;
     }
-    if (!expect || !isName(t)) {
+    if (!expect || !(isName(t) || t.name === 'Parens')) {
       expect = false;
       continue;
     }
     expect = false;
-    const parts = pathOf(t, text);
-    const item: FromItem = { name: parts[parts.length - 1], known: index.get(parts.join('.').toLowerCase()), at: t.from, ends: [t.to] };
+    const parts = t.name === 'Parens' ? [''] : pathOf(t, text);
+    const item: FromItem = { name: parts[parts.length - 1], known: t.name === 'Parens' ? undefined : index.get(parts.join('.').toLowerCase()), at: t.from, ends: [t.to] };
     let j = i + 1;
     if (tokens[j]?.name === 'Keyword' && text(tokens[j]).toUpperCase() === 'AS') j++;
     if (tokens[j] && (tokens[j].name === 'Identifier' || tokens[j].name === 'QuotedIdentifier')) {
