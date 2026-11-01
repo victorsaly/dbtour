@@ -23,7 +23,7 @@
   still expands) or show a protected one (when all are, Ctrl+Space offers them, said so). A table that has its
   alias already is written without another, and a [bracketed] table name is completed as before.
 
-## 0.9.1 (unreleased)
+## 0.9.1 (1 November 2026)
 
 - Autocomplete reads the query as the editor parses it, to offer what belongs at the caret. In the select
   list, WHERE, ON, GROUP BY and SET, the columns of the tables in scope come before keywords, in the table's
