@@ -29,7 +29,7 @@ const changelog = `# Changelog
 const names = { core: 'dbtour', 'source-mssql': 'dbtour-source-mssql', 'addon-explorer': 'dbtour-addon-explorer' };
 
 /** A repository at 0.2.2 whose main is pushed to a bare origin, with stub npm and gh on the PATH. */
-function repository({ published = [] as string[], registryDown = false } = {}) {
+function repository({ published = [] as string[], registryDown = false, publishFails = '' } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'dbtour-release-'));
   const work = join(root, 'work');
   const origin = join(root, 'origin.git');
@@ -42,7 +42,7 @@ function repository({ published = [] as string[], registryDown = false } = {}) {
   copyFileSync(script, join(work, 'scripts/release.mjs'));
   for (const [pkg, name] of Object.entries(names)) {
     mkdirSync(join(work, 'packages', pkg), { recursive: true });
-    writeFileSync(join(work, 'packages', pkg, 'package.json'), JSON.stringify({ name, version: '0.2.2' }));
+    writeFileSync(join(work, 'packages', pkg, 'package.json'), JSON.stringify({ name, version: '0.2.2', repository: { type: 'git', url: 'git+https://github.com/victorsaly/dbtour.git' } }));
   }
   writeFileSync(join(work, 'CHANGELOG.md'), changelog);
   mkdirSync(bin);
@@ -50,7 +50,9 @@ function repository({ published = [] as string[], registryDown = false } = {}) {
   const view = registryDown
     ? 'echo "npm error code ENOTFOUND" >&2; exit 1'
     : `if grep -qx "$2" "${registry}"; then echo "\${2##*@}"; else echo "npm error code E404" >&2; exit 1; fi`;
-  writeFileSync(join(bin, 'npm'), `#!/bin/sh\necho "npm $*" >> "${calls}"\nif [ "$1" = view ]; then ${view}; fi\n`);
+  // publishFails is what npm prints when the registry refuses a publish; empty, the publish succeeds.
+  const publish = publishFails ? `printf '%s\\n' "${publishFails}" >&2; exit 1` : 'true';
+  writeFileSync(join(bin, 'npm'), `#!/bin/sh\necho "npm $*" >> "${calls}"\nif [ "$1" = view ]; then ${view}; fi\nif [ "$1" = publish ]; then ${publish}; fi\n`);
   writeFileSync(join(bin, 'gh'), `#!/bin/sh\necho "gh $*" >> "${calls}"\n`);
   for (const tool of ['npm', 'gh']) chmodSync(join(bin, tool), 0o755);
 
@@ -193,4 +195,24 @@ test('--publish stops before publishing anything when npm cannot be asked', () =
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Could not ask npm whether dbtour@0\.2\.2/);
   assert.equal(publishes(repo.called()), '');
+});
+
+test('a publish npm refuses ends in a sentence saying what to do, not a stack trace', () => {
+  const stage = tagged({ publishFails: 'npm error 403 403 Forbidden - PUT https://registry.npmjs.org/dbtour - OIDC permission denied for this action' });
+  let result = stage.release('--publish');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /OIDC permission denied/, "npm's own words are shown");
+  assert.match(result.stderr, /npm refused to publish dbtour@0\.2\.2: its trusted publisher may only stage/);
+  assert.match(result.stderr, /npx npm@latest trust github dbtour --file release\.yml --repo victorsaly\/dbtour --allow-publish/);
+  assert.doesNotMatch(result.stderr, /node:internal|at run|Error: Command failed/);
+  assert.equal(publishes(stage.called()), 'packages/core', 'it stops at the first refusal');
+
+  result = tagged({ publishFails: 'npm error 404 Not Found - PUT https://registry.npmjs.org/dbtour - Not found' }).release('--publish');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /npm does not trust this workflow to publish dbtour/);
+  assert.match(result.stderr, /GitHub Actions, victorsaly\/dbtour, release\.yml/);
+
+  result = tagged({ publishFails: 'npm error code E500' }).release('--publish');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /npm did not publish dbtour@0\.2\.2 \(npm error code E500\)\. Fix what npm says above, then run it again: what is on npm already is skipped\./);
 });
