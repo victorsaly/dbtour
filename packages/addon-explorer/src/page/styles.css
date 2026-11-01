@@ -1,0 +1,536 @@
+/* The page's own styles; React Flow's come from its package. Colours are tokens so dark mode is one block. */
+:root {
+  --bg: #ffffff;
+  --bg-side: #f6f7f9;
+  --bg-raised: #ffffff;
+  --fg: #1b1f24;
+  --muted: #6a737d;
+  --line: #d9dee4;
+  --accent: #2563eb;
+  --accent-bg: #e8effc;
+  --code-bg: #f0f2f5;
+  --focus: #d97706;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216;
+    --bg-side: #151920;
+    --bg-raised: #1a1f27;
+    --fg: #e6e8eb;
+    --muted: #8b949e;
+    --line: #2a313a;
+    --accent: #7ab0ff;
+    --accent-bg: #1a2740;
+    --code-bg: #1b2129;
+    --focus: #f5a524;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.25;
+}
+h1 {
+  font-size: 22px;
+}
+h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+code,
+.mono,
+kbd {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+code {
+  background: var(--code-bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+kbd {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--muted);
+  background: var(--bg-raised);
+}
+.muted {
+  color: var(--muted);
+}
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  vertical-align: 1px;
+}
+.count {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* The shell: sidebar, then the view. */
+.app {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  height: 100%;
+}
+.side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-side);
+  border-right: 1px solid var(--line);
+}
+.main {
+  min-width: 0;
+  overflow: auto;
+}
+
+.brand {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 14px 16px 10px;
+  color: var(--fg);
+}
+.brand span {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search {
+  position: relative;
+  padding: 0 12px 10px;
+}
+.search input {
+  width: 100%;
+  padding: 7px 34px 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+}
+.search input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.search kbd {
+  position: absolute;
+  right: 20px;
+  top: 7px;
+  pointer-events: none;
+}
+
+.tree,
+.hits {
+  flex: 1;
+  overflow: auto;
+  padding: 0 8px 16px;
+  margin: 0;
+}
+.tree section + section {
+  margin-top: 14px;
+}
+.tree h2,
+.tree summary {
+  padding: 6px 8px;
+}
+.tree summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+.tree summary::before {
+  content: '▾';
+  display: inline-block;
+  width: 14px;
+  color: var(--muted);
+}
+.tree details:not([open]) summary::before {
+  content: '▸';
+}
+.tree ul,
+.hits {
+  list-style: none;
+  padding-left: 0;
+}
+.tree ul {
+  margin: 0 0 4px;
+}
+.tree li a,
+.hits li a {
+  display: block;
+  padding: 4px 8px 4px 22px;
+  border-radius: 5px;
+  color: var(--fg);
+}
+.tree li a:hover,
+.hits li a:hover {
+  background: var(--accent-bg);
+  text-decoration: none;
+}
+.tree li a.is-current {
+  background: var(--accent);
+  color: #fff;
+}
+.tree li a.is-current .tag,
+.tree li a.is-current .count {
+  color: inherit;
+  border-color: transparent;
+}
+
+.hits li a {
+  padding: 6px 10px;
+}
+.hits li.is-cursor a {
+  background: var(--accent-bg);
+}
+.hit-title {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.hit-detail {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hit-kind {
+  margin-right: 6px;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+.hits .empty {
+  padding: 10px;
+  color: var(--muted);
+}
+
+/* Views. */
+.page {
+  padding: 24px 28px 40px;
+  max-width: 1100px;
+}
+.with-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  min-height: 100%;
+}
+.panel {
+  padding: 24px 20px;
+  border-left: 1px solid var(--line);
+  background: var(--bg-side);
+}
+.panel section + section {
+  margin-top: 22px;
+}
+.panel h2 {
+  margin-bottom: 8px;
+}
+.panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.panel li {
+  padding: 3px 0;
+}
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.crumb {
+  color: var(--muted);
+  font-size: 12px;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+}
+.button {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none;
+}
+.description {
+  margin: 12px 0 0;
+  max-width: 70ch;
+}
+.meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+table {
+  width: 100%;
+  margin-top: 18px;
+  border-collapse: collapse;
+}
+th,
+td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+td.type {
+  white-space: nowrap;
+}
+tr.is-highlighted td {
+  background: var(--accent-bg);
+}
+.key + .key::before {
+  content: ', ';
+}
+details {
+  margin-top: 20px;
+}
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+details table {
+  margin-top: 8px;
+}
+pre {
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow: auto;
+  background: var(--code-bg);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.home h2 {
+  margin: 28px 0 10px;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.card {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-raised);
+}
+.card h3 {
+  font-size: 15px;
+}
+.card p {
+  margin: 6px 0 0;
+}
+.links a {
+  display: inline-block;
+  margin: 2px 10px 2px 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.hint {
+  margin-top: 32px;
+  color: var(--muted);
+  max-width: 70ch;
+}
+
+/* The canvas. */
+.diagram {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.diagram-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 28px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.diagram-head h1 {
+  font-size: 18px;
+}
+.diagram-head p {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+.canvas {
+  flex: 1;
+  min-height: 0;
+}
+.canvas .page {
+  padding: 24px 28px;
+}
+
+/* Sizes here are the ones layout.ts counts with: 240 wide, a 34px head, 22px rows, 6px padding. */
+.node {
+  width: 240px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.node.is-focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--focus);
+}
+.node-head {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.node-name {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.node-schema {
+  color: var(--muted);
+  font-weight: 400;
+}
+.node-expand {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  line-height: 18px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+}
+.node-expand:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+.node-rows {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+}
+.node-rows li {
+  display: flex;
+  gap: 6px;
+  height: 22px;
+  line-height: 22px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.node-key {
+  width: 18px;
+  flex: none;
+  font-size: 10px;
+  color: var(--muted);
+}
+.node-col {
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.node-type {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.handle {
+  opacity: 0;
+}
+.react-flow__edge-path {
+  stroke: var(--muted);
+}
+.react-flow__edge-textbg {
+  fill: var(--bg);
+}
+.react-flow__edge-text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+@media (max-width: 800px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .side {
+    max-height: 45vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .with-panel {
+    grid-template-columns: 1fr;
+  }
+  .panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .page {
+    padding: 16px;
+  }
+}

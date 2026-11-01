@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sourceModuleName, loadSource } from '../src/plugins.ts';
+import { sourceModuleName, loadSource, addonModuleName, loadAddon } from '../src/plugins.ts';
 
 test('a source type maps to a package name unless a module is given', () => {
   assert.equal(sourceModuleName({ type: 'mssql', name: 'x' }), 'dbtour-source-mssql');
@@ -16,4 +16,18 @@ test('loadSource returns the extract function, and says what to install when it 
     /npm install dbtour-source-mssql/,
   );
   await assert.rejects(loadSource({ type: 'odd', name: 'x' }, async () => ({})), /does not export extract/);
+});
+
+test('an add-on type maps to a package name unless a module is given', () => {
+  assert.equal(addonModuleName({ type: 'explorer' }), 'dbtour-addon-explorer');
+  assert.equal(addonModuleName({ type: 'explorer', module: './page.ts' }), './page.ts');
+});
+
+test('loadAddon returns enrich and render when exported, and says what to install when missing', async () => {
+  const render = () => ({ 'index.html': '<html>' });
+  const addon = await loadAddon({ type: 'explorer' }, async () => ({ render }));
+  assert.equal(addon.render, render);
+  assert.equal(addon.enrich, undefined);
+  await assert.rejects(loadAddon({ type: 'explorer' }, async () => { throw new Error('nope'); }), /npm install dbtour-addon-explorer/);
+  await assert.rejects(loadAddon({ type: 'odd' }, async () => ({})), /enrich\(model\) or render\(model\)/);
 });

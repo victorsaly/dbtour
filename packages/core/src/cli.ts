@@ -4,10 +4,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { configFile, defaultConfigText, modelFile, parseConfig, resolveConnection, type Config, type SourceConfig } from './config.ts';
+import { configFile, defaultConfigText, modelFile, parseConfig, resolveConnection, type AddonConfig, type Config, type SourceConfig } from './config.ts';
 import { emptyModel, validate, type Api, type Database, type Model } from './model.ts';
 import { applyNotes, parseNotes } from './notes.ts';
-import { loadSource, type Importer, type Source } from './plugins.ts';
+import { loadAddon, loadSource, type Addon, type Importer, type Source } from './plugins.ts';
 import { renderMarkdown } from './render/markdown.ts';
 
 export interface Io {
@@ -17,13 +17,16 @@ export interface Io {
   env?: Record<string, string | undefined>;
   /** How a source is loaded; tests hand in their own. */
   load?: (source: SourceConfig) => Promise<Source>;
+  /** How an add-on is loaded; tests hand in their own. */
+  loadAddon?: (addon: AddonConfig) => Promise<Addon>;
 }
 
 const help = `Usage: dbtour <command>
 
   init [--source mssql]   write ${configFile} here
   extract                 read every source in ${configFile}, write <out>/${modelFile}
-  render                  read <out>/${modelFile} and the notes, write the Markdown under <out>
+  render                  read <out>/${modelFile} and the notes, write the Markdown and what the
+                          add-ons in ${configFile} render (explorer: index.html) under <out>
 
 Set the connection string in the environment variable ${configFile} names, never in the file.`;
 
@@ -41,7 +44,7 @@ export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: c
       case 'extract':
         return await extract(io);
       case 'render':
-        return render(io);
+        return await render(io);
       default:
         io.error(`"${command}" is not a dbtour command.\n\n${help}`);
         return 1;
@@ -114,7 +117,7 @@ function importer(cwd: string): Importer {
   return (specifier) => import(specifier.startsWith('.') || specifier.startsWith('/') ? pathToFileURL(resolve(cwd, specifier)).href : specifier);
 }
 
-function render(io: Io): number {
+async function render(io: Io): Promise<number> {
   const config = readConfig(io);
   const modelPath = join(io.cwd, config.out, modelFile);
   if (!existsSync(modelPath)) throw missing(`No ${join(config.out, modelFile)} yet. Run dbtour extract to write it.`);
@@ -130,7 +133,19 @@ function render(io: Io): number {
     for (const warning of applied.warnings) io.error(warning);
     model = applied.model;
   }
+  // Every add-on is loaded before anything is written, so a missing one stops the run with nothing half done.
+  const load = io.loadAddon ?? ((addon: AddonConfig) => loadAddon(addon, importer(io.cwd)));
+  const addons: Addon[] = [];
+  for (const addon of config.addons) {
+    try {
+      addons.push(await load(addon));
+    } catch (error) {
+      throw missing(error instanceof Error ? error.message : String(error));
+    }
+  }
+  for (const addon of addons) if (addon.enrich) model = await addon.enrich(model);
   const files = renderMarkdown(model);
+  for (const addon of addons) if (addon.render) Object.assign(files, await addon.render(model));
   for (const [name, text] of Object.entries(files)) {
     const path = join(io.cwd, config.out, name);
     mkdirSync(dirname(path), { recursive: true });

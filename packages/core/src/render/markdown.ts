@@ -1,6 +1,6 @@
 // Markdown GitHub shows: an index with every table, and one page per table with its columns, keys,
 // relations both ways, indexes, constraints and the diagram of its neighbourhood.
-import { findTable, relationsOf, tableRef, type Column, type Database, type Model, type Table } from '../model.ts';
+import { findTable, isUniqueColumn, relationsOf, tableRef, type Database, type Model, type Table } from '../model.ts';
 import { erDiagram, neighbourhood } from './mermaid.ts';
 
 // Mermaid lays out a whole database only while it is small; above this many tables the index shows the
@@ -53,10 +53,22 @@ function renderIndex(model: Model): string {
   return parts.join('\n');
 }
 
-function driverLine(database: Database): string {
+/** The product's name for a driver: mssql is SQL Server. */
+export function driverName(driver: string): string {
   const names: Record<string, string> = { mssql: 'SQL Server', postgres: 'PostgreSQL', mysql: 'MySQL', sqlite: 'SQLite' };
-  const name = names[database.driver] ?? database.driver;
+  return names[driver] ?? driver;
+}
+
+function driverLine(database: Database): string {
+  const name = driverName(database.driver);
   return database.version ? `${name} ${database.version}.` : `${name}.`;
+}
+
+/** One table's page on its own: what the page hands to an agent. */
+export function renderTableMarkdown(model: Model, ref: string): string {
+  const found = findTable(model, ref);
+  if (!found) throw new Error(`${ref} is not a table in the model`);
+  return renderTable(model, ref, found.table);
 }
 
 function renderTable(model: Model, ref: string, table: Table): string {
@@ -74,7 +86,7 @@ function renderTable(model: Model, ref: string, table: Table): string {
       const { table: toTable, columns } = relation.to;
       keys.push(`FK → [${toTable}](${toTable}.md).${columns[i] ?? columns.join(',')}${relation.virtual ? ' (notes)' : ''}`);
     }
-    if (isUnique(table, column)) keys.push('unique');
+    if (isUniqueColumn(table, column.name)) keys.push('unique');
     if (column.identity) keys.push('identity');
     if (column.computed !== undefined) keys.push(`computed \`${column.computed}\``);
     const dflt = column.default === undefined ? '' : `\`${column.default}\``;
@@ -121,14 +133,6 @@ function renderTable(model: Model, ref: string, table: Table): string {
     parts.push(mermaid(erDiagram(model, around)));
   }
   return parts.join('\n');
-}
-
-function isUnique(table: Table, column: Column): boolean {
-  if (table.primaryKey?.includes(column.name)) return false;
-  return (
-    table.constraints.some((c) => c.kind === 'unique' && c.columns.length === 1 && c.columns[0] === column.name) ||
-    table.indexes.some((i) => i.unique && i.columns.length === 1 && i.columns[0] === column.name)
-  );
 }
 
 function mermaid(diagram: string): string {

@@ -71,9 +71,9 @@ to cite and runs the result through the source with a read-only login and a row 
 ## Order of work
 
 1. **Core, `source-mssql`, Markdown with Mermaid.** Replaces dbschema-markdown, keeping descriptions and
-   computed columns, fixing composite keys. ← here
-2. The page: search, table view, neighbourhood diagram.
-3. The skill and the SQL add-on.
+   computed columns, fixing composite keys.
+2. **The page**: search, table view, neighbourhood diagram.
+3. The skill and the SQL add-on. ← here
 4. `source-openapi` and table-to-endpoint links.
 5. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`.
 6. Deploy workflow, `check`, `addon-lint`.

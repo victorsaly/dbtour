@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { renderMarkdown } from '../src/render/markdown.ts';
+import { renderMarkdown, renderTableMarkdown } from '../src/render/markdown.ts';
 import type { Model } from '../src/model.ts';
 
 const shop = (): Model => JSON.parse(readFileSync(new URL('./fixtures/shop.json', import.meta.url), 'utf8'));
@@ -61,4 +61,9 @@ test('pipes in descriptions do not break the tables', () => {
   const model = shop();
   model.databases[0].schemas[0].tables[0].columns[1].description = 'a | b';
   assert.match(renderMarkdown(model)['tables/dbo.Customers.md'], /a \\\| b/);
+});
+
+test('renderTableMarkdown renders one table page, and says when the table is not there', () => {
+  assert.equal(renderTableMarkdown(shop(), 'dbo.Orders'), renderMarkdown(shop())['tables/dbo.Orders.md']);
+  assert.throws(() => renderTableMarkdown(shop(), 'dbo.Ghost'), /dbo\.Ghost is not a table/);
 });

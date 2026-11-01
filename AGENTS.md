@@ -10,12 +10,17 @@ For coding agents changing this repository. The design is in [PLAN.md](PLAN.md);
 - `packages/source-mssql`: SQL Server. `src/query.sql` is run as one batch and returns several result sets;
   `src/map.ts` turns the rows into a `Database` and is tested on fixture rows, no server needed.
   `test/e2e/` runs against SQL Server in Docker and is skipped when Docker is absent.
+- `packages/addon-explorer`: the page. `src/index.ts` is what `render` loads: it inlines `dist/` and the model
+  into one index.html. `src/page/` is the React app that esbuild bundles into `dist/` (`npm run build`, run
+  for you before the tests). Its pure parts, `route.ts`, `search.ts`, `graph.ts`, `layout.ts` and
+  `prompt.ts`, are tested in Node; the components by `test/e2e/` in Google Chrome, skipped when there is none.
 - `examples/shop`: a small model, its notes and config; `npm run example` renders it.
 
 ## How the code is written
 
 - TypeScript that Node 22.18+ runs as is: no build step, `.ts` in every import, nothing `erasableSyntaxOnly`
-  rejects. `npm run typecheck` checks it, `npm test` runs it.
+  rejects. `npm run typecheck` checks it, `npm test` runs it. The one exception is the page's browser code,
+  which esbuild bundles and which may use JSX and the DOM.
 - Comments say why, in plain words. Docs use British spelling (colour, licence).
 - A source owns its driver and nothing else depends on it. Core depends on `yaml` only.
 - A number that is waited for or measured is named and its value explained where it is defined.

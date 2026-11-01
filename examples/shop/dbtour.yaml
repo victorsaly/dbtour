@@ -5,3 +5,5 @@ sources:
     name: Shop
     connection: ${DBTOUR_MSSQL}
 notes: dbtour.notes.yaml
+addons:
+  - explorer
