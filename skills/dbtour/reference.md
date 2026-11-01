@@ -32,6 +32,7 @@ their own shell: `export DBTOUR_MSSQL='…'`. It never goes in a file.
 | `npx dbtour extract` | Reads each source into `<out>/schema.json`. Says what the login could not read. |
 | `npx dbtour render` | Writes `<out>/README.md`, a page per table under `<out>/tables/` (a folder per database when there are several), and the add-ons' files. |
 | `npx dbtour mcp [project]` | Serves the model over MCP on stdin and stdout, for an agent. |
+| `npx dbtour serve [--port 4321]` | Serves the rendered page on 127.0.0.1; with a `reader`, its SQL editor runs queries the same way as `dbtour sql`. For a person, not an agent: it runs until stopped. |
 | `npx dbtour sql "<query>"` | Runs one SELECT through the source's `reader`, rolled back, at most `--limit` rows (100); `--source <name>` when several have a reader, `--json` for the rows as JSON. |
 
 Exit codes: 1 for what was asked, 2 for what is missing (no `dbtour.yaml`, no `schema.json`, an unset

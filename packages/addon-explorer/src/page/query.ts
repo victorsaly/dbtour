@@ -1,7 +1,7 @@
 // The entry's Query section and the SQL page: a starter query for a table, what autocomplete knows, which
 // tables a query reads, and the prompt "Copy for agent" hands over. Pure, so it is tested in Node; the page
 // cannot run a query (it is a static file), so running stays with dbtour sql and the MCP query tool.
-import { driverName } from 'dbtour/markdown';
+import { driverName, formatCount } from 'dbtour/markdown';
 import { findTable, localRef, relationsOf, tableRef, type Column, type Database, type Model } from 'dbtour/model';
 import { prompt } from './prompt.ts';
 import { sqlTokens } from './sql.ts';
@@ -103,13 +103,49 @@ function localSchema(model: Model, database: Database, schema: string): string {
   return model.databases.length > 1 && schema.startsWith(`${database.name}:`) ? schema.slice(database.name.length + 1) : schema;
 }
 
-/** What autocomplete offers in one database: schema, table and column, by the names SQL uses there. */
-export function completionSchema(model: Model, databaseName: string | undefined): { schema: Record<string, Record<string, string[]>>; defaultSchema: string } {
+/** One suggestion, in the shape CodeMirror's autocomplete takes: what it is, beside it, and below it. */
+export interface Suggestion {
+  label: string;
+  type?: string;
+  detail?: string;
+  info?: string;
+}
+
+/** A table's suggestion (`self`) and its columns', as CodeMirror's SQL support nests them. */
+export interface TableSuggestions {
+  self: Suggestion;
+  children: Suggestion[];
+}
+
+/**
+ * What autocomplete offers in one database: schema, table and column, by the names SQL uses there. Each says
+ * what it is: a table its kind and rows, a column its type, its key or the table it points at, and whether it
+ * is protected; a description, when there is one, shows below.
+ */
+export function completionSchema(model: Model, databaseName: string | undefined): { schema: Record<string, Record<string, TableSuggestions>>; defaultSchema: string } {
   const database = databaseNamed(model, databaseName);
-  const schema: Record<string, Record<string, string[]>> = {};
+  const schema: Record<string, Record<string, TableSuggestions>> = {};
   for (const s of database.schemas) {
-    const tables: Record<string, string[]> = {};
-    for (const t of s.tables) tables[t.name] = t.columns.map((c) => c.name);
+    const tables: Record<string, TableSuggestions> = {};
+    for (const t of s.tables) {
+      const ref = tableRef(s.name, t.name);
+      const out = relationsOf(model, ref).out;
+      const self: Suggestion = { label: t.name, type: 'type', detail: t.kind === 'view' ? 'view' : t.stats ? `table · ${formatCount(t.stats.rows)} rows` : 'table' };
+      if (t.description) self.info = t.description;
+      const children = t.columns.map((c): Suggestion => {
+        const notes: string[] = [];
+        if (t.primaryKey?.includes(c.name)) notes.push('primary key');
+        const points = out.find((r) => r.from.columns.includes(c.name));
+        if (points) notes.push(`→ ${localRef(model, points.to.table)}`);
+        if (c.masked) notes.push('masked');
+        if (c.encrypted) notes.push('encrypted');
+        if (c.sensitivity) notes.push('labelled');
+        const suggestion: Suggestion = { label: c.name, type: 'property', detail: [c.type, ...notes].join(' · ') };
+        if (c.description) suggestion.info = c.description;
+        return suggestion;
+      });
+      tables[t.name] = { self, children };
+    }
     schema[localSchema(model, database, s.name)] = tables;
   }
   const names = Object.keys(schema);
@@ -121,10 +157,7 @@ export function completionSchema(model: Model, databaseName: string | undefined)
  * schema.table anywhere outside strings and comments, or a bare table of the default schema after FROM or JOIN.
  */
 export function queryTables(model: Model, sql: string, databaseName: string | undefined): string[] {
-  const code = sqlTokens(sql)
-    .filter((t) => t.kind !== 'string' && t.kind !== 'comment')
-    .map((t) => t.text.replace(/^\[(.*)\]$/, '$1'))
-    .join('');
+  const code = codeOf(sql);
   const database = databaseNamed(model, databaseName);
   const { defaultSchema } = completionSchema(model, database.name);
   const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -152,3 +185,64 @@ export function sqlPrompt(model: Model, sql: string, databaseName: string | unde
   return `${head}\n\n\`\`\`sql\n${sql.trim()}\n\`\`\`\n\n${tables}`;
 }
 
+
+/** The query without its strings and comments, and with [brackets] taken off names, to look for names in. */
+function codeOf(sql: string): string {
+  return sqlTokens(sql)
+    .filter((t) => t.kind !== 'string' && t.kind !== 'comment')
+    .map((t) => t.text.replace(/^\[(.*)\]$/, '$1'))
+    .join('');
+}
+
+// Words that can follow a table in FROM or JOIN without being its alias.
+const notAliases = new Set(['ON', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS', 'ORDER', 'GROUP', 'HAVING', 'UNION', 'WITH', 'AS', 'EXCEPT', 'INTERSECT', 'OPTION', 'FOR']);
+
+/** The alias the query gives each table it names after FROM or JOIN, by the model's ref. */
+export function queryAliases(model: Model, sql: string, databaseName: string | undefined): Record<string, string> {
+  const code = codeOf(sql);
+  const aliases: Record<string, string> = {};
+  for (const ref of queryTables(model, sql, databaseName)) {
+    const local = localRef(model, ref).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = new RegExp(`\\b(?:FROM|JOIN)\\s+${local}\\s+(?:AS\\s+)?([A-Za-z_][\\w]*)`, 'i').exec(code);
+    if (match && !notAliases.has(match[1].toUpperCase())) aliases[ref] = match[1];
+  }
+  return aliases;
+}
+
+/** A suggestion that writes a whole join. */
+export interface JoinSuggestion extends Suggestion {
+  apply: string;
+}
+
+/**
+ * What can be joined next: every table related to one the query already has, but not yet in it, offered after
+ * JOIN with its alias and the ON clause written from the declared keys (or the notes' relations), so a join
+ * is never guessed. Tables in the query's order; for each, the tables it points at first, then those that
+ * point at it.
+ */
+export function joinCompletions(model: Model, sql: string, databaseName: string | undefined): JoinSuggestion[] {
+  const present = queryTables(model, sql, databaseName);
+  const aliases = queryAliases(model, sql, databaseName);
+  const taken = new Set(Object.values(aliases));
+  const offered = new Set<string>();
+  const suggestions: JoinSuggestion[] = [];
+  const nameOf = (ref: string) => aliases[ref] ?? quoteRef(localRef(model, ref));
+  for (const ref of present) {
+    const { out, in: inward } = relationsOf(model, ref);
+    const pairs = [
+      ...out.map((r) => ({ other: r.to.table, otherColumns: r.to.columns, ownColumns: r.from.columns, detail: `referenced by ${localRef(model, ref)}` })),
+      ...inward.map((r) => ({ other: r.from.table, otherColumns: r.from.columns, ownColumns: r.to.columns, detail: `references ${localRef(model, ref)}` })),
+    ];
+    for (const pair of pairs) {
+      if (present.includes(pair.other) || offered.has(pair.other)) continue;
+      const target = findTable(model, pair.other);
+      if (!target) continue;
+      offered.add(pair.other);
+      const alias = aliasFor(target.table.name, taken);
+      const on = pair.otherColumns.map((c, i) => `${alias}.${quoteName(c)} = ${nameOf(ref)}.${quoteName(pair.ownColumns[i])}`).join(' AND ');
+      const local = quoteRef(localRef(model, pair.other));
+      suggestions.push({ label: localRef(model, pair.other), type: 'type', detail: pair.detail, apply: `${local} AS ${alias} ON ${on}` });
+    }
+  }
+  return suggestions;
+}

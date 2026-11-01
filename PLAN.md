@@ -89,7 +89,7 @@ with no runtime plugin loading, which is what keeps it a single HTML file.
 dbtour init                 # writes dbtour.yaml, picks sources
 dbtour extract              # sources → schema.json (connection string from an environment variable, never argv)
 dbtour render               # schema.json + notes → index.html, README.md, one .md per table
-dbtour serve                # the page locally, reloading on change
+dbtour serve                # the page on 127.0.0.1; with a reader, its editor runs queries; later, the setup wizard
 dbtour check                # CI: fails when the database and schema.json disagree
 dbtour find users           # search from the terminal, same index as the page
 dbtour mcp                  # the model to an agent over MCP: overview, search, table, path
@@ -144,8 +144,8 @@ model; it never connects to the database. Running queries is the SQL add-on's, b
 
 ## Showing it
 
-Not before there is enough to show. Once milestones 5 to 8 are released (the skill installs with one
-command, a second database works, and a project can deploy its page and check it in CI), dbtour gets a card
+Not before there is enough to show. Once milestones 5 to 9 are released (the skill installs with one
+command, a database is set up from the page, a second database works, and a project can deploy its page and check it in CI), dbtour gets a card
 on [skills.victorsaly.com](https://skills.victorsaly.com/) and a page of its own at `/dbtour`, built the way
 [SideShot's](https://skills.victorsaly.com/sideshot) is:
 
@@ -175,14 +175,23 @@ shop window, and nothing goes on the page before it is released.
    them.
 5. The skill and the SQL add-on, with the stats telling the agent where to look first. `dbtour mcp` came
    first (0.5.0), then the skill (0.6.0), then tables named with their database when there are
-   several (0.7.0), running a query through a reader (0.8.0), and the page's SQL editor (0.9.0).
-6. `source-openapi` and table-to-endpoint links. ← here
-7. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
+   several (0.7.0), running a query through a reader (0.8.0), and the page's SQL editor with `dbtour serve`
+   running it (0.9.0).
+6. **Setup on the page**: `dbtour serve` with nothing to serve opens a wizard, and a served page has a
+   home that lists every database. Adding one: its kind and server, how it signs in (Entra through `az`, or
+   a login), a test, and an offer to create its reader (`db_datareader` alone) with the admin's sign-in;
+   then extract and render, and it is on the home. Settings without secrets are a file in `~/.dbtour`;
+   passwords and connection strings go to the system's keychain (macOS Keychain, Windows Credential Manager,
+   the Secret Service), named from the settings, never written to a file or shown again. `dbtour.yaml`
+   and environment variables keep working as they do, for CI and agents. The keychain is a dependency, so it
+   lives in a package of its own, not core. The design is drawn and agreed before it is built. ← here
+7. `source-openapi` and table-to-endpoint links.
+8. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
    and the comments its database keeps.
-8. Deploy workflow, `check`, `addon-lint`.
-9. `addon-usage`: index and table usage from the management views, as a panel on the entry.
-10. **Showing it**: the page on skills.victorsaly.com with its film and the live example, the script that
-    records them, once 5 to 8 are released.
+9. Deploy workflow, `check`, `addon-lint`.
+10. `addon-usage`: index and table usage from the management views, as a panel on the entry.
+11. **Showing it**: the page on skills.victorsaly.com with its film and the live example, the script that
+    records them, once 5 to 9 are released.
 
 ## Borrowed from
 

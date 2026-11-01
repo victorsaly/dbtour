@@ -99,6 +99,9 @@ Strategy: restrained. No gradient, no shadow, no radius.
   case-insensitive and quoted with [brackets], as T-SQL is. The bar holds Copy query, Copy query for the
   remembered agent (the query with the tables it reads, as the docs write them) and Reset; a draft is kept in
   the browser. Under it, one line says the page cannot reach the database and where the query runs.
+  Beside "T-SQL" the status says whether the page is connected: a hollow dot not; connected, the dot is the
+  last run, grey before one and while it runs, green (`--ran`, the page's only green) when the database
+  answered, red when it did not, and the words say the same ("· ran", "· failed").
 - **Facts**: four mono-caps labels with 20px mono values, in two columns, each over a hairline: columns,
   keys, references, referenced by. Every entry shows the same four in the same place.
 - **Map nodes**: 240px wide, a 34px head with block, number and name, 22px rows, 6px padding; sizes

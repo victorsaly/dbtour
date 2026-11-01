@@ -32,6 +32,10 @@
     "./search": {
       "types": "./dist/search.d.ts",
       "default": "./dist/search.js"
+    },
+    "./sql": {
+      "types": "./dist/sql.d.ts",
+      "default": "./dist/sql.js"
     }
   },
   "files": [

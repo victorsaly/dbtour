@@ -23,11 +23,14 @@
   --sql-string: #ce9178;
   --sql-number: #b5cea8;
   --sql-comment: #6a9955;
+  --sql-selection: #264f78;
   /* A sensitivity rank's dot, grey to red; its words are always beside it. */
   --rank-low: #8c8c8c;
   --rank-medium: #f5a623;
   --rank-high: #ff6a00;
   --rank-critical: #e2001a;
+  /* A query's last run answered: the one green on the page, on the editor's status dot alone. */
+  --ran: #3fb950;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
@@ -46,9 +49,11 @@
     --sql-string: #a31515;
     --sql-number: #098658;
     --sql-comment: #008000;
+    --sql-selection: #add6ff;
     --rank-low: #6b6b6b;
     --rank-medium: #c47f00;
     --rank-high: #d45500;
+    --ran: #1a7f37;
     color-scheme: light;
   }
 }
@@ -1563,4 +1568,125 @@ table.columns tr.is-pointed td {
 }
 .cm-completionDetail {
   color: var(--ink-2);
+}
+
+/* The editor's state, beside "T-SQL": hollow not connected; connected, the last run's tone, grey before one,
+   green answered, red failed. Words say it; the dot repeats. */
+.sql-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.status {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.status::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  outline: var(--hair) solid var(--ink-2);
+  outline-offset: -1px;
+  vertical-align: 0;
+}
+.status.is-on,
+.status.is-idle,
+.status.is-ok,
+.status.is-failed {
+  color: var(--ink);
+}
+.status.is-on::before,
+.status.is-idle::before {
+  background: var(--ink-2);
+  outline-color: var(--ink-2);
+}
+.status.is-ok::before {
+  background: var(--ran);
+  outline-color: var(--ran);
+}
+.status.is-failed::before {
+  background: var(--red);
+  outline-color: var(--red);
+}
+.side-status {
+  margin: -6px 16px 16px;
+}
+/* Run is the editor's primary action: the red block on its trailing edge, as the page's primary buttons. */
+.sql-run::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  background: var(--red);
+  vertical-align: 0;
+}
+.sql-run:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+/* Auto-run: a checkbox set like the bar's buttons, ticked in ink. */
+.sql-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.sql-auto:has(input:checked) {
+  color: var(--ink);
+}
+.sql-auto input {
+  margin: 0;
+  accent-color: var(--ink);
+}
+.sql-error,
+.sql-waiting {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: var(--hair) solid var(--line);
+}
+.sql-waiting {
+  color: var(--ink-2);
+}
+.sql-waiting .tag {
+  margin-left: 0;
+}
+/* The run before, kept while the next goes or after it failed: dimmed, and its head says so. */
+.sql-result.is-stale .sql-result-rows {
+  opacity: 0.45;
+}
+.sql-result {
+  border-top: var(--hair) solid var(--line);
+}
+.sql-result-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.sql-result-rows {
+  max-height: 420px;
+  overflow: auto;
+}
+.sql-result-rows table {
+  margin: 0;
+}
+.sql-result-rows th {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
 }

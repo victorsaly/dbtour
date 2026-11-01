@@ -5,6 +5,7 @@ import { tableRef, type Model } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
 import { Mark, Wordmark } from './Logo.tsx';
 import { groupHash, mapHash, sqlHash, tableHash, type Route } from './route.ts';
+import { servedPage } from './Sql.tsx';
 import { search, type Entry, type Hit } from 'dbtour/search';
 
 /** Below this width the index folds; the same breakpoint as the stylesheet's. */
@@ -149,6 +150,7 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
       <a className={`side-map${route.kind === 'sql' ? ' is-current' : ''}`} href={sqlHash} aria-current={route.kind === 'sql' ? 'page' : undefined}>
         Write SQL
       </a>
+      {servedPage() && <p className="side-status status is-on">Connected through dbtour serve</p>}
       {searching ? (
         <ul className="hits" id="search-hits" ref={list} role="listbox" aria-label="Results">
           {hits.length === 0 && <li className="empty">Nothing matches “{query.trim()}”.</li>}
