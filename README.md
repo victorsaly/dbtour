@@ -5,7 +5,7 @@
 
 **Tour your database and its API.**
 
-[![version](https://img.shields.io/badge/version-0.6.0-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.7.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -47,6 +47,12 @@ notes: dbtour.notes.yaml          # optional
 addons:
   - explorer                      # the page; leave out for Markdown only
 ```
+
+Several sources document several databases. With more than one, each table is named with its database,
+`Sales:dbo.Customers`, so two databases that both have a `dbo.Customers` keep them apart: in the Markdown
+(`tables/Sales/dbo.Customers.md`), on the page (`#Sales:dbo.Customers`) and to an agent. The notes may
+leave the database out wherever only one database has the table, and are told when it is needed. A source's
+`name` is how its database is named, so each needs its own, without a dot, a colon or a slash.
 
 ## The page
 

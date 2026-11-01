@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../src/cli.ts';
 import type { Model } from '../src/model.ts';
+import { twoDatabases } from './fixtures/two.ts';
 
 const fixture = new URL('./fixtures/shop.json', import.meta.url);
 
@@ -186,4 +187,29 @@ test('mcp answers on stdout, never logs there, reads the notes, and reads the mo
   assert.match(run.answers[0].result.serverInfo.version, /^\d+\.\d+\.\d+/);
   assert.match(run.answers[1].result.content[0].text, /From the notes\./);
   assert.match(run.answers[2].result.content[0].text, /Changed since\./);
+});
+
+test('render names each table with its database when there are several, and the notes may leave it out', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: mssql\n    name: Sales\n  - type: mssql\n    name: Billing\n');
+  writeFileSync(join(cwd, 'dbtour.notes.yaml'), 'tables:\n  dbo.Payments:\n    description: From the notes.\n  dbo.Customers:\n    description: Which?\n');
+  mkdirSync(join(cwd, 'docs/dbtour'), { recursive: true });
+  writeFileSync(join(cwd, 'docs/dbtour/schema.json'), JSON.stringify(twoDatabases()));
+  const a = io();
+  assert.equal(await main(['render'], { cwd, ...a.io }), 0);
+  assert.match(readFileSync(join(cwd, 'docs/dbtour/tables/Billing/dbo.Payments.md'), 'utf8'), /^# Billing:dbo\.Payments\n\nFrom the notes\./);
+  assert.equal(existsSync(join(cwd, 'docs/dbtour/tables/Sales/dbo.Customers.md')), true);
+  assert.match(a.err.join('\n'), /dbo\.Customers is in Sales and Billing/);
+  const schema = JSON.parse(readFileSync(join(cwd, 'docs/dbtour/schema.json'), 'utf8'));
+  assert.equal(schema.databases[0].schemas[0].name, 'dbo', 'schema.json keeps the names the sources wrote');
+});
+
+test('extract refuses two sources with the same name, since refs could not tell them apart', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: fake\n    name: Shop\n  - type: fake\n    name: Shop\n');
+  const database = JSON.parse(readFileSync(fixture, 'utf8')).databases[0];
+  const a = io();
+  assert.equal(await main(['extract'], { cwd, load: async () => ({ extract: async () => database }), ...a.io }), 1);
+  assert.match(a.err.join('\n'), /two databases are named Shop: give each source its own name in dbtour\.yaml/);
+  assert.equal(existsSync(join(cwd, 'docs/dbtour/schema.json')), false);
 });

@@ -1,6 +1,7 @@
 // The model: what every source writes and everything else reads. Kept to plain JSON so it can be committed,
 // diffed and handed to a page or an agent. Refs name tables as `schema.table` and columns as
-// `schema.table.column`.
+// `schema.table.column`; read through scope(), a model with several databases names them
+// `Database:schema.table`.
 
 export const MODEL_VERSION = 1;
 
@@ -227,22 +228,70 @@ export function parseRef(ref: string): TableRef {
   return column === undefined ? { schema, table } : { schema, table, column };
 }
 
+/** Between a database and its schema in a ref: not a dot, which already parts schema, table and column. */
+export const databaseSeparator = ':';
+
+/**
+ * The model as everything reads it. Refs carry no database, so two databases with a dbo.Customers would
+ * share one name; with several databases, each schema is named `Database:schema` and every relation, group
+ * and link, and every history table, names its tables that way. Whatever builds a ref from a schema and a table then builds a name
+ * that is unique, and one database keeps the names it has always had. A group or link naming a table in
+ * both databases is left for the notes to report. Scoping a scoped model changes nothing.
+ */
+export function scope(model: Model): Model {
+  if (model.databases.length < 2) return model;
+  const scoped = structuredClone(model);
+  for (const database of scoped.databases) {
+    const prefix = database.name + databaseSeparator;
+    for (const schema of database.schemas) {
+      if (!schema.name.startsWith(prefix)) schema.name = prefix + schema.name;
+      for (const table of schema.tables) {
+        if (table.temporal && !table.temporal.history.startsWith(prefix)) table.temporal.history = prefix + table.temporal.history;
+        if (table.historyOf && !table.historyOf.startsWith(prefix)) table.historyOf = prefix + table.historyOf;
+      }
+    }
+    for (const relation of database.relations) {
+      for (const end of [relation.from, relation.to]) if (!end.table.startsWith(prefix)) end.table = prefix + end.table;
+    }
+  }
+  const qualify = (ref: string) => findTable(scoped, ref)?.ref ?? ref;
+  for (const group of scoped.groups) group.tables = group.tables.map(qualify);
+  for (const link of scoped.links) link.tables = link.tables.map(qualify);
+  return scoped;
+}
+
 export interface Found {
   database: Database;
   schema: Schema;
   table: Table;
+  /** The table's name as the model writes it, with its database when the model is scoped. */
+  ref: string;
 }
 
-export function findTable(model: Model, ref: string): Found | undefined {
+/**
+ * Every table a ref can mean. One written with its database, or in a model of one database, means at most
+ * one; `dbo.Customers` in a scoped model means each database's dbo.Customers.
+ */
+export function findTables(model: Model, ref: string): Found[] {
   const { schema: schemaName, table: tableName } = parseRef(ref);
-  for (const database of model.databases) {
-    for (const schema of database.schemas) {
-      if (schema.name !== schemaName) continue;
-      const table = schema.tables.find((t) => t.name === tableName);
-      if (table) return { database, schema, table };
+  const found: Found[] = [];
+  for (const exact of [true, false]) {
+    for (const database of model.databases) {
+      for (const schema of database.schemas) {
+        const named = exact ? schema.name === schemaName : schema.name === database.name + databaseSeparator + schemaName;
+        const table = named ? schema.tables.find((t) => t.name === tableName) : undefined;
+        if (table) found.push({ database, schema, table, ref: tableRef(schema.name, table.name) });
+      }
     }
+    if (found.length > 0) break;
   }
-  return undefined;
+  return found;
+}
+
+/** The one table a ref means; nothing when it means none, or several. */
+export function findTable(model: Model, ref: string): Found | undefined {
+  const found = findTables(model, ref);
+  return found.length === 1 ? found[0] : undefined;
 }
 
 /** Unique on its own, by a constraint or an index, and not the primary key, which says so already. */
@@ -306,6 +355,16 @@ export function validate(value: unknown): Validation {
   if (errors.length > 0) return { ok: false, errors };
 
   const typed = value as Model;
+  // Several databases are told apart by name in their refs (see scope), so each needs one of its own that a
+  // ref can carry.
+  if (typed.databases.length > 1) {
+    const seen = new Set<string>();
+    for (const { name } of typed.databases) {
+      if (seen.has(name)) errors.push(`two databases are named ${name}: give each source its own name in dbtour.yaml`);
+      seen.add(name);
+      if (/[.:/\\]/.test(name)) errors.push(`the database name ${name} has a dot, a colon or a slash, which a ref or a file name would read as a separator: give its source another name in dbtour.yaml`);
+    }
+  }
   typed.databases.forEach((database, i) => {
     const refs = new Set(database.schemas.flatMap((s) => s.tables.map((t) => tableRef(s.name, t.name))));
     database.relations.forEach((relation, j) => {

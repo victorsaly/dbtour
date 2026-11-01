@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { relationsOf, type Model } from 'dbtour/model';
 import { pageHtml, render } from '../src/index.ts';
-import { parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, type Route } from '../src/page/route.ts';
+import { canonicalRoute, parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, type Route } from '../src/page/route.ts';
 import { allTables, mergeParallel, relationId } from '../src/page/graph.ts';
 import { tools, toolById, storedTool, rememberTool } from '../src/page/tools.ts';
 import { neighbours, withNeighbours, expand, subgraph } from '../src/page/graph.ts';
@@ -16,6 +16,9 @@ import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
+
+import { scope } from 'dbtour/model';
+import { twoDatabases } from '../../core/test/fixtures/two.ts';
 
 const shop = (): Model => JSON.parse(readFileSync(new URL('../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
 
@@ -45,6 +48,17 @@ test('every route round-trips through the hash, and an odd hash falls back to ho
   assert.deepEqual(parseRoute('#dbo..x'), { kind: 'home' }, 'an empty part');
   assert.deepEqual(parseRoute('#diagram/dbo.Orders,invalid,,x.y.z'), { kind: 'diagram', refs: ['dbo.Orders'] }, 'bad refs are dropped');
   assert.deepEqual(parseRoute('#diagram/invalid'), { kind: 'home' });
+});
+
+test('a ref with its database keeps its colon readable in the address, and an old link finds its table', () => {
+  assert.equal(tableHash('Sales:dbo.Orders', 'Status'), '#Sales:dbo.Orders.Status');
+  assert.deepEqual(parseRoute('#Sales:dbo.Orders.Status'), { kind: 'table', ref: 'Sales:dbo.Orders', column: 'Status' });
+  assert.deepEqual(parseRoute(diagramHash(['Sales:dbo.Orders', 'Billing:dbo.Customers'])), { kind: 'diagram', refs: ['Sales:dbo.Orders', 'Billing:dbo.Customers'] });
+  const model = scope(twoDatabases());
+  assert.deepEqual(canonicalRoute(parseRoute('#dbo.Payments.Id'), model), { kind: 'table', ref: 'Billing:dbo.Payments', column: 'Id' });
+  assert.deepEqual(canonicalRoute(parseRoute('#dbo.Customers'), model), { kind: 'table', ref: 'dbo.Customers' }, 'a name in both stays as written, for the page to say so');
+  assert.deepEqual(canonicalRoute(parseRoute('#diagram/dbo.Invoices,Sales:dbo.Customers'), model), { kind: 'diagram', refs: ['Sales:dbo.Invoices', 'Sales:dbo.Customers'] });
+  assert.deepEqual(canonicalRoute({ kind: 'map' }, model), { kind: 'map' });
 });
 
 test('neighbours are the tables one relation away, and expanding a diagram adds them once', () => {
