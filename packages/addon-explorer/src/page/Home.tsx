@@ -2,13 +2,13 @@
 // source read the tables' sizes, a bar beside each line shows its bytes against the largest table's, its
 // rows and size are written above the bar, and the index can be read largest first.
 import { useState } from 'react';
-import { driverName, formatBytes, formatCount } from 'dbtour/markdown';
+import { driverName, formatBytes } from 'dbtour/markdown';
 import { findTable, relationsOf, type Model } from 'dbtour/model';
 import { ordered, orders, rememberOrder, sized, storedOrder, type Catalogue, type Order } from './catalogue.ts';
 import { Plot } from './Plot.tsx';
 import { peaks, profile } from './plot.ts';
 import { groupHash, tableHash } from './route.ts';
-import { sizeTerms } from './size.ts';
+import { sizeCaption, sizeTerms } from './size.ts';
 import { SizeBar, Swatch } from './SizeBar.tsx';
 import { lastOpened } from './TableView.tsx';
 
@@ -104,11 +104,7 @@ export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
                     </span>
                   </span>
                   {weighed && (
-                    <span className="size">
-                      {entry.stats
-                        ? `${formatCount(entry.stats.rows)} rows · ${formatBytes(entry.stats.dataBytes + entry.stats.indexBytes)}`
-                        : 'no rows of its own'}
-                    </span>
+                    <span className="size">{sizeCaption(entry.stats, found.table.kind)}</span>
                   )}
                   <Plot ticks={ticks} height={height} index={i} />
                   {entry.stats && <SizeBar stats={entry.stats} largest={largest} />}

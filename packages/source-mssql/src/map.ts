@@ -59,8 +59,9 @@ export function mapRecordsets(sets: Recordsets, options: MapOptions = {}): Datab
     const table: Table = { name: row.name, kind: row.kind, columns: [], indexes: [], constraints: [] };
     if (row.description) table.description = row.description;
     if (row.kind === 'view' && row.definition) table.definition = row.definition;
-    // A byte count past 2^53 loses its last digits as a number, which no reader of a size will miss.
-    if (row.rows !== null && row.rows !== undefined) table.stats = { rows: Number(row.rows), dataBytes: Number(row.dataBytes ?? 0), indexBytes: Number(row.indexBytes ?? 0) };
+    // A byte count past 2^53 loses its last digits as a number, which no reader of a size will miss. Only a
+    // table: an indexed view has rows in sys.partitions too, but they are the view's results, not stored data.
+    if (row.kind === 'table' && row.rows !== null && row.rows !== undefined) table.stats = { rows: Number(row.rows), dataBytes: Number(row.dataBytes ?? 0), indexBytes: Number(row.indexBytes ?? 0) };
     schema.tables.push(table);
     tables.set(`${row.schema}.${row.name}`, table);
   }

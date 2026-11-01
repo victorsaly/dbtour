@@ -12,7 +12,7 @@ import { layout, nodeHeight, nodeWidth } from '../src/page/layout.ts';
 import { prompt } from '../src/page/prompt.ts';
 import { catalogue, neighboursOf, ordered, orders, rememberOrder, sized, storedOrder } from '../src/page/catalogue.ts';
 import { profile, plotPath, tickWidth, tickCentre } from '../src/page/plot.ts';
-import { barShares, ordinal, rankByRows, sizeTerms } from '../src/page/size.ts';
+import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/page/size.ts';
 import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
 
 const shop = (): Model => JSON.parse(readFileSync(new URL('../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
@@ -306,4 +306,10 @@ test('render reads the built page and returns index.html', () => {
   assert.match(files['index.html'], /id="dbtour-model"/);
   assert.match(files['index.html'], /dbo\.Orders/);
   assert.ok(files['index.html'].length > 100_000, 'the bundle is inlined');
+});
+
+test('only a view says it has no rows of its own; a table without stats says nothing it does not know', () => {
+  assert.equal(sizeCaption({ rows: 1204377, dataBytes: 81920000, indexBytes: 25165824 }, 'table'), '1,204,377 rows · 102 MB');
+  assert.equal(sizeCaption(undefined, 'view'), 'no rows of its own');
+  assert.equal(sizeCaption(undefined, 'table'), '', 'stats missing is not an empty table');
 });

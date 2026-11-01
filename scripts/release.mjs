@@ -104,8 +104,9 @@ function publishMissing() {
   }
   const flags = args.has('--provenance') ? ['--provenance'] : [];
   for (const workspace of missing) {
-    // npm's account of a refusal is kept to name the fix; it is shown as it comes as well.
-    const result = spawnSync('npm', ['publish', '--workspace', workspace, '--access', 'public', ...flags], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'inherit', 'pipe'] });
+    // npm's account of a refusal is kept to name the fix; it is shown as it comes as well. The terminal's
+    // input stays npm's, for the one-time password it asks for when published by hand.
+    const result = spawnSync('npm', ['publish', '--workspace', workspace, '--access', 'public', ...flags], { cwd: repo, encoding: 'utf8', stdio: ['inherit', 'inherit', 'pipe'] });
     process.stderr.write(result.stderr ?? '');
     if (result.status !== 0) fail(refusal(manifests.find((m) => m.workspace === workspace), result.stderr ?? ''));
   }

@@ -123,3 +123,10 @@ test('toRecordsets insists on the seven result sets of query.sql', () => {
   const sets = toRecordsets([r.info, r.tables, r.columns, r.keys, r.foreignKeys, r.indexes, r.checks]);
   assert.equal(sets.checks.length, 2);
 });
+
+test('an indexed view keeps no stats, though its clustered index has rows in sys.partitions', () => {
+  const sets = rows();
+  Object.assign(sets.tables.find((t) => t.name === 'vOrderTotals')!, { rows: 120, dataBytes: 16384, indexBytes: 0 });
+  const model = { ...emptyModel(), databases: [mapRecordsets(sets)] };
+  assert.equal(findTable(model, 'dbo.vOrderTotals')!.table.stats, undefined);
+});

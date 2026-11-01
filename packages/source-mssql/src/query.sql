@@ -28,12 +28,22 @@ LEFT JOIN sys.sql_modules m ON m.object_id = o.object_id
 -- Counted apart: joining the allocation units to the partitions repeats each partition's rows.
 OUTER APPLY (SELECT SUM(p.[rows]) AS [rows] FROM sys.partitions p WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)) r
 OUTER APPLY (
-    SELECT SUM(CASE WHEN p.index_id IN (0, 1) THEN au.used_pages ELSE 0 END) * 8192 AS dataBytes,
-           SUM(CASE WHEN p.index_id > 1 THEN au.used_pages ELSE 0 END) * 8192 AS indexBytes
-    FROM sys.partitions p
-    -- In-row and row-overflow pages belong to the partition's hobt, large-object pages to the partition.
-    JOIN sys.allocation_units au ON au.container_id = CASE WHEN au.[type] = 2 THEN p.partition_id ELSE p.hobt_id END
-    WHERE p.object_id = o.object_id
+    SELECT SUM(CASE WHEN u.index_id IN (0, 1) THEN u.used_pages ELSE 0 END) * 8192 AS dataBytes,
+           SUM(CASE WHEN u.index_id > 1 THEN u.used_pages ELSE 0 END) * 8192 AS indexBytes
+    FROM (
+        -- In-row and row-overflow pages belong to the partition's hobt, large-object pages to the partition.
+        SELECT p.index_id, au.used_pages
+        FROM sys.partitions p
+        JOIN sys.allocation_units au ON au.container_id = CASE WHEN au.[type] = 2 THEN p.partition_id ELSE p.hobt_id END
+        WHERE p.object_id = o.object_id
+        UNION ALL
+        -- A columnstore's delta stores, rows not yet compressed, are hobts of their own that sys.partitions
+        -- does not list: their pages are counted with the columnstore index they belong to.
+        SELECT rg.index_id, au.used_pages
+        FROM sys.column_store_row_groups rg
+        JOIN sys.allocation_units au ON au.container_id = rg.delta_store_hobt_id
+        WHERE rg.object_id = o.object_id AND rg.delta_store_hobt_id IS NOT NULL
+    ) u
 ) b
 WHERE o.[type] IN ('U', 'V') AND o.is_ms_shipped = 0
 ORDER BY s.[name], o.[name];

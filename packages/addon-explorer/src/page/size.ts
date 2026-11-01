@@ -1,6 +1,7 @@
 // A table's size, read apart from its plot: the plot is the columns and keys, the size bar is the bytes.
 // Lengths are linear, so half the length is half the bytes, and every figure is named beside its bar.
-import type { TableStats } from 'dbtour/model';
+import { formatBytes, formatCount } from 'dbtour/markdown';
+import type { Table, TableStats } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
 
 /**
@@ -38,4 +39,13 @@ export function sizeTerms(database: string): { rows: string; data: string; index
     data: 'The pages the rows sit on: the table itself, its heap or clustered index.',
     indexes: 'The pages every other index takes beside it.',
   };
+}
+
+/**
+ * What an index line says over its bar: rows and size; for a view, that it keeps none; and for a table the
+ * source gave no stats, nothing, since a missing count is not an empty table.
+ */
+export function sizeCaption(stats: TableStats | undefined, kind: Table['kind']): string {
+  if (stats) return `${formatCount(stats.rows)} rows · ${formatBytes(stats.dataBytes + stats.indexBytes)}`;
+  return kind === 'view' ? 'no rows of its own' : '';
 }

@@ -51,7 +51,8 @@ function repository({ published = [] as string[], registryDown = false, publishF
     ? 'echo "npm error code ENOTFOUND" >&2; exit 1'
     : `if grep -qx "$2" "${registry}"; then echo "\${2##*@}"; else echo "npm error code E404" >&2; exit 1; fi`;
   // publishFails is what npm prints when the registry refuses a publish; empty, the publish succeeds.
-  const publish = publishFails ? `printf '%s\\n' "${publishFails}" >&2; exit 1` : 'true';
+  // A publish reads a line from its input, as npm does when it asks for a one-time password.
+  const publish = publishFails ? `printf '%s\\n' "${publishFails}" >&2; exit 1` : `read -r otp; echo "npm read $otp" >> "${calls}"`;
   writeFileSync(join(bin, 'npm'), `#!/bin/sh\necho "npm $*" >> "${calls}"\nif [ "$1" = view ]; then ${view}; fi\nif [ "$1" = publish ]; then ${publish}; fi\n`);
   writeFileSync(join(bin, 'gh'), `#!/bin/sh\necho "gh $*" >> "${calls}"\n`);
   for (const tool of ['npm', 'gh']) chmodSync(join(bin, tool), 0o755);
@@ -63,13 +64,15 @@ function repository({ published = [] as string[], registryDown = false, publishF
   git('remote', 'add', 'origin', origin);
   git('push', '-q', 'origin', 'main');
 
-  const release = (...args: string[]) => {
+  const release = (...args: string[]) => releaseWith('', ...args);
+  /** Runs the script with `input` on its standard input, as a person typing at the terminal. */
+  const releaseWith = (input: string, ...args: string[]) => {
     const env = { ...process.env, ...identity, PATH: `${bin}:${process.env.PATH}`, GITHUB_OUTPUT: join(root, 'output') };
-    const result = spawnSync(process.execPath, ['scripts/release.mjs', ...args], { cwd: work, env, encoding: 'utf8' });
+    const result = spawnSync(process.execPath, ['scripts/release.mjs', ...args], { cwd: work, env, encoding: 'utf8', input });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   };
   const called = () => (existsSync(calls) ? readFileSync(calls, 'utf8') : '');
-  return { root, git, release, called };
+  return { root, git, release, releaseWith, called };
 }
 
 /** The workspaces npm was asked to publish, in order. */
@@ -215,4 +218,11 @@ test('a publish npm refuses ends in a sentence saying what to do, not a stack tr
   result = tagged({ publishFails: 'npm error code E500' }).release('--publish');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /npm did not publish dbtour@0\.2\.2 \(npm error code E500\)\. Fix what npm says above, then run it again: what is on npm already is skipped\./);
+});
+
+test('a publish by hand keeps the terminal, so npm can ask for the one-time password', () => {
+  const repo = tagged();
+  const result = repo.releaseWith('123456\n', '--publish');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(repo.called(), /^npm read 123456$/m, 'what was typed reached npm');
 });
