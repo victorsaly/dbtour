@@ -24,6 +24,10 @@
   statements have no semicolon between them, and a CTE stands for its name only in its own statement and its
   UNION branches. A column's alias, written with AS, without it or as `alias = expression`, does not rank
   the tables.
+- A long query is checked to its end and quickly: the reader asks CodeMirror for the whole tree (it parses a
+  new document only so far, the rest in the background), and reads each statement once per change, not once
+  per name checked; 2,000 qualified names took 1.6 s and now take 20 ms. DISTINCT, ALL and TOP before the
+  first column no longer hide it from the table ranking.
 - Tab or Enter pressed while CodeMirror is still refreshing the list for the last letter typed (it takes no
   pick for 75 ms after the list changes, nor while its sources answer) takes the suggestion as soon as it can,
   instead of leaving the editor or typing a new line. Typing on drops it. The browser test presses at once,

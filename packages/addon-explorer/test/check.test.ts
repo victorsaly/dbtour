@@ -113,3 +113,14 @@ test('each query reads its own tables, and a CTE is the CTE only in its own stat
   assert.deepEqual(check('WITH Orders AS (SELECT 1 AS Extra) SELECT * FROM Orders; SELECT o.Totl FROM Orders o;').map((c) => c.text), ['Totl']);
   assert.deepEqual(check('WITH r AS (SELECT 1 AS a) SELECT a FROM r UNION SELECT a FROM r'), [], 'a UNION branch is in the CTE\'s statement');
 });
+
+test('a long query is checked to its end, in one reading of it', () => {
+  const references = 1000;
+  const doc = `SELECT ${Array.from({ length: references }, () => 'o.Totl').join(', ')} FROM dbo.Orders o`;
+  const started = performance.now();
+  const marks = check(doc);
+  const ms = performance.now() - started;
+  assert.equal(marks.length, references, 'every reference, past the part CodeMirror parses first');
+  // Read once, it takes a few tens of milliseconds here; read again per reference it took seconds.
+  assert.ok(ms < 1500, `${Math.round(ms)} ms for ${references} references`);
+});

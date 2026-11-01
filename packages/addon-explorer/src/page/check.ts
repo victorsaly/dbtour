@@ -4,10 +4,9 @@
 // model can answer is checked: a CTE, a temporary table, a variable, a function, a subquery, another database
 // or a schema it has not read (sys, say) is left alone. Pure, so test/check.test.ts runs it as the editor does.
 import type { Diagnostic } from '@codemirror/lint';
-import { syntaxTree } from '@codemirror/language';
 import type { EditorState } from '@codemirror/state';
 import { localRef } from 'dbtour/model';
-import { namesInQuery, readAt, setupOf, unquote } from './complete.ts';
+import { namesInQuery, readAt, setupOf, treeOf, unquote } from './complete.ts';
 import { quoteName } from './query.ts';
 
 const extractAgain = 'If it is new, run dbtour extract again.';
@@ -42,14 +41,14 @@ export function unknownNames(state: EditorState): Diagnostic[] {
     marks.push(mark(item.at, item.to, `dbtour knows no table ${written} in ${found.databaseName}`, fix));
   }
   const tableAt = new Set(items.map((item) => item.at));
-  syntaxTree(state).iterate({
+  treeOf(state).iterate({
     enter: (ref) => {
       if (ref.name !== 'CompositeIdentifier' || tableAt.has(ref.from) || ref.node.nextSibling?.name === 'Parens') return;
       const parts = [];
       for (let child = ref.node.firstChild; child; child = child.nextSibling) if (child.name === 'Identifier' || child.name === 'QuotedIdentifier') parts.push(child);
       if (parts.length !== 2) return;
       const column = parts[1];
-      const known = readAt(state, column.from, found.index).dotted?.known;
+      const known = readAt(state, column.from, found.index, { place: false }).dotted?.known;
       if (!known) return;
       // CodeMirror's parser ends a "quoted name" at its first quote, so "a""b" comes as "a" and "b": joined
       // again, as T-SQL reads a doubled quote.

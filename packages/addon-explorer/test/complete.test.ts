@@ -320,3 +320,10 @@ test('a column\'s alias, with AS, without it or as alias = expression, does not 
   assert.equal((await applies('SELECT Email = Price FROM |'))[0], 'dbo.Products AS p');
   assert.equal((await applies('SELECT p.Price Email, Sku FROM |'))[0], 'dbo.Products AS p');
 });
+
+test('DISTINCT, ALL and TOP before the first column do not hide it from the ranking', async () => {
+  assert.equal((await applies('SELECT DISTINCT Price FROM |'))[0], 'dbo.Products AS p');
+  assert.equal((await applies('SELECT ALL Price FROM |'))[0], 'dbo.Products AS p');
+  assert.equal((await applies('SELECT TOP (100) Price FROM |'))[0], 'dbo.Products AS p');
+  assert.equal((await applies('SELECT TOP 10 PERCENT WITH TIES Price FROM |'))[0], 'dbo.Products AS p');
+});

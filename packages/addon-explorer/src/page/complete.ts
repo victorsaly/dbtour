@@ -7,7 +7,7 @@
 // is counted, and comes first among equals. Pure, so the cases in test/complete.test.ts run it as the editor does.
 import { snippet, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from '@codemirror/autocomplete';
 import { keywordCompletionSource, MSSQL, schemaCompletionSource, SQLDialect, type SQLNamespace } from '@codemirror/lang-sql';
-import { LanguageSupport, syntaxTree } from '@codemirror/language';
+import { ensureSyntaxTree, LanguageSupport, syntaxTree } from '@codemirror/language';
 import { Facet, type EditorState, type Extension, type TransactionSpec } from '@codemirror/state';
 import { findTable, localRef, relationsOf, tableRef, type Model } from 'dbtour/model';
 import { aliasFor, completionSchema, isProtected, joinCompletions, quoteName, quoteRef, type TableSuggestions } from './query.ts';
@@ -84,6 +84,30 @@ export function setupOf(state: EditorState): Setup | undefined {
 }
 
 type Node = ReturnType<typeof syntaxTree>['topNode'];
+type Tree = ReturnType<typeof syntaxTree>;
+
+// CodeMirror parses a new document only so far, and the rest in the background; asked for the whole, it is
+// given this long to finish, a few frames, enough for a long query, and what it has by then is read.
+const parseBudgetMs = 50;
+const trees = new WeakMap<EditorState, Tree>();
+
+// What one state's query is read into, kept for the next reference in the same state: the check asks about
+// every qualified name, and reading the statement again for each made a long query's check quadratic.
+const memo = new WeakMap<EditorState, Map<string, unknown>>();
+
+function cached<T>(state: EditorState, key: string, make: () => T): T {
+  let known = memo.get(state);
+  if (!known) memo.set(state, (known = new Map()));
+  if (!known.has(key)) known.set(key, make());
+  return known.get(key) as T;
+}
+
+/** The query's syntax tree to its end, parsed once per state: the check and the reader read all of it. */
+export function treeOf(state: EditorState): Tree {
+  let tree = trees.get(state);
+  if (!tree) trees.set(state, (tree = ensureSyntaxTree(state, state.doc.length, parseBudgetMs) ?? syntaxTree(state)));
+  return tree;
+}
 
 /** A table of the model, by its ref, its name in this database's SQL, and what autocomplete says of it. */
 export interface Known {
@@ -406,8 +430,11 @@ function knownTables(model: Model, databaseName: string | undefined): Map<string
   return index;
 }
 
-/** What is at `pos`: the place, the tables in scope there, and the table a name-and-dot before it names. */
-export function readAt(state: EditorState, pos: number, index: Map<string, Known>): Reading {
+/**
+ * What is at `pos`: the place, the tables in scope there, and the table a name-and-dot before it names. The
+ * check, which needs only the last, says `place: false`, and the place (what fits there) is not worked out.
+ */
+export function readAt(state: EditorState, pos: number, index: Map<string, Known>, { place = true }: { place?: boolean } = {}): Reading {
   const reading: Reading = {
     quiet: false,
     quoted: false,
@@ -420,20 +447,24 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
     unknownOwn: false,
     scope: [],
   };
-  const tree = syntaxTree(state);
+  const tree = treeOf(state);
   const here = tree.resolveInner(pos, -1);
   if (/^(String|LineComment|BlockComment)$/.test(here.name) && here.from < pos) return { ...reading, quiet: true };
   reading.quoted = here.name === 'QuotedIdentifier' && here.from < pos;
 
-  // The statement and the parentheses around the caret, innermost first.
+  // The statement and the parentheses around the caret, innermost first: up from the token at it, or, in
+  // the space after an open statement or parenthesis, which no token holds, down from the top.
   const levels: Node[] = [];
-  for (let node: Node | null = tree.topNode; node; ) {
-    let inner: Node | null = null;
-    for (let child: Node | null = node.firstChild; child && child.from < pos; child = child.nextSibling) {
-      if ((child.name === 'Statement' || child.name === 'Parens') && (pos < child.to || isOpen(child))) inner = child;
+  const around = (n: Node) => (n.name === 'Statement' || n.name === 'Parens') && n.from < pos && (pos < n.to || isOpen(n));
+  for (let n: Node | null = here; n; n = n.parent) if (around(n)) levels.push(n);
+  if (levels[levels.length - 1]?.name !== 'Statement') {
+    levels.length = 0;
+    for (let node: Node | null = tree.topNode; node; ) {
+      let inner: Node | null = null;
+      for (let child: Node | null = node.firstChild; child && child.from < pos; child = child.nextSibling) if (around(child)) inner = child;
+      if (inner) levels.unshift(inner);
+      node = inner;
     }
-    if (inner) levels.unshift(inner);
-    node = inner;
   }
 
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
@@ -448,12 +479,8 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
   const bound = new Set<string>();
   // Names bound to a CTE, a subquery or a table the model does not know: a dot after one names no model table.
   const boundElsewhere = new Set<string>();
-  const scopes = cteScopes(state);
-  const isCte = (name: string, at: number) => ctesAt(scopes, at).has(name);
   levels.forEach((level, depth) => {
-    const tokens = tokensOf(level);
-    const segment = segmentAround(tokens, anchor, text);
-    const items = fromItems(segment, text, index, isCte);
+    const { segment, items } = queryAround(state, level, anchor, index);
     for (const item of items) {
       const name = item.name.toLowerCase();
       if (bound.has(name)) continue;
@@ -462,7 +489,7 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
     }
     for (const item of items) bound.add(item.name.toLowerCase());
     for (const item of items) if (item.name) reading.taken.add(item.name.toLowerCase());
-    if (depth === 0) {
+    if (depth === 0 && place) {
       const before = segment.filter((t) => t.to <= nameFrom);
       const prev = before[before.length - 1];
       const prevWord = prev?.name === 'Keyword' ? text(prev).toUpperCase() : '';
@@ -474,7 +501,7 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
         const start = [...before].reverse().find((t) => t.name === 'Keyword' && (tableStarts.has(text(t).toUpperCase()) || text(t).toUpperCase() === 'ON'));
         reading.afterTable = { joining: start !== undefined && text(start).toUpperCase() === 'JOIN' };
       }
-      reading.selected = selectedColumns(segment, text);
+      reading.selected = cached(state, `selected:${segment[0]?.from}`, () => selectedColumns(segment, text));
       reading.star = starAt(state, pos, segment, text);
       reading.aliased = (items.find((item) => item.at === nameFrom)?.ends.length ?? 0) > 1;
       reading.unknownOwn = items.some((item) => !item.known);
@@ -533,7 +560,7 @@ export function namesInQuery(state: EditorState, index: Map<string, Known>): Fro
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
   const items: FromItem[] = [];
   const scopes = cteScopes(state);
-  syntaxTree(state).iterate({
+  treeOf(state).iterate({
     enter: (ref) => {
       if (ref.name === 'Statement' || ref.name === 'Parens') items.push(...fromItems(tokensOf(ref.node), text, index, (name, at) => ctesAt(scopes, at).has(name)));
     },
@@ -557,10 +584,14 @@ const branchJoins = new Set(['UNION', 'ALL', 'EXCEPT', 'INTERSECT']);
  * to the next query that is not one of its UNION branches; a table so named there is the CTE, not the model's.
  */
 function cteScopes(state: EditorState): Cte[] {
+  return cached(state, 'ctes', () => readCteScopes(state));
+}
+
+function readCteScopes(state: EditorState): Cte[] {
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
   const scopes: Cte[] = [];
   const word = (t: Node | undefined) => (t?.name === 'Keyword' ? text(t).toUpperCase() : '');
-  for (let statement = syntaxTree(state).topNode.firstChild; statement; statement = statement.nextSibling) {
+  for (let statement = treeOf(state).topNode.firstChild; statement; statement = statement.nextSibling) {
     if (statement.name !== 'Statement') continue;
     const tokens = tokensOf(statement);
     tokens.forEach((t, w) => {
@@ -637,15 +668,25 @@ function isComma(node: Node | undefined, text: (n: Node) => string): boolean {
 }
 
 /** The tokens of the one query around `at`: from the SELECT, UPDATE and so on before it to the next. */
-function segmentAround(tokens: Node[], at: number, text: (n: Node) => string): Node[] {
-  let start = 0;
-  let end = tokens.length;
-  tokens.forEach((t, i) => {
-    if (t.name !== 'Keyword' || !queryStarts.has(text(t).toUpperCase())) return;
-    if (t.from <= at) start = i;
-    else if (i < end && t.from > at) end = Math.min(end, i);
+/**
+ * The one query of a statement or parenthesis that `at` is in, from the SELECT, UPDATE and so on before it to
+ * the next, and the tables it names. Each level is split, and each query read, once per state.
+ */
+function queryAround(state: EditorState, level: Node, at: number, index: Map<string, Known>): { segment: Node[]; items: FromItem[] } {
+  const text = (n: Node) => state.sliceDoc(n.from, n.to);
+  const segments = cached(state, `segments:${level.from}:${level.name}`, () => {
+    const tokens = tokensOf(level);
+    const starts = tokens.flatMap((t, i) => (i > 0 && t.name === 'Keyword' && queryStarts.has(text(t).toUpperCase()) ? [i] : []));
+    return [0, ...starts].map((start, k, all) => tokens.slice(start, all[k + 1] ?? tokens.length));
   });
-  return tokens.slice(start, end);
+  let i = 0;
+  while (i + 1 < segments.length && (segments[i + 1][0]?.from ?? Infinity) <= at) i++;
+  const segment = segments[i];
+  const items = cached(state, `items:${level.from}:${level.name}:${i}`, () => {
+    const scopes = cteScopes(state);
+    return fromItems(segment, text, index, (name, from) => ctesAt(scopes, from).has(name));
+  });
+  return { segment, items };
 }
 
 /**
@@ -658,8 +699,18 @@ function selectedColumns(segment: Node[], text: (n: Node) => string): string[] {
   if (start < 0) return out;
   const end = segment.findIndex((t, i) => i > start && t.name === 'Keyword' && text(t).toUpperCase() === 'FROM');
   // The select list's items, split at its commas (a function's are inside its parentheses).
+  // DISTINCT, ALL and TOP (n) [PERCENT] [WITH TIES] come before the first item, not in it.
+  const word = (t: Node | undefined) => (t?.name === 'Keyword' ? text(t).toUpperCase() : '');
+  let first = start + 1;
+  if (word(segment[first]) === 'DISTINCT' || word(segment[first]) === 'ALL') first++;
+  if (word(segment[first]) === 'TOP') {
+    first += 2;
+    if (word(segment[first]) === 'PERCENT') first++;
+    // CodeMirror's T-SQL does not know TIES as a keyword: it comes as a name.
+    if (word(segment[first]) === 'WITH' && segment[first + 1] && text(segment[first + 1]).toUpperCase() === 'TIES') first += 2;
+  }
   const items: Node[][] = [[]];
-  for (const t of segment.slice(start + 1, end < 0 ? undefined : end)) {
+  for (const t of segment.slice(first, end < 0 ? undefined : end)) {
     if (isComma(t, text)) items.push([]);
     else items[items.length - 1].push(t);
   }
