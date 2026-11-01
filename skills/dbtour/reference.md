@@ -87,4 +87,10 @@ ALTER ROLE db_datareader ADD MEMBER dbtour_reader;
 ```
 
 Then `export DBTOUR_MSSQL_READER='Server=…;Database=Shop;User Id=dbtour_reader;Password=…'` in their own shell.
-Even so, every query runs inside a transaction that is rolled back, with a row limit and a timeout.
+Even so, every query runs inside a transaction that is rolled back, with a row limit, a byte budget and a timeout.
+
+What dbtour checks before a query runs is its shape: one read, nothing that writes, runs code or ends the
+transaction. It cannot see what a name points to: a synonym, another database's table (`OtherDb.dbo.T`) or a
+linked server. The reader's permissions are that boundary, so keep it to this database alone: a contained user
+on Azure SQL, or on SQL Server a login with a user in this database and none in the others, no linked-server
+login, and the `guest` user disabled where it need not be on.

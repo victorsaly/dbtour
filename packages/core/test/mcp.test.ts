@@ -237,3 +237,12 @@ test('query is offered only when a source has a reader, refuses before it runs, 
   const unoffered = (await call({ sql: 'SELECT 1' }, context())) as { error: { message: string } };
   assert.match(unoffered.error.message, /no tool "query"/);
 });
+
+test('the review: a query whose run throws is a failed call, and the server answers the next request', async () => {
+  const throwing: Context = { ...context(), run: async () => { throw new Error('connection reset'); } };
+  const reply = (await answer({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'query', arguments: { sql: 'SELECT 1' } } }, throwing)) as { result: { isError: boolean; content: { text: string }[] } };
+  assert.equal(reply.result.isError, true);
+  assert.match(reply.result.content[0].text, /connection reset/);
+  const noWords = (await answer({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'query', arguments: { sql: ';' } } }, throwing)) as { result: { isError: boolean } };
+  assert.equal(noWords.result.isError, true);
+});

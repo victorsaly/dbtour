@@ -174,7 +174,12 @@ async function callQuery(run: NonNullable<Context['run']>, args: Record<string, 
   if (typeof args.sql !== 'string' || args.sql.trim() === '') return problem('query needs sql: one SELECT, like SELECT TOP (10) * FROM dbo.Orders.');
   const checked = checkQuery(args.sql);
   if (!checked.ok) return problem(checked.reason);
-  return run(checked.sql, typeof args.source === 'string' ? args.source : undefined, typeof args.limit === 'number' ? args.limit : undefined);
+  // Whatever goes wrong in the database is this call's failure, not the server's: the next request is answered.
+  try {
+    return await run(checked.sql, typeof args.source === 'string' ? args.source : undefined, typeof args.limit === 'number' ? args.limit : undefined);
+  } catch (error) {
+    return problem(error instanceof Error ? error.message : String(error));
+  }
 }
 
 function success(id: Id, result: object): object {

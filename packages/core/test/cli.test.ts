@@ -280,3 +280,14 @@ test('sql picks the one source with a reader, wants --source when several have o
   assert.equal(await main(['sql', 'SELECT 1', '--source', 'Nope'], { cwd, env, load, ...d.io }), 1);
   assert.match(d.err.join('\n'), /no source named Nope: Sales, Stock, Logs/);
 });
+
+test('the review: two sources of one name are ambiguous, and sql refuses to guess which', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: fake\n    name: Sales\n    connection: ${A}\n    reader: ${A_READER}\n  - type: fake\n    name: Sales\n    connection: ${B}\n    reader: ${B_READER}\n');
+  let ran = false;
+  const load = async () => ({ extract: async (): Promise<never> => { throw new Error('no'); }, run: async () => ((ran = true), { columns: [], rows: [], truncated: false, limit: 1 }) });
+  const a = io();
+  assert.equal(await main(['sql', 'SELECT 1', '--source', 'Sales'], { cwd, env: { A: 'a', A_READER: 'ar', B: 'b', B_READER: 'br' }, load, ...a.io }), 1);
+  assert.match(a.err.join('\n'), /Two sources are named Sales: give each its own name in dbtour\.yaml/);
+  assert.equal(ran, false);
+});

@@ -262,9 +262,11 @@ async function runQuery(io: Io, config: Config, text: string, sourceName: string
 /** The source named, or the only one with a reader; several want a name, and none says what to add. */
 function pickSource(config: Config, name: string | undefined): SourceConfig {
   if (name !== undefined) {
-    const named = config.sources.find((s) => s.name === name);
-    if (!named) throw new Error(`There is no source named ${name}: ${config.sources.map((s) => s.name).join(', ')}`);
-    return named;
+    const named = config.sources.filter((s) => s.name === name);
+    if (named.length === 0) throw new Error(`There is no source named ${name}: ${config.sources.map((s) => s.name).join(', ')}`);
+    // Two of one name would leave which database the query runs in to the order of the file.
+    if (named.length > 1) throw new Error(`Two sources are named ${name}: give each its own name in ${configFile}, then run it again`);
+    return named[0];
   }
   const readers = config.sources.filter((s) => s.reader !== undefined);
   if (readers.length === 1) return readers[0];

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validate, findTable, emptyModel } from 'dbtour';
-import { mapRecordsets, toQueryResult, toRecordsets, formatType, type Recordsets } from '../src/map.ts';
+import { mapRecordsets, RowCollector, sizeOf, toRecordsets, formatType, type Recordsets } from '../src/map.ts';
 
 const rows = (): Recordsets => JSON.parse(readFileSync(new URL('./fixtures/rows.json', import.meta.url), 'utf8'));
 
@@ -291,10 +291,19 @@ test('query.sql quotes balance, and so does every query it assembles as text', (
   assert.throws(() => literals("SELECT N'\n-- a partition's note\nSELECT 1';", 'the example'), /stray apostrophe|ends inside a string/);
 });
 
-test('a query\'s result: its columns in order, the rows past the limit cut and said, a column without a name numbered', () => {
-  const columns = [{ name: 'Id' }, { name: '' }, { name: 'Id' }];
-  const rows = [[1, 10, 'a'], [2, 20, 'b'], [3, 30, 'c']];
-  assert.deepEqual(toQueryResult(columns, rows, 2), { columns: ['Id', '(column 2)', 'Id'], rows: [[1, 10, 'a'], [2, 20, 'b']], truncated: true, limit: 2 });
-  assert.deepEqual(toQueryResult(columns, rows, 3).truncated, false, 'exactly the limit is not cut');
-  assert.deepEqual(toQueryResult(undefined, undefined, 100), { columns: [], rows: [], truncated: false, limit: 100 }, 'a statement that returned nothing');
+test('the review: rows are collected up to the limit or a byte budget, whichever comes first, and say which', () => {
+  const rows = new RowCollector(2, 1000);
+  rows.start([{ name: 'Id' }, { name: 'Doc' }]);
+  assert.equal(rows.add([1, 'a']), true);
+  assert.equal(rows.add([2, 'b']), true);
+  assert.equal(rows.add([3, 'c']), false, 'one past the limit: stop');
+  assert.deepEqual(rows.result(), { columns: ['Id', 'Doc'], rows: [[1, 'a'], [2, 'b']], truncated: true, limit: 2, reason: 'limit' });
+
+  const big = new RowCollector(100, 1000);
+  big.start([{ name: 'Doc' }]);
+  assert.equal(big.add(['x'.repeat(300)]), true);
+  assert.equal(big.add(['x'.repeat(300)]), false, 'past the budget: stop, keeping what fitted');
+  assert.deepEqual([big.result().rows.length, big.result().truncated, big.result().reason], [1, true, 'size']);
+  assert.equal(new RowCollector(1, 1000).result().truncated, false);
+  assert.ok(sizeOf(Buffer.alloc(50)) === 50 && sizeOf('ab') === 4 && sizeOf(null) > 0);
 });

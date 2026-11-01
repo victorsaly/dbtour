@@ -145,8 +145,10 @@ npx dbtour sql "SELECT TOP (10) Id, Status FROM dbo.Orders ORDER BY Id DESC"
 and `dbtour mcp` offers a **query** tool beside the others, so an agent can check what it wrote. Either way it
 runs one SELECT, or WITH … SELECT: anything that writes, runs code or reaches out of the database is refused
 before a connection is made, and what runs does so inside a transaction that is always rolled back, at most
-100 rows (`--limit` up to 5,000) and 30 seconds. The rows are shown, never written into the model. Through the
-MCP server they go to the model provider your agent uses.
+100 rows (`--limit` up to 5,000), 10 MB and 30 seconds. The rows are shown, never written into the model.
+Through the MCP server they go to the model provider your agent uses. What dbtour checks is the query's shape;
+what a name can reach (another database, a linked server) is the reader's permissions, so keep the reader to
+this database alone.
 
 ## Develop
 

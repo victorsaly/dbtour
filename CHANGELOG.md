@@ -11,9 +11,17 @@
   SQL Server does: one SELECT or WITH, nothing that writes, runs code, declares or sets, reaches out of the
   database (OPENROWSET and the like) or writes a table with SELECT … INTO. A refusal says why and never
   connects.
-- The SQL Server source exports `run()`: inside a transaction that is always rolled back, `SET ROWCOUNT` one
-  row past the limit (100 by default, 5,000 at most), cancelled after 30 seconds, rows as arrays so two columns
-  of one name both come back. The result is a table for the terminal and the agent, or JSON.
+- The SQL Server source exports `run()`: inside a transaction that is always rolled back, rows streamed
+  into a collector that stops at the limit (100 by default, 5,000 at most) or 10 MB, whichever comes first,
+  and cancels the query there, `SET ROWCOUNT` one row past the limit, cancelled after 30 seconds (the driver's
+  own timeout set past it), rows as arrays so two columns of one name both come back. The result is a table
+  for the terminal and the agent, or JSON.
+- The check does not trust semicolons, which T-SQL does not need: a second top-level SELECT not joined by
+  UNION, EXCEPT or INTERSECT is refused, as are transaction control, NEXT VALUE FOR (a sequence moves on
+  through a rollback) and a `--` comment's carriage return hiding a statement. It cannot see what a name
+  points to, so the reader's permissions are the boundary for other databases and linked servers, as
+  `reference.md` says. Two sources of one name are refused rather than guessed between, and a query tool call
+  that fails is the call's error, never the MCP server's end.
 - The skill learns to run what it writes: read the tables first all the same, select only what the question
   needs, leave protected columns out, and without a reader hand the query over rather than ask for a login.
   `reference.md` shows how to make the reader, on SQL Server and Azure SQL.

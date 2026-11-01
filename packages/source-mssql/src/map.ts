@@ -312,17 +312,62 @@ function pattern(text: string): RegExp {
   return new RegExp('^' + text.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$', 'i');
 }
 
+/** Roughly how many bytes a value holds in memory: text two to a character, bytes as they are. */
+export function sizeOf(value: unknown): number {
+  if (value === null || value === undefined) return 1;
+  if (typeof value === 'string') return value.length * 2;
+  if (value instanceof Uint8Array) return value.length;
+  return 8;
+}
+
 /**
- * What a query returned, from the driver's array rows: the columns in order (one without a name, such as an
- * unaliased COUNT(*), numbered), and at most `limit` rows. run() asks for one row more than the limit, so
- * having it says the limit stopped the query.
+ * The rows of a query as they stream in, kept until one is past the limit or they outgrow the byte budget.
+ * add() says whether to go on; run() cancels the query when it says no, so neither the rows nor their size
+ * is ever more than one row past what is kept.
  */
-export function toQueryResult(columns: { name: string }[] | undefined, rows: unknown[][] | undefined, limit: number): QueryResult {
-  const all = rows ?? [];
-  return {
-    columns: (columns ?? []).map((c, i) => c.name || `(column ${i + 1})`),
-    rows: all.slice(0, limit),
-    truncated: all.length > limit,
-    limit,
-  };
+export class RowCollector {
+  private columns: string[] = [];
+  private rows: unknown[][] = [];
+  private bytes = 0;
+  private stopped?: 'limit' | 'size';
+  private readonly limit: number;
+  private readonly budget: number;
+
+  constructor(limit: number, budget: number) {
+    this.limit = limit;
+    this.budget = budget;
+  }
+
+  /** A new result set: its columns, and its rows from nothing. */
+  start(columns: { name: string }[]): void {
+    this.columns = columns.map((c, i) => c.name || `(column ${i + 1})`);
+    this.rows = [];
+    this.bytes = 0;
+  }
+
+  add(row: unknown[]): boolean {
+    if (this.rows.length >= this.limit) {
+      this.stopped = 'limit';
+      return false;
+    }
+    const size = row.reduce<number>((sum, value) => sum + sizeOf(value), 0);
+    if (this.bytes + size > this.budget) {
+      this.stopped = 'size';
+      return false;
+    }
+    this.rows.push(row);
+    this.bytes += size;
+    return true;
+  }
+
+  /** Whether add() has stopped it; a cancelled query's error is then expected, not a failure. */
+  get done(): boolean {
+    return this.stopped !== undefined;
+  }
+
+  result(): QueryResult {
+    const result: QueryResult = { columns: this.columns, rows: this.rows, truncated: this.stopped !== undefined, limit: this.limit };
+    if (this.stopped) result.reason = this.stopped;
+    return result;
+  }
 }

@@ -77,3 +77,27 @@ test('the reader is a login of its own: required to run, never the extract\'s co
   assert.throws(() => resolveReader({ ...source, reader: 'Server=x;Password=y' }, {}), /environment variable/);
   assert.throws(() => resolveReader(source, { DBTOUR_MSSQL: 'Server=x' }), /Set DBTOUR_MSSQL_READER/);
 });
+
+test('the review: statements without semicolons, a comment ended by a carriage return, transactions, sequences, no words', () => {
+  // T-SQL needs no semicolon between statements: a second top-level SELECT, or COMMIT, starts another.
+  assert.match(refused('SELECT 1 COMMIT TRANSACTION SELECT 2'), /COMMIT/);
+  assert.match(refused('SELECT 1 SELECT 2'), /second SELECT/);
+  assert.match(refused('SELECT Id FROM dbo.Orders BEGIN TRAN'), /BEGIN/);
+  // A carriage return ends a -- comment as a line feed does.
+  assert.match(refused('SELECT 1 -- note\rDELETE FROM dbo.Orders\rCOMMIT TRANSACTION'), /DELETE/);
+  // A sequence moves on even when the transaction is rolled back; FETCH NEXT, for paging, is a read.
+  assert.match(refused('SELECT NEXT VALUE FOR dbo.OrderSequence'), /NEXT VALUE FOR.*sequence/);
+  assert.equal(checkQuery('SELECT Id FROM dbo.Orders ORDER BY Id OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY').ok, true);
+  // What reads as one query still passes: unions, subqueries, CTEs.
+  assert.equal(checkQuery('SELECT 1 UNION ALL SELECT 2 EXCEPT SELECT 3 INTERSECT SELECT 4').ok, true);
+  assert.equal(checkQuery('(SELECT 1) UNION (SELECT 2)').ok, true);
+  assert.equal(checkQuery('WITH a AS (SELECT 1 AS n), b AS (SELECT n FROM a) SELECT n, (SELECT COUNT(*) FROM a) FROM b').ok, true);
+  // Something that is not a query at all is refused, not thrown.
+  assert.match(refused(';'), /no query/i);
+  assert.match(refused('123'), /starts with 123|no query/i);
+});
+
+test('the review: a result the byte budget stopped says so, and how to fix it', () => {
+  const text = resultText({ columns: ['Doc'], rows: [['x']], truncated: true, limit: 100, reason: 'size' });
+  assert.match(text, /The first 1 row: they came to more than 10 MB\. Select fewer or narrower columns\.$/);
+});
