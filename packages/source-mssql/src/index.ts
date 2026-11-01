@@ -5,8 +5,55 @@ import { readFileSync } from 'node:fs';
 import sql from 'mssql';
 import { maxResultBytes, type Database, type QueryResult, type RunOptions, type SourceConfig } from 'dbtour';
 import { mapRecordsets, RowCollector, toRecordsets } from './map.ts';
+import { bracket, extraRoles, readerStatements } from './setup.ts';
 
 export { mapRecordsets, RowCollector, sizeOf, toRecordsets, formatType } from './map.ts';
+export { connectionString, readerStatements } from './setup.ts';
+
+/**
+ * Whether `user` is already a user of the database the admin connection is in, and its roles: what setup
+ * shows before it creates the reader, and how it refuses a login that could do more than read.
+ */
+export async function readerState(admin: string, user: string): Promise<{ exists: boolean; roles: string[] }> {
+  const pool = await new sql.ConnectionPool(admin).connect();
+  try {
+    const roles = await pool.request().input('user', sql.NVarChar, user).query(
+      `SELECT r.name FROM sys.database_role_members AS m
+       JOIN sys.database_principals AS r ON r.principal_id = m.role_principal_id
+       WHERE m.member_principal_id = DATABASE_PRINCIPAL_ID(@user)`,
+    );
+    const id = await pool.request().input('user', sql.NVarChar, user).query('SELECT DATABASE_PRINCIPAL_ID(@user) AS id');
+    return { exists: id.recordset[0].id !== null, roles: roles.recordset.map((r: { name: string }) => r.name) };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Makes `user` this database's reader with the admin's connection: a contained user with db_datareader alone,
+ * or, when it is one already, its password reset. A user that holds any other role is refused, as it could
+ * write. The password is one dbtour made (letters, digits and -), never one typed, so it can sit in the DDL,
+ * which takes no parameters. Then the reader signs in, so a wrong password is found here and not at the first
+ * query.
+ */
+export async function createReader(admin: string, user: string, password: string, readerConnection: string): Promise<void> {
+  if (!/^[A-Za-z0-9-]{20,}$/.test(password)) throw new Error('The reader\'s password must be one dbtour made: run it again');
+  const state = await readerState(admin, user);
+  const more = extraRoles(state.roles);
+  if (more.length) throw new Error(`${user} already has ${more.join(', ')}, so it could do more than read: pick another reader name, or remove those roles, then run it again`);
+  const pool = await new sql.ConnectionPool(admin).connect();
+  try {
+    for (const statement of readerStatements(user, state.exists, password)) await pool.request().batch(statement);
+  } finally {
+    await pool.close();
+  }
+  const reader = await new sql.ConnectionPool(readerConnection).connect();
+  try {
+    await reader.request().query(`SELECT 1 AS signedIn /* ${bracket(user)} */`);
+  } finally {
+    await reader.close();
+  }
+}
 
 export const query = readFileSync(new URL('./query.sql', import.meta.url), 'utf8');
 

@@ -4,6 +4,7 @@
 import type { AddonConfig, SourceConfig } from './config.ts';
 import type { Api, Database, Model } from './model.ts';
 import type { QueryResult, RunOptions } from './sql.ts';
+import type { Target } from './workspace.ts';
 
 export type Extract = (config: SourceConfig) => Promise<Database | Api>;
 
@@ -13,10 +14,23 @@ export type Extract = (config: SourceConfig) => Promise<Database | Api>;
  */
 export type Run = (config: SourceConfig, sql: string, options: RunOptions) => Promise<QueryResult>;
 
+/** What a source offers dbtour's setup (dbtour add, the wizard); absent from one that cannot be set up there. */
+export interface Setup {
+  /** The connection string for where the database is and how dbtour signs in. */
+  connectionString: (target: Target) => string;
+  /** Whether a user exists in the database, and its roles, through the admin's connection. */
+  readerState: (admin: string, user: string) => Promise<{ exists: boolean; roles: string[] }>;
+  /** The statements that make a user the reader, as shown before they run (password hidden). */
+  readerStatements: (user: string, exists: boolean) => string[];
+  /** Runs them with the admin's connection and a password dbtour made, then signs in as the reader. */
+  createReader: (admin: string, user: string, password: string, readerConnection: string) => Promise<void>;
+}
+
 export interface Source {
   extract: Extract;
   /** Absent from a source that cannot run queries, or from one published before it could. */
   run?: Run;
+  setup?: Setup;
 }
 
 export type Importer = (specifier: string) => Promise<unknown>;
@@ -36,8 +50,13 @@ export async function loadSource(source: SourceConfig, importer: Importer = (s) 
   }
   const extract = (loaded as { extract?: unknown } | null)?.extract;
   if (typeof extract !== 'function') throw new Error(`${name} does not export extract(config), so it is not a dbtour source`);
-  const run = (loaded as { run?: unknown }).run;
-  return typeof run === 'function' ? { extract: extract as Extract, run: run as Run } : { extract: extract as Extract };
+  const { run, connectionString, readerState, readerStatements, createReader } = loaded as Partial<Record<string, unknown>>;
+  const found: Source = { extract: extract as Extract };
+  if (typeof run === 'function') found.run = run as Run;
+  if ([connectionString, readerState, readerStatements, createReader].every((f) => typeof f === 'function')) {
+    found.setup = { connectionString, readerState, readerStatements, createReader } as Setup;
+  }
+  return found;
 }
 
 /** Files to write under `out`, keyed by path, like renderMarkdown returns them. */
