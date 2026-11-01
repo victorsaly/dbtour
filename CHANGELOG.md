@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.1 (unreleased)
+
+- The packages ship JavaScript. 0.2.0 shipped TypeScript, which Node refuses to run from inside
+  node_modules, so `npx dbtour` failed on install. `npm run build` now compiles each package into `dist/`
+  (and `prepack` does it on publish); the repository still runs the `.ts` as it is. A smoke test installs
+  the packed tarballs into an empty project and runs `dbtour` from there, in CI too.
+
+## 0.2.0 (1 November 2026)
 
 - `dbtour-addon-explorer`: the page. Search over tables, columns and groups; a table view with its columns,
   keys, relations both ways, indexes and constraints; a diagram of a table with its neighbours that grows one
@@ -21,7 +28,7 @@
   renders beside the Markdown. `renderTableMarkdown`, `isUniqueColumn` and `driverName` are exported, and
   `dbtour/model` and `dbtour/markdown` are subpath exports for code that wants no YAML parser.
 
-## 0.1.0 (unreleased)
+## 0.1.0 (1 November 2026, in the same release)
 
 - Core: the model and its JSON Schema, notes merge, Markdown with Mermaid diagrams, the `init`, `extract`
   and `render` commands.

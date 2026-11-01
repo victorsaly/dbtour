@@ -1,0 +1,14 @@
+{
+  // What `npm run build` emits for publishing: Node will not strip types under node_modules, so the
+  // package ships JavaScript in dist/ with its .ts imports rewritten to .js. The repository itself keeps
+  // running the .ts as it is.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"]
+}

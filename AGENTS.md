@@ -20,9 +20,12 @@ For coding agents changing this repository. The design is in [PLAN.md](PLAN.md);
 
 ## How the code is written
 
-- TypeScript that Node 22.18+ runs as is: no build step, `.ts` in every import, nothing `erasableSyntaxOnly`
-  rejects. `npm run typecheck` checks it, `npm test` runs it. The one exception is the page's browser code,
-  which esbuild bundles and which may use JSX and the DOM.
+- TypeScript that Node 22.18+ runs as is in the repository: `.ts` in every import, nothing
+  `erasableSyntaxOnly` rejects; the tests import `src/` directly. `npm run typecheck` checks it, `npm test`
+  runs it. What the packages publish is compiled: Node will not strip types under node_modules, so
+  `npm run build` emits each package's `dist/` (tsc, with the `.ts` imports rewritten) and `exports` and
+  `bin` point there. The page's browser code is esbuild's and may use JSX and the DOM. `npm run smoke`
+  installs the packed tarballs in an empty project and runs `dbtour` from there; CI runs it too.
 - Comments say why, in plain words. Docs use British spelling (colour, licence).
 - A source owns its driver and nothing else depends on it. Core depends on `yaml` only.
 - A number that is waited for or measured is named and its value explained where it is defined.
@@ -34,6 +37,7 @@ For coding agents changing this repository. The design is in [PLAN.md](PLAN.md);
 
 ```bash
 npm run check   # lint, typecheck, unit tests with coverage
+npm run smoke   # the packed packages installed and run as a user would
 ```
 
 ## Rules

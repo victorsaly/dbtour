@@ -1,0 +1,13 @@
+{
+  // The Node side of the add-on, emitted for publishing; see packages/core/tsconfig.build.json. The page
+  // under src/page is esbuild's, bundled into dist/page.js by build.mjs.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/index.ts", "src/mark.ts"]
+}
