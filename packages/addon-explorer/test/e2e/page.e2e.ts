@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { chromium, type Browser } from 'playwright-core';
 import { scope, type Model } from 'dbtour/model';
 import { render } from '../../src/index.ts';
+import { startServer } from '../../../core/src/serve.ts';
 import { describe } from '../../../core/test/fixtures/described.ts';
 import { twoDatabases } from '../../../core/test/fixtures/two.ts';
 
@@ -299,5 +300,160 @@ test('two databases with a table of the same name: each is its own entry, an old
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
+  }
+});
+
+test('the Query section: a starter from the model, autocomplete of its tables, a draft kept, Copy for agent, and the SQL page', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  try {
+    const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+    const dir = mkdtempSync(join(tmpdir(), 'dbtour-page-'));
+    writeFileSync(join(dir, 'index.html'), render(model)['index.html']);
+    const url = pathToFileURL(join(dir, 'index.html')).href;
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${url}#dbo.Orders`);
+
+    const editor = page.locator('.query-section .cm-content');
+    await editor.waitFor();
+    assert.match((await editor.textContent()) ?? '', /LEFT JOIN dbo\.Customers AS c ON c\.Id = o\.CustomerId/);
+    assert.equal(await editor.getAttribute('contenteditable'), 'true', 'it can be written in');
+
+    // Autocomplete offers the model's tables as a name is typed, and Enter takes one.
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+End');
+    await page.keyboard.type('\nSELECT * FROM dbo.OrderL');
+    const options = page.locator('.cm-tooltip-autocomplete li');
+    await options.first().waitFor();
+    assert.match((await options.allTextContents()).join(' '), /OrderLines/);
+    await page.keyboard.press('Enter');
+    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines$/);
+
+    // The draft is kept in the browser, and Reset goes back to the starter.
+    await page.reload();
+    await editor.waitFor();
+    assert.match((await editor.textContent()) ?? '', /dbo\.OrderLines$/, 'kept across a reload');
+    await page.locator('.query-section button', { hasText: 'Copy query for' }).click();
+    const copied = await page.evaluate('navigator.clipboard.readText()') as string;
+    assert.match(copied, /^The query below runs on the Shop database \(SQL Server\)\./);
+    assert.match(copied, /# dbo\.Orders\n[\s\S]*# dbo\.Customers\n[\s\S]*# dbo\.OrderLines\n/, 'the tables it reads, as the docs write them');
+    await page.locator('.query-section button', { hasText: 'Reset' }).click();
+    assert.doesNotMatch((await editor.textContent()) ?? '', /OrderLines/);
+
+    // The SQL page, from the rail.
+    await page.locator('a', { hasText: 'Write SQL' }).click();
+    await page.locator('h1', { hasText: 'SQL' }).waitFor();
+    assert.equal(new URL(page.url()).hash, '#sql');
+    assert.match((await page.locator('.sql-page .cm-content').textContent()) ?? '', /A query against Shop/);
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('served by dbtour serve: Run shows the rows, the dot says how the last run went, and Auto-run follows the typing', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+  const dir = mkdtempSync(join(tmpdir(), 'dbtour-page-'));
+  writeFileSync(join(dir, 'index.html'), render(model)['index.html']);
+  // A database that answers after a moment, as a real one does, and refuses a table it does not have.
+  const asked: string[] = [];
+  const server = await startServer({
+    root: dir,
+    port: 0,
+    token: 'e2e',
+    sources: [{ name: 'Shop', reader: true }],
+    run: async (sql, source) => {
+      asked.push(sql);
+      await new Promise((done) => setTimeout(done, 150));
+      if (/\bNope\b/.test(sql)) throw new Error("Shop (mssql): Invalid object name 'dbo.Nope'.");
+      return { columns: ['Id', 'Name'], rows: [[1, 'Ann'], [2, null]], truncated: false, limit: 100, source: source ?? 'Shop' };
+    },
+  });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${server.url}/#dbo.Orders`);
+    const editor = page.locator('.query-section .cm-content');
+    const status = page.locator('.query-section .sql-bar .status');
+    await editor.waitFor();
+    assert.equal(await status.textContent(), 'Connected · Shop');
+    assert.match((await status.getAttribute('class')) ?? '', /is-idle/, 'grey before a run');
+
+    await page.locator('.query-section button', { hasText: 'Run' }).click();
+    await page.locator('.query-section .sql-result td', { hasText: 'Ann' }).waitFor();
+    assert.match((await page.locator('.query-section .sql-result-head').textContent()) ?? '', /2 rows · \d+ ms · Shop's reader/);
+    assert.match((await status.getAttribute('class')) ?? '', /is-ok/, 'green: it answered');
+
+    // One query at a time, whichever way it is asked: a second ⌘/Ctrl+Enter while the first runs sends nothing.
+    const once = asked.length;
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+Enter');
+    await page.keyboard.press('ControlOrMeta+Enter');
+    await page.waitForFunction(`!document.querySelector('.query-section .sql-result').classList.contains('is-stale')`);
+    assert.equal(asked.length, once + 1, 'the second press, while the first ran, sent nothing');
+
+    // A table that is not there: why, in red, and the rows before kept, dimmed.
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('SELECT * FROM dbo.Nope');
+    await page.keyboard.press('ControlOrMeta+Enter');
+    await page.locator('.query-section .sql-error', { hasText: "Invalid object name 'dbo.Nope'" }).waitFor();
+    assert.match((await status.getAttribute('class')) ?? '', /is-failed/, 'red: it failed');
+    assert.equal(await status.textContent(), 'Connected · Shop · failed');
+    assert.match((await page.locator('.query-section .sql-result-head').textContent()) ?? '', /the run before/);
+
+    // Auto-run: once each pause in typing, never per key, and neither the query just sent nor a half-written one.
+    const before = asked.length;
+    await page.locator('.query-section .sql-auto input').check();
+    await new Promise((next) => setTimeout(next, 400));
+    assert.equal(asked.length, before, 'the query just sent is not sent again');
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('SELECT Id, Name FROM dbo.Customers');
+    await page.locator('.query-section .sql-result td', { hasText: 'Ann' }).waitFor();
+    await page.waitForFunction(`!document.querySelector('.query-section .sql-result').classList.contains('is-stale')`);
+    assert.equal(asked.at(-1), 'SELECT Id, Name FROM dbo.Customers');
+    assert.ok(asked.length - before <= 3, `one run per pause, not per key: ${asked.length - before} runs`);
+    const sent = asked.length;
+    await page.keyboard.type(" WHERE Name = 'An");
+    await page.locator('.query-section .sql-waiting', { hasText: 'string open' }).waitFor();
+    assert.equal(asked.length, sent, 'a string left open is not sent');
+    assert.equal(await status.textContent(), 'Connected · Shop · waiting');
+    await page.keyboard.type("n'");
+    await page.waitForFunction(`document.querySelector('.query-section .sql-waiting') === null`);
+    await page.waitForFunction(`!document.querySelector('.query-section .sql-result').classList.contains('is-stale')`);
+    assert.equal(asked.at(-1), "SELECT Id, Name FROM dbo.Customers WHERE Name = 'Ann'");
+
+    // The rail says the page is served, green as a source has a reader.
+    assert.match((await page.locator('.side-status').getAttribute('class')) ?? '', /is-live/);
+    // The SQL page puts the caret in its editor, on the line under SELECT: typing goes straight in.
+    await page.locator('a', { hasText: 'Write SQL' }).click();
+    await page.locator('.sql-page .cm-content').waitFor();
+    await page.waitForFunction(`document.activeElement?.closest('.sql-page .cm-editor') !== null`);
+    await page.keyboard.type('Id FROM dbo.Orders');
+    assert.match((await page.locator('.sql-page .cm-content').textContent()) ?? '', /SELECT TOP \(100\) {4}Id FROM dbo\.Orders/);
+    await page.goBack();
+
+    // Remembered in this browser.
+    await page.reload();
+    await editor.waitFor();
+    assert.equal(await page.locator('.query-section .sql-auto input').isChecked(), true);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    await server.close();
   }
 });

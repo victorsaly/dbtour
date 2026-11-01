@@ -70,11 +70,14 @@ export async function run(config: SourceConfig, text: string, options: RunOption
         request.on('row', (row: unknown[]) => {
           if (!rows.add(row)) cancel();
         });
-        // A cancel ends in an error the driver raises; it is only a failure when dbtour did not ask for it.
+        // A cancel ends in an error the driver raises; it is only a failure when dbtour did not ask for it. The
+        // error comes before the request has finished, and a rollback asked for then is refused and the connection
+        // stays held, so pool.close() would wait for ever: the first error is kept, and given once 'done' follows.
+        let failure: Error | undefined;
         request.on('error', (error: Error) => {
-          if (!cancelling) fail(error);
+          if (!cancelling) failure ??= error;
         });
-        request.on('done', () => done());
+        request.on('done', () => (failure ? fail(failure) : done()));
         // The semicolon before the query lets it start with WITH, which T-SQL wants after a statement.
         void request.query(`SET ROWCOUNT ${options.limit + 1};\n${text};\nSET ROWCOUNT 0;`);
       });

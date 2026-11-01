@@ -9,7 +9,9 @@ export type Route =
   | { kind: 'diagram'; refs: string[] }
   | { kind: 'group'; name: string }
   /** #map: the whole catalogue as a graph. */
-  | { kind: 'map' };
+  | { kind: 'map' }
+  /** #sql: an editor for a query across the tables. */
+  | { kind: 'sql' };
 
 export function parseRoute(hash: string): Route {
   const raw = hash.replace(/^#\/?/, '');
@@ -18,6 +20,7 @@ export function parseRoute(hash: string): Route {
   const head = slash === -1 ? raw : raw.slice(0, slash);
   const rest = slash === -1 ? '' : raw.slice(slash + 1);
   if (head === 'map' && rest === '') return { kind: 'map' };
+  if (head === 'sql' && rest === '') return { kind: 'sql' };
   if (head === 'diagram') {
     // A ref that is not schema.table is dropped; the rest still draw, and none at all goes home.
     const refs = rest.split(',').filter((r) => r !== '').map(decode).filter(isRef);
@@ -50,6 +53,8 @@ export function routeHash(route: Route): string {
       return `#group/${encode(route.name)}`;
     case 'map':
       return '#map';
+    case 'sql':
+      return '#sql';
   }
 }
 
@@ -68,6 +73,7 @@ export function canonicalRoute(route: Route, model: Model): Route {
 export const tableHash = (ref: string, column?: string): string => routeHash({ kind: 'table', ref, column });
 export const diagramHash = (refs: string[]): string => routeHash({ kind: 'diagram', refs });
 export const groupHash = (name: string): string => routeHash({ kind: 'group', name });
+export const sqlHash = '#sql';
 export const mapHash = '#map';
 
 /** Dots and colons stay readable in the address bar; commas and slashes are separators, so they are encoded. */

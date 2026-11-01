@@ -7,8 +7,9 @@ For coding agents changing this repository. The design is in [PLAN.md](PLAN.md);
 - `packages/core`: the `dbtour` package. `src/model.ts` is the model and its validation, `src/notes.ts` the
   notes file, `src/render/` the Markdown and Mermaid, `src/search.ts` the search the page and the MCP server
   share, `src/mcp.ts` the tools `dbtour mcp` serves, `src/sql.ts` the check a query passes before a source
-  runs it (`dbtour sql`, the MCP query tool), `src/plugins.ts` how sources and add-ons are loaded,
-  `src/cli.ts` the command. Everything but cli.ts is pure and at least 90% covered by `test/`.
+  runs it (`dbtour sql`, the MCP query tool, the page), `src/serve.ts` the local server behind
+  `dbtour serve`, `src/plugins.ts` how sources and add-ons are loaded, `src/cli.ts` the command. Everything
+  but cli.ts and serve.ts is pure, and all of it but cli.ts at least 90% covered by `test/`.
 - `packages/source-mssql`: SQL Server. `src/query.sql` is run as one batch and returns several result sets;
   `src/map.ts` turns the rows into a `Database` and is tested on fixture rows, no server needed.
   `test/e2e/` runs against SQL Server in Docker and is skipped when Docker is absent.

@@ -291,3 +291,31 @@ test('the review: two sources of one name are ambiguous, and sql refuses to gues
   assert.match(a.err.join('\n'), /Two sources are named Sales: give each its own name in dbtour\.yaml/);
   assert.equal(ran, false);
 });
+
+test('serve serves the rendered folder, runs a query from its page through the reader, and wants a render first', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'out: docs\nsources:\n  - type: fake\n    name: Shop\n    connection: ${DBTOUR_FAKE}\n    reader: ${DBTOUR_FAKE_READER}\n');
+  const env = { DBTOUR_FAKE: 'owner', DBTOUR_FAKE_READER: 'reader' };
+  const none = io();
+  assert.equal(await main(['serve', '--port', '0'], { cwd, env, ...none.io }), 2);
+  assert.match(none.err.join('\n'), /No docs\/index\.html.*dbtour render/);
+
+  mkdirSync(join(cwd, 'docs'), { recursive: true });
+  writeFileSync(join(cwd, 'docs', 'index.html'), '<html><head></head><body></body></html>');
+  const load = async () => ({ extract: async (): Promise<never> => { throw new Error('no'); }, run: async (config: { connection?: string }) => ({ columns: ['who'], rows: [[config.connection]], truncated: false, limit: 100 }) });
+  let stop!: () => void;
+  const a = io();
+  const serving = main(['serve', '--port', '0'], { cwd, env, load, stop: new Promise<void>((done) => (stop = done)), ...a.io });
+  for (let i = 0; i < 50 && !a.out.join('\n').includes('http://'); i++) await new Promise((r) => setTimeout(r, 20));
+  const url = /http:\/\/127\.0\.0\.1:\d+/.exec(a.out.join('\n'))![0];
+  assert.match(a.out.join('\n'), /Queries run through Shop's reader/);
+  const html = await (await fetch(url)).text();
+  const token = JSON.parse(/content="([^"]*)"/.exec(html)![1].replace(/&quot;/g, '"')).token as string;
+  assert.ok(token.length >= 32, 'a fresh, long token each time');
+  const answer = await fetch(`${url}/api/query`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-dbtour-token': token }, body: JSON.stringify({ sql: 'SELECT 1', source: 'Shop' }) });
+  assert.deepEqual(((await answer.json()) as { rows: unknown[][] }).rows, [['reader']], 'through the reader, not the extract\'s login');
+  const refused = await fetch(`${url}/api/query`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-dbtour-token': token }, body: JSON.stringify({ sql: 'DROP TABLE dbo.Orders' }) });
+  assert.equal(refused.status, 422);
+  stop();
+  assert.equal(await serving, 0);
+});

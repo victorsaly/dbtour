@@ -1,6 +1,39 @@
 # Changelog
 
-## 0.8.0 (unreleased)
+## 0.9.0 (unreleased)
+
+- The page's SQL editor, the last of the plan's fifth milestone. Every entry has a Query section after its
+  columns: an editable CodeMirror editor that starts from the table and a LEFT JOIN to each table it
+  references that has a name-like column (Name, Title, Code, Sku…), newest first by the primary key, with
+  masked, encrypted and labelled columns left out and named in a comment. "Write SQL" in the rail opens
+  `#sql`, an editor for any query, with a database picker when there are several.
+- Autocomplete knows the database's schemas, tables and columns by the names SQL uses there (Sales:dbo is
+  dbo), case-insensitive as SQL Server is, quoting a name that needs it with [brackets].
+- Copy query, Copy query for the remembered agent (the query, what to check in it, and the tables it reads
+  as the docs write them), and Reset; the reader's draft is kept in their browser. Opened from a file, the
+  page says `dbtour sql` or the MCP `query` tool runs the query.
+- `dbtour serve [--port 4321]` serves the rendered folder on 127.0.0.1, and with a source's `reader` the
+  editor runs its query there, checked and rolled back as `dbtour sql` does. Only the page it served can
+  ask: a token given to the page, and the Host and Origin it must come from, so another site, or a name
+  rebound to this address, cannot; such a name gets neither the page nor its files.
+- On a served page the editor's bar says whether it is connected and through which source, and its dot is
+  the last run: grey before one and while it runs, green answered, red failed. Run, or ⌘/Ctrl+Enter, shows
+  the rows under the query with how many, how long and through which reader; the run before stays, dimmed,
+  while the next goes or after it fails. Auto-run, off until ticked and remembered in the browser, runs the
+  query each time typing pauses, never one the check would refuse (it says why it waits) or the one just
+  sent, one at a time.
+- Autocomplete says what each name is (a table and its rows, a view, a column's type, key and reference),
+  and after JOIN offers the tables related to those already in the query with the ON clause written. The
+  caret, selection and current line are drawn in the page's colours, so they show on the dark field.
+- Fixed: a query SQL Server refused (a table that is not there) left the SQL Server source waiting for
+  ever: the driver reports the error before the request ends, the rollback asked for then was refused and
+  the connection stayed held. The error is now given once the request ends, at once.
+- `checkQuery` is exported as `dbtour/sql`, so the page checks a query as the server will before auto-run
+  sends it.
+- The plan's next milestone is a setup wizard on `dbtour serve`: add a database, test it, give it a reader,
+  and keep its secrets in the system's keychain. OpenAPI moves to the seventh.
+
+## 0.8.0 (1 November 2026)
 
 - Running a query, the first half of the SQL add-on. A source gets a `reader` in `dbtour.yaml`: the
   environment variable for a login of its own with `db_datareader` alone. `dbtour sql "<query>"` runs one

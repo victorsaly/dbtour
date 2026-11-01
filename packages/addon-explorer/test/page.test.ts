@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { relationsOf, type Model } from 'dbtour/model';
 import { pageHtml, render } from '../src/index.ts';
-import { canonicalRoute, parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, type Route } from '../src/page/route.ts';
+import { canonicalRoute, parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, sqlHash, type Route } from '../src/page/route.ts';
 import { allTables, mergeParallel, relationId } from '../src/page/graph.ts';
 import { tools, toolById, storedTool, rememberTool } from '../src/page/tools.ts';
 import { neighbours, withNeighbours, expand, subgraph } from '../src/page/graph.ts';
@@ -14,6 +14,8 @@ import { profile, plotPath, tickTips, tickWidth, tickCentre } from '../src/page/
 import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/page/size.ts';
 import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
+import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, parseServed, railStatus, statusOf } from '../src/page/served.ts';
+import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
 
@@ -30,9 +32,12 @@ test('every route round-trips through the hash, and an odd hash falls back to ho
     { kind: 'diagram', refs: ['dbo.Orders', 'billing.Invoices'] },
     { kind: 'group', name: 'Money in/out, now' },
     { kind: 'map' },
+    { kind: 'sql' },
   ];
   for (const route of routes) assert.deepEqual(parseRoute(routeHash(route)), route);
   assert.equal(mapHash, '#map');
+  assert.equal(sqlHash, '#sql');
+  assert.deepEqual(parseRoute('#sql/x'), { kind: 'home' }, 'only the bare word is the SQL page');
   assert.deepEqual(parseRoute('#map/x'), { kind: 'home' }, 'only the bare word is the map, and map/x is no ref');
   assert.equal(tableHash('dbo.Orders'), '#dbo.Orders');
   assert.equal(tableHash('dbo.Orders', 'Status'), '#dbo.Orders.Status');
@@ -395,4 +400,177 @@ test('the review: compression that differs by partition says so', () => {
   const table = shop().databases[0].schemas[0].tables[0];
   const said = Object.fromEntries(aboutOf({ ...table, compression: 'none, page' }).terms.map((t) => [t.term, t.sentence]));
   assert.equal(said.Compressed, 'Compression differs by partition: none, page.');
+});
+
+test('a starter query: the table\'s columns, a join for a name-like column of each table it references, newest first', () => {
+  assert.equal(
+    starterQuery(shop(), 'dbo.Orders'),
+    [
+      '-- dbo.Orders with what it references.',
+      'SELECT TOP (100)',
+      '    o.Id,',
+      '    o.CustomerId,',
+      '    o.Status,',
+      '    o.CreatedAt,',
+      '    o.Total,',
+      '    c.Name AS CustomerName',
+      'FROM dbo.Orders AS o',
+      'LEFT JOIN dbo.Customers AS c ON c.Id = o.CustomerId',
+      'ORDER BY o.Id DESC;',
+    ].join('\n'),
+  );
+  // OrderLines references Orders (nothing name-like to show, so no join) and Products (its Sku); its key has two columns.
+  const lines = starterQuery(shop(), 'dbo.OrderLines');
+  assert.match(lines, /^-- dbo\.OrderLines with what it references\.\nSELECT TOP \(100\)\n {4}ol\.OrderId,\n {4}ol\.ProductId,\n {4}ol\.Quantity,\n {4}p\.Sku AS ProductSku\nFROM dbo\.OrderLines AS ol\nLEFT JOIN dbo\.Products AS p ON p\.Id = ol\.ProductId\nORDER BY ol\.OrderId DESC, ol\.ProductId DESC;$/);
+  assert.doesNotMatch(lines, /dbo\.Orders AS/);
+  // A view has no key to order by; a table referencing nothing says only its name.
+  assert.equal(starterQuery(shop(), 'dbo.vOrderTotals'), '-- dbo.vOrderTotals.\nSELECT TOP (100)\n    vot.OrderId,\n    vot.Total\nFROM dbo.vOrderTotals AS vot;');
+  assert.match(starterQuery(shop(), 'dbo.Customers'), /^-- dbo\.Customers\.\n/);
+});
+
+test('a starter leaves protected columns out and says which, quotes a name SQL would misread, and uses local names', () => {
+  const described = starterQuery(describe(shop()), 'dbo.Orders');
+  assert.match(described, /^-- dbo\.Orders with what it references\.\n-- Masked, encrypted and labelled columns are left out: Status, CreatedAt\. Add them if the question needs them\.\n/);
+  assert.doesNotMatch(described, /o\.Status|o\.CreatedAt/);
+  assert.equal(quoteName('Orders'), 'Orders');
+  assert.equal(quoteName('Order'), '[Order]', 'a keyword');
+  assert.equal(quoteName('Line No'), '[Line No]');
+  assert.equal(quoteName('a]b'), '[a]]b]');
+  const two = scope(twoDatabases());
+  assert.match(starterQuery(two, 'Sales:dbo.Invoices'), /FROM dbo\.Invoices AS i\n/);
+  assert.doesNotMatch(starterQuery(two, 'Sales:dbo.Invoices'), /Sales:/);
+});
+
+test('autocomplete knows one database\'s schemas, tables and columns by the names SQL uses there', () => {
+  const { schema, defaultSchema } = completionSchema(shop(), 'Shop');
+  assert.equal(defaultSchema, 'dbo');
+  const orders = schema.dbo.Orders;
+  assert.deepEqual(orders.children.map((c) => c.label), ['Id', 'CustomerId', 'Status', 'CreatedAt', 'Total']);
+  assert.deepEqual(Object.keys(schema).sort(), ['billing', 'dbo']);
+  const sales = completionSchema(scope(twoDatabases()), 'Sales').schema;
+  assert.deepEqual(Object.keys(sales), ['dbo'], 'the database prefix is not SQL');
+  assert.deepEqual(Object.keys(sales.dbo).sort(), ['Customers', 'Invoices']);
+});
+
+test('the tables a query reads, found by their names outside strings and comments, for Copy for agent', () => {
+  const sql = "SELECT o.Id FROM dbo.Orders AS o JOIN [dbo].[Customers] c ON c.Id = o.CustomerId -- not dbo.Products\nWHERE o.Status <> 'billing.Invoices'";
+  assert.deepEqual(queryTables(shop(), sql, 'Shop'), ['dbo.Orders', 'dbo.Customers']);
+  assert.deepEqual(queryTables(shop(), 'SELECT * FROM OrderLines', 'Shop'), ['dbo.OrderLines'], 'a bare name in the default schema');
+  assert.deepEqual(queryTables(scope(twoDatabases()), 'SELECT * FROM dbo.Payments', 'Billing'), ['Billing:dbo.Payments']);
+});
+
+test('Copy for agent frames the query with the tables it reads, as the docs write them', () => {
+  const text = sqlPrompt(shop(), 'SELECT Id FROM dbo.Orders', 'Shop');
+  assert.match(text, /^The query below runs on the Shop database \(SQL Server\)\. Check it against the tables it reads, from dbtour, and improve it:/);
+  assert.match(text, /```sql\nSELECT Id FROM dbo\.Orders\n```/);
+  assert.match(text, /# dbo\.Orders\n/);
+  assert.match(sqlPrompt(shop(), 'SELECT 1', 'Shop'), /It names no table dbtour knows/);
+});
+
+test('suggestions say what they are: a column its type and key, a table its kind, size and description', () => {
+  const { schema } = completionSchema(describe(shop()), 'Shop');
+  const orders = schema.dbo.Orders;
+  assert.deepEqual(orders.self, { label: 'Orders', type: 'type', detail: 'table · 312,904 rows' });
+  const [id, customer, status, createdAt] = orders.children;
+  assert.deepEqual(id, { label: 'Id', type: 'property', detail: 'int · primary key' });
+  assert.deepEqual(customer, { label: 'CustomerId', type: 'property', detail: 'int · → dbo.Customers' });
+  assert.deepEqual(status, { label: 'Status', type: 'property', detail: 'tinyint · masked' });
+  assert.match(createdAt.detail ?? '', /encrypted.*labelled/);
+  assert.equal(schema.dbo.Customers.self.info, 'One row per account.');
+  assert.equal(schema.dbo.Customers.children[1].info, 'Login address.');
+  assert.equal(schema.dbo.vOrderTotals.self.detail, 'view');
+});
+
+test('the aliases a query gives its tables, and the joins it can take next, written from the declared keys', () => {
+  const sql = 'SELECT o.Id\nFROM dbo.Orders AS o\nLEFT JOIN dbo.Customers c ON c.Id = o.CustomerId\nJOIN ';
+  assert.deepEqual(queryAliases(shop(), sql, 'Shop'), { 'dbo.Orders': 'o', 'dbo.Customers': 'c' });
+  const joins = joinCompletions(shop(), sql, 'Shop');
+  // Orders is referenced by OrderLines and Invoices; Customers references nothing; both are already in.
+  assert.deepEqual(joins.map((j) => [j.label, j.apply, j.detail]), [
+    ['dbo.OrderLines', 'dbo.OrderLines AS ol ON ol.OrderId = o.Id', 'references dbo.Orders'],
+    ['billing.Invoices', 'billing.Invoices AS i ON i.OrderId = o.Id', 'references dbo.Orders'],
+  ]);
+  // A table without an alias is named as it is written; a table the query has not got yet is not offered twice.
+  const bare = joinCompletions(shop(), 'SELECT * FROM dbo.OrderLines JOIN ', 'Shop');
+  assert.deepEqual(bare.map((j) => j.apply), ['dbo.Orders AS o ON o.Id = dbo.OrderLines.OrderId', 'dbo.Products AS p ON p.Id = dbo.OrderLines.ProductId']);
+  assert.deepEqual(joinCompletions(shop(), 'SELECT 1', 'Shop'), [], 'nothing to join to');
+});
+
+test('the page knows it is served from the meta tag dbtour serve writes, and which source runs its queries', () => {
+  const served = parseServed('{"token":"t","sources":[{"name":"Shop","reader":true},{"name":"Logs","reader":false}]}');
+  assert.deepEqual(served, { token: 't', sources: [{ name: 'Shop', reader: true }, { name: 'Logs', reader: false }] });
+  assert.equal(parseServed(null), undefined, 'opened from a file');
+  assert.equal(parseServed('not json'), undefined);
+  assert.equal(parseServed('{"sources":[]}'), undefined, 'no token, no running');
+  assert.deepEqual(connectionFor(served, 'Shop'), { state: 'ready', source: 'Shop' });
+  assert.deepEqual(connectionFor(served, 'Logs'), { state: 'no reader', source: 'Logs' });
+  assert.deepEqual(connectionFor(undefined, 'Shop'), { state: 'not served' });
+  // One database whose source the docs call something else: the only reader is the one.
+  assert.deepEqual(connectionFor({ token: 't', sources: [{ name: 'Prod', reader: true }] }, 'Shop'), { state: 'ready', source: 'Prod' });
+});
+
+test('the connection dot says how the last run went: grey before one and while it runs, green answered, red failed', () => {
+  const ready = { state: 'ready', source: 'Shop' } as const;
+  assert.deepEqual(statusOf(ready, {}), { tone: 'idle', text: 'Connected · Shop' });
+  assert.deepEqual(statusOf(ready, { running: true }), { tone: 'idle', text: 'Connected · Shop · running' });
+  assert.deepEqual(statusOf(ready, { result: true }), { tone: 'ok', text: 'Connected · Shop · ran' });
+  assert.deepEqual(statusOf(ready, { error: 'Invalid object name' }), { tone: 'failed', text: 'Connected · Shop · failed' });
+  assert.deepEqual(statusOf({ state: 'no reader', source: 'Shop' }, {}), { tone: 'off', text: 'Connected · no reader' });
+  assert.deepEqual(statusOf({ state: 'not served' }, {}), { tone: 'off', text: 'Not connected' });
+  assert.deepEqual(statusOf(ready, { result: true, waiting: 'open string' }), { tone: 'idle', text: 'Connected · Shop · waiting' });
+});
+
+test('auto-run sends a whole, allowed query once, and waits, saying why, on one half written', () => {
+  assert.ok(autoRunPauseMs >= 300 && autoRunPauseMs <= 2000, 'a pause, not every keystroke');
+  assert.deepEqual(autoRunPlan('SELECT Id FROM dbo.Orders', undefined), { send: true });
+  assert.deepEqual(autoRunPlan('SELECT Id FROM dbo.Orders ', 'SELECT Id FROM dbo.Orders'), { send: false }, 'unchanged but for spaces: not again');
+  assert.deepEqual(autoRunPlan('SELECT Id FROM dbo.Orders WHERE Name = 1', 'SELECT Id FROM dbo.Orders'), { send: true });
+  const open = autoRunPlan("SELECT Id FROM dbo.Orders WHERE Name = 'An", undefined);
+  assert.equal(open.send, false);
+  assert.match(open.send ? '' : open.waiting ?? '', /string open/);
+  const write = autoRunPlan('DELETE FROM dbo.Orders', undefined);
+  assert.match(write.send ? '' : write.waiting ?? '', /starts with DELETE/, 'never sent, even to be refused');
+  assert.deepEqual(autoRunPlan('-- nothing yet', undefined), { send: false, waiting: 'There is no query to run: write one SELECT, or a WITH followed by a SELECT.' });
+});
+
+test('a result cell reads as text: NULL apart, a long value cut, one line', () => {
+  assert.deepEqual(cellText(null), { text: 'NULL', isNull: true });
+  assert.deepEqual(cellText(42), { text: '42', isNull: false });
+  assert.deepEqual(cellText('a\nb'), { text: 'a↵b', isNull: false });
+  assert.equal(cellText('x'.repeat(500)).text.length, 301);
+  assert.deepEqual(cellText({ a: 1 }), { text: '{"a":1}', isNull: false });
+});
+
+test('the review: a starter never selects what it left out, quotes every reserved name, and gives a legal alias', () => {
+  // Every column protected and nothing to join: a count, not every column after all.
+  const guarded = shop();
+  const customers = guarded.databases[0].schemas[0].tables.find((t) => t.name === 'Customers')!;
+  for (const c of customers.columns) c.masked = 'default()';
+  const counted = starterQuery(guarded, 'dbo.Customers');
+  assert.doesNotMatch(counted, /\.\*/);
+  assert.match(counted, /SELECT COUNT\(\*\) AS \[Rows\]\nFROM dbo\.Customers AS c;$/);
+  // Names the query check refuses unbracketed, and other reserved words, are bracketed.
+  for (const word of ['Transaction', 'Use', 'Go', 'Merge', 'Over', 'Pivot', 'Waitfor']) assert.equal(quoteName(word), `[${word}]`);
+  assert.equal(quoteName('Status'), 'Status');
+  // A table whose name starts with a digit gets an alias that starts with a letter.
+  const numbered = shop();
+  numbered.databases[0].schemas[0].tables.find((t) => t.name === 'Customers')!.name = '2026Orders';
+  assert.match(starterQuery(numbered, 'dbo.2026Orders'), /FROM dbo\.\[2026Orders\] AS t2o\nORDER BY t2o\.Id DESC;$/);
+});
+
+test('the review: aliases are found for a bare default-schema name, and never taken twice in another case', () => {
+  assert.deepEqual(queryAliases(shop(), 'SELECT 1 FROM Orders AS o', 'Shop'), { 'dbo.Orders': 'o' });
+  assert.match(joinCompletions(shop(), 'SELECT 1 FROM Orders AS o JOIN ', 'Shop').find((j) => j.label === 'dbo.Customers')!.apply, /= o\.CustomerId$/);
+  const upper = joinCompletions(shop(), 'SELECT 1 FROM dbo.Orders AS C JOIN ', 'Shop').find((j) => j.label === 'dbo.Customers')!;
+  assert.match(upper.apply, /^dbo\.Customers AS c2 ON c2\.Id = C\.CustomerId$/);
+});
+
+test('the rail says the page is served, green when a source can run queries, and where the caret starts', () => {
+  assert.equal(railStatus(undefined), undefined, 'opened from a file: nothing to say');
+  assert.deepEqual(railStatus({ token: 't', sources: [{ name: 'Shop', reader: true }] }), { tone: 'live', text: 'Connected through dbtour serve' });
+  assert.deepEqual(railStatus({ token: 't', sources: [{ name: 'Shop', reader: false }] }), { tone: 'idle', text: 'Connected through dbtour serve · no reader' });
+  // The SQL page's caret: on the empty line the starter leaves under SELECT, or at the end of a draft.
+  const initial = 'SELECT TOP (100)\n    \n';
+  assert.equal(caretAt(initial), initial.length - 1);
+  assert.equal(caretAt('SELECT 1'), 8);
 });

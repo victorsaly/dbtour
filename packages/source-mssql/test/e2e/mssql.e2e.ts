@@ -127,6 +127,12 @@ test('extract reads a real SQL Server', { skip: connection ? false : 'DBTOUR_E2E
     const after = await runQuery(config, 'SELECT COUNT(*) FROM dbtour_e2e.Customers WHERE Email = \'changed@example.com\'', options);
     assert.deepEqual(after.rows, [[0]], 'rolled back');
     assert.deepEqual(after.columns, ['(column 1)']);
+    // A query the server refuses answers with why, at once: the driver reports the error before the request has
+    // finished, and a rollback asked for then is refused, which once left the connection held and run() waiting.
+    const started = Date.now();
+    await assert.rejects(runQuery(config, 'SELECT TOP (1) * FROM dbtour_e2e.Nope', { ...options, timeoutMs: 5000 }), /Invalid object name 'dbtour_e2e\.Nope'/);
+    assert.ok(Date.now() - started < 5000, 'before the timeout');
+    assert.deepEqual((await runQuery(config, 'SELECT COUNT(*) FROM dbtour_e2e.Customers', options)).rows, [[3]], 'and the next query runs');
   } finally {
     await run(teardown);
   }

@@ -25,16 +25,19 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** A button that copies `text` and says so for a moment, or says the clipboard refused. */
-export function CopyButton({ text, className }: { text: string; className?: string }) {
+/**
+ * A button that copies `text` and says so for a moment, or says the clipboard refused. `text` may be a function,
+ * read when pressed, for what changes after the button is drawn: an editor's query.
+ */
+export function CopyButton({ text, className, label = 'Copy' }: { text: string | (() => string); className?: string; label?: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'refused'>('idle');
   const copy = async () => {
-    setState((await copyText(text)) ? 'copied' : 'refused');
+    setState((await copyText(typeof text === 'function' ? text() : text)) ? 'copied' : 'refused');
     setTimeout(() => setState('idle'), copiedForMs);
   };
   return (
     <button type="button" className={className} onClick={copy} aria-live="polite">
-      {state === 'copied' ? 'Copied' : state === 'refused' ? 'Clipboard refused' : 'Copy'}
+      {state === 'copied' ? 'Copied' : state === 'refused' ? 'Clipboard refused' : label}
     </button>
   );
 }

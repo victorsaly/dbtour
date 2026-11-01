@@ -23,11 +23,15 @@
   --sql-string: #ce9178;
   --sql-number: #b5cea8;
   --sql-comment: #6a9955;
+  --sql-selection: #264f78;
   /* A sensitivity rank's dot, grey to red; its words are always beside it. */
   --rank-low: #8c8c8c;
   --rank-medium: #f5a623;
   --rank-high: #ff6a00;
   --rank-critical: #e2001a;
+  /* The database answers: the one green on the page, on a status dot alone (the rail's, a reader there; the
+     editor's, its last run answered). */
+  --live: #3fb950;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
@@ -46,9 +50,11 @@
     --sql-string: #a31515;
     --sql-number: #098658;
     --sql-comment: #008000;
+    --sql-selection: #add6ff;
     --rank-low: #6b6b6b;
     --rank-medium: #c47f00;
     --rank-high: #d45500;
+    --live: #1a7f37;
     color-scheme: light;
   }
 }
@@ -1328,8 +1334,10 @@ code.sql {
 }
 .sql-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 6px 12px;
   padding: 4px 4px 4px 12px;
   border-bottom: var(--hair) solid var(--line);
 }
@@ -1507,4 +1515,204 @@ code.sql {
 /* The row of the column pointed at in the plot: the same fill the highlighted row has, without its rule. */
 table.columns tr.is-pointed td {
   background: var(--fill);
+}
+
+/* The SQL link sits under the map's, the two a pair. */
+.side-map + .side-map {
+  margin-top: -10px;
+}
+/* The editor's bar: Copy, Copy for …, Reset, side by side at its right. */
+/* On a narrow entry or a phone the actions go to a line of their own, each word kept whole. */
+.sql-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+.sql-bar .label,
+.sql-bar .status,
+.sql-copy,
+.sql-auto {
+  white-space: nowrap;
+}
+.sql-editor .cm-editor {
+  min-height: 140px;
+}
+.sql-editor .cm-editor.cm-focused {
+  outline: var(--hair) solid var(--ink);
+}
+.sql-editor .cm-cursor {
+  border-left-color: var(--ink);
+}
+.sql-editor .cm-selectionBackground,
+.sql-editor .cm-editor.cm-focused .cm-selectionBackground {
+  background: var(--fill);
+}
+.sql-hint {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: var(--hair) solid var(--line);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.query-section {
+  margin-top: 28px;
+}
+.sql-database {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+/* Autocomplete's list, re-inked: a hairline box on the field, the chosen option in --fill. */
+.cm-tooltip.cm-tooltip-autocomplete {
+  background: var(--bg);
+  border: var(--hair) solid var(--line-strong);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.cm-tooltip.cm-tooltip-autocomplete > ul > li {
+  color: var(--ink);
+}
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--fill);
+  color: var(--ink);
+}
+.cm-completionDetail {
+  color: var(--ink-2);
+}
+
+/* A status, the editor's beside "T-SQL" or the rail's: hollow not connected; grey connected and nothing to
+   say yet; green the database answers (a reader in the rail, the last run in the editor); red it failed.
+   Words say it; the dot repeats. */
+.sql-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.status {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.status::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  outline: var(--hair) solid var(--ink-2);
+  outline-offset: -1px;
+  vertical-align: 0;
+}
+.status.is-on,
+.status.is-idle,
+.status.is-ok,
+.status.is-live,
+.status.is-failed {
+  color: var(--ink);
+}
+.status.is-on::before,
+.status.is-idle::before {
+  background: var(--ink-2);
+  outline-color: var(--ink-2);
+}
+.status.is-ok::before,
+.status.is-live::before {
+  background: var(--live);
+  outline-color: var(--live);
+}
+.status.is-failed::before {
+  background: var(--red);
+  outline-color: var(--red);
+}
+.side-status {
+  margin: -6px 16px 16px;
+}
+/* Run is the editor's primary action: the red block on its trailing edge, as the page's primary buttons. */
+.sql-run::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  background: var(--red);
+  vertical-align: 0;
+}
+.sql-run:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+/* Auto-run: a checkbox set like the bar's buttons, ticked in ink. */
+.sql-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.sql-auto:has(input:checked) {
+  color: var(--ink);
+}
+.sql-auto input {
+  margin: 0;
+  accent-color: var(--ink);
+}
+.sql-error,
+.sql-waiting {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: var(--hair) solid var(--line);
+}
+.sql-waiting {
+  color: var(--ink-2);
+}
+.sql-waiting .tag {
+  margin-left: 0;
+}
+/* The run before, kept while the next goes or after it failed: dimmed, and its head says so. */
+.sql-result.is-stale .sql-result-rows {
+  opacity: 0.45;
+}
+.sql-result {
+  border-top: var(--hair) solid var(--line);
+}
+.sql-result-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.sql-result-rows {
+  max-height: 420px;
+  overflow: auto;
+}
+.sql-result-rows table {
+  margin: 0;
+}
+.sql-result-rows :is(th, td):first-child {
+  padding-left: 12px;
+}
+.sql-result-rows :is(th, td):last-child {
+  padding-right: 12px;
+}
+/* A value on one line, as the database holds it; the table scrolls sideways instead. Long text is cut at 300. */
+.sql-result-rows td {
+  white-space: nowrap;
+}
+.sql-result-rows th {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
 }

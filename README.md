@@ -5,7 +5,7 @@
 
 **Tour your database and its API.**
 
-[![version](https://img.shields.io/badge/version-0.8.0-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.9.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -82,6 +82,9 @@ It holds the structure and never the rows.
   (system-versioned, partitioned, triggers and the rest), with when it was created and its properties; a
   **Protection** column shows a column's sensitivity label, mask and encryption; triggers and row-level
   security are sections of their own, like indexes and constraints.
+- A **Query** section on every entry starts a query from the table and what it references, in an editor that
+  autocompletes the database's tables and columns; **Write SQL** in the rail opens one for any query. Copy it,
+  or copy it for an agent with the tables it reads. Opened through `dbtour serve`, it runs it too (below).
 
 ## Ask Claude
 
@@ -149,6 +152,18 @@ before a connection is made, and what runs does so inside a transaction that is 
 Through the MCP server they go to the model provider your agent uses. What dbtour checks is the query's shape;
 what a name can reach (another database, a linked server) is the reader's permissions, so keep the reader to
 this database alone.
+
+On the page, `dbtour serve` runs it the same way:
+
+```bash
+npx dbtour serve                                 # http://127.0.0.1:4321, on this machine only
+```
+
+The editor's bar says it is connected, and Run (or ⌘/Ctrl+Enter) shows the rows under the query, with how
+many, how long it took and through which reader. The dot beside it is the last run: grey before one, green
+answered, red failed, with why. Auto-run, off until you tick it, runs the query each time you pause typing,
+and never a half-written one. The server answers only its own page, which carries a token it is given when
+served, and only on this machine.
 
 ## Develop
 

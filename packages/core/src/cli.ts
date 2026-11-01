@@ -11,6 +11,8 @@ import { emptyModel, scope, validate, type Api, type Database, type Model } from
 import { applyNotes, parseNotes } from './notes.ts';
 import { answerLine, type ToolResult } from './mcp.ts';
 import { checkQuery, clampLimit, defaultTimeoutMs, resultText, type QueryResult } from './sql.ts';
+import { startServer } from './serve.ts';
+import { randomBytes } from 'node:crypto';
 import { loadAddon, loadSource, type Addon, type Importer, type Source } from './plugins.ts';
 import { renderMarkdown } from './render/markdown.ts';
 
@@ -23,6 +25,8 @@ export interface Io {
   load?: (source: SourceConfig) => Promise<Source>;
   /** How an add-on is loaded; tests hand in their own. */
   loadAddon?: (addon: AddonConfig) => Promise<Addon>;
+  /** When serve stops; Ctrl+C unless a test hands in its own. */
+  stop?: Promise<void>;
   /** Where mcp reads requests and writes answers; process.stdin and process.stdout unless a test hands in its own. */
   stdin?: Readable;
   stdout?: Writable;
@@ -38,13 +42,15 @@ const help = `Usage: dbtour <command>
                           on stdin and stdout: claude mcp add dbtour -- npx dbtour mcp
   sql "<query>"           run one SELECT through a source's reader, a read-only login of its own,
                           rolled back, at most --limit rows (100); --source <name>, --json
+  serve [--port 4321]     the rendered page on this machine; its SQL editor runs queries through the
+                          readers, as sql does
 
 Set the connection string in the environment variable ${configFile} names, never in the file.`;
 
 export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: console.log, error: console.error }): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
-    options: { help: { type: 'boolean', short: 'h' }, source: { type: 'string' }, limit: { type: 'string' }, json: { type: 'boolean' } },
+    options: { help: { type: 'boolean', short: 'h' }, source: { type: 'string' }, limit: { type: 'string' }, json: { type: 'boolean' }, port: { type: 'string' } },
     allowPositionals: true,
     strict: false,
   });
@@ -63,6 +69,8 @@ export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: c
         return await render(io);
       case 'mcp':
         return await mcp(positionals[1] === undefined ? io : { ...io, cwd: resolve(io.cwd, positionals[1]) });
+      case 'serve':
+        return await serve(io, typeof values.port === 'string' ? Number(values.port) : defaultPort);
       case 'sql':
         return await sql(io, positionals[1], {
           source: typeof values.source === 'string' ? values.source : undefined,
@@ -221,6 +229,41 @@ async function mcp(io: Io): Promise<number> {
     const reply = await answerLine(line, { model: current, version, run });
     if (reply !== undefined) output.write(reply + '\n');
   }
+  return 0;
+}
+
+/** dbtour serve's port unless --port says otherwise: one an editor's own dev servers seldom take. */
+const defaultPort = 4321;
+
+/**
+ * The rendered folder on 127.0.0.1, with a door for its SQL editor: a query posted by the page runs as dbtour
+ * sql runs it. A token made fresh each time is handed to the page and required on every query.
+ */
+async function serve(io: Io, port: number): Promise<number> {
+  const config = readConfig(io);
+  const root = join(io.cwd, config.out);
+  if (!existsSync(join(root, 'index.html'))) throw missing(`No ${join(config.out, 'index.html')} to serve: add explorer to addons in ${configFile}, run dbtour render, then dbtour serve again`);
+  const readers = config.sources.filter((s) => s.reader !== undefined);
+  const token = randomBytes(24).toString('base64url');
+  let server: { url: string; close: () => Promise<void> };
+  try {
+    server = await startServer({
+      root,
+      port,
+      token,
+      sources: config.sources.map((s) => ({ name: s.name, reader: s.reader !== undefined })),
+      run: readers.length
+        ? async (text, source, limit) => ({ ...(await runQuery(io, config, text, source, limit)), source: pickSource(config, source).name })
+        : undefined,
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === 'EADDRINUSE') throw new Error(`Port ${port} is taken: run dbtour serve --port ${port + 1}`, { cause: error });
+    throw error;
+  }
+  io.log(`Serving ${config.out} at ${server.url}`);
+  io.log(readers.length ? `Queries run through ${readers.map((s) => `${s.name}'s reader`).join(', ')}. Ctrl+C to stop.` : `No source has a reader, so the page can be read but runs no query: add reader to a source in ${configFile}. Ctrl+C to stop.`);
+  await (io.stop ?? new Promise<void>((done) => process.once('SIGINT', () => done())));
+  await server.close();
   return 0;
 }
 
