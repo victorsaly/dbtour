@@ -1,6 +1,6 @@
 // Turns the thirteen result sets of query.sql into a Database. Pure, so it is tested on rows kept in a file.
 // Every field a newer set or column adds is optional here, so rows from an older query still map.
-import type { Column, Constraint, Database, Index, Properties, Relation, Schema, SecurityPredicate, Table, Trigger } from 'dbtour';
+import type { Column, Constraint, Database, Index, Properties, QueryResult, Relation, Schema, SecurityPredicate, Table, Trigger } from 'dbtour';
 
 /** node-mssql returns a bigint as a string, since it may not fit a JavaScript number. */
 type Count = number | string;
@@ -310,4 +310,19 @@ function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
 
 function pattern(text: string): RegExp {
   return new RegExp('^' + text.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$', 'i');
+}
+
+/**
+ * What a query returned, from the driver's array rows: the columns in order (one without a name, such as an
+ * unaliased COUNT(*), numbered), and at most `limit` rows. run() asks for one row more than the limit, so
+ * having it says the limit stopped the query.
+ */
+export function toQueryResult(columns: { name: string }[] | undefined, rows: unknown[][] | undefined, limit: number): QueryResult {
+  const all = rows ?? [];
+  return {
+    columns: (columns ?? []).map((c, i) => c.name || `(column ${i + 1})`),
+    rows: all.slice(0, limit),
+    truncated: all.length > limit,
+    limit,
+  };
 }

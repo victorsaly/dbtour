@@ -1,6 +1,25 @@
 # Changelog
 
-## 0.7.1 (unreleased)
+## 0.8.0 (unreleased)
+
+- Running a query, the first half of the SQL add-on. A source gets a `reader` in `dbtour.yaml`: the
+  environment variable for a login of its own with `db_datareader` alone. `dbtour sql "<query>"` runs one
+  SELECT through it (`--limit`, `--source`, `--json`), and `dbtour mcp` offers a `query` tool beside the others
+  when a source has one. dbtour refuses a reader that names the extract's variable or holds its connection
+  string.
+- What runs is checked first, in core (`checkQuery`), reading T-SQL's strings, quoted names and comments as
+  SQL Server does: one SELECT or WITH, nothing that writes, runs code, declares or sets, reaches out of the
+  database (OPENROWSET and the like) or writes a table with SELECT … INTO. A refusal says why and never
+  connects.
+- The SQL Server source exports `run()`: inside a transaction that is always rolled back, `SET ROWCOUNT` one
+  row past the limit (100 by default, 5,000 at most), cancelled after 30 seconds, rows as arrays so two columns
+  of one name both come back. The result is a table for the terminal and the agent, or JSON.
+- The skill learns to run what it writes: read the tables first all the same, select only what the question
+  needs, leave protected columns out, and without a reader hand the query over rather than ask for a login.
+  `reference.md` shows how to make the reader, on SQL Server and Azure SQL.
+- `dbtour init` writes the `reader` line, commented out.
+
+## 0.7.1 (1 November 2026)
 
 - The skill, tightened by its evals. It never quotes a password back, not even to point at it, and shows the
   variable as `export DBTOUR_MSSQL='Server=…;Password=…'`. With no model to read (no MCP tools, no docs) it

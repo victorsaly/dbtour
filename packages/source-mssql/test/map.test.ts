@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validate, findTable, emptyModel } from 'dbtour';
-import { mapRecordsets, toRecordsets, formatType, type Recordsets } from '../src/map.ts';
+import { mapRecordsets, toQueryResult, toRecordsets, formatType, type Recordsets } from '../src/map.ts';
 
 const rows = (): Recordsets => JSON.parse(readFileSync(new URL('./fixtures/rows.json', import.meta.url), 'utf8'));
 
@@ -289,4 +289,12 @@ test('query.sql quotes balance, and so does every query it assembles as text', (
   for (const text of assembled) assert.doesNotThrow(() => literals(text, 'an assembled query'));
   // A stray apostrophe in a comment inside the text is the mistake this guards against.
   assert.throws(() => literals("SELECT N'\n-- a partition's note\nSELECT 1';", 'the example'), /stray apostrophe|ends inside a string/);
+});
+
+test('a query\'s result: its columns in order, the rows past the limit cut and said, a column without a name numbered', () => {
+  const columns = [{ name: 'Id' }, { name: '' }, { name: 'Id' }];
+  const rows = [[1, 10, 'a'], [2, 20, 'b'], [3, 30, 'c']];
+  assert.deepEqual(toQueryResult(columns, rows, 2), { columns: ['Id', '(column 2)', 'Id'], rows: [[1, 10, 'a'], [2, 20, 'b']], truncated: true, limit: 2 });
+  assert.deepEqual(toQueryResult(columns, rows, 3).truncated, false, 'exactly the limit is not cut');
+  assert.deepEqual(toQueryResult(undefined, undefined, 100), { columns: [], rows: [], truncated: false, limit: 100 }, 'a statement that returned nothing');
 });

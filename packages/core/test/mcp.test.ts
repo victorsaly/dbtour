@@ -51,11 +51,11 @@ test('a request must say jsonrpc 2.0 and carry a string or number id, or it is i
   }
 });
 
-test('a line that is not JSON is a parse error, a blank line nothing, and a request is answered as a line', () => {
-  assert.equal(JSON.parse(answerLine('{not json', context()) ?? '').error.code, -32700);
-  assert.equal(answerLine('   ', context()), undefined);
-  assert.equal(answerLine('{"jsonrpc":"2.0","method":"notifications/initialized"}', context()), undefined);
-  assert.deepEqual(JSON.parse(answerLine('{"jsonrpc":"2.0","id":7,"method":"ping"}', context()) ?? ''), { jsonrpc: '2.0', id: 7, result: {} });
+test('a line that is not JSON is a parse error, a blank line nothing, and a request is answered as a line', async () => {
+  assert.equal(JSON.parse((await answerLine('{not json', context())) ?? '').error.code, -32700);
+  assert.equal(await answerLine('   ', context()), undefined);
+  assert.equal(await answerLine('{"jsonrpc":"2.0","method":"notifications/initialized"}', context()), undefined);
+  assert.deepEqual(JSON.parse((await answerLine('{"jsonrpc":"2.0","id":7,"method":"ping"}', context())) ?? ''), { jsonrpc: '2.0', id: 7, result: {} });
 });
 
 test('the tools are listed read-only, each with the arguments it needs', () => {
@@ -205,4 +205,35 @@ test('path keeps each database to itself: a table of the same name in two does n
   const shared = call(model, 'path', { from: 'dbo.Customers', to: 'dbo.Invoices' });
   assert.equal(shared.isError, true, 'a name two databases share wants its database');
   assert.match(shared.text, /Sales:dbo\.Customers and Billing:dbo\.Customers are both called dbo\.Customers/);
+});
+
+test('query is offered only when a source has a reader, refuses before it runs, and answers with the rows', async () => {
+  const listed = (ctx: Context) => (answer({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, ctx) as { result: { tools: { name: string; annotations: Record<string, boolean> }[] } }).result.tools;
+  assert.deepEqual(listed(context()).map((t) => t.name), ['overview', 'search', 'table', 'path']);
+  const asked: [string, string | undefined, number | undefined][] = [];
+  const withRun: Context = {
+    ...context(),
+    run: async (sql, source, limit) => {
+      asked.push([sql, source, limit]);
+      return { content: [{ type: 'text', text: '| n |\n|---|\n| 1 |\n\n1 row.' }] };
+    },
+  };
+  const tools = listed(withRun);
+  assert.deepEqual(tools.map((t) => t.name), ['overview', 'search', 'table', 'path', 'query']);
+  const query = tools.find((t) => t.name === 'query')!;
+  assert.equal(query.annotations.readOnlyHint, true);
+  assert.match(JSON.stringify(query), /model provider/, 'it says the rows leave the machine');
+
+  const call = (args: Record<string, unknown>, ctx: Context = withRun) => answer({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'query', arguments: args } }, ctx);
+  const ok = (await call({ sql: 'SELECT 1 AS n', source: 'Shop', limit: 5 })) as { result: { content: { text: string }[] } };
+  assert.match(ok.result.content[0].text, /1 row\./);
+  assert.deepEqual(asked, [['SELECT 1 AS n', 'Shop', 5]]);
+  const refused = (await call({ sql: 'DROP TABLE dbo.Orders' })) as { result: { isError: boolean; content: { text: string }[] } };
+  assert.equal(refused.result.isError, true);
+  assert.match(refused.result.content[0].text, /starts with DROP/);
+  const empty = (await call({})) as { result: { isError: boolean; content: { text: string }[] } };
+  assert.match(empty.result.content[0].text, /query needs sql/);
+  assert.equal(asked.length, 1, 'neither a refused nor an empty query reaches the source');
+  const unoffered = (await call({ sql: 'SELECT 1' }, context())) as { error: { message: string } };
+  assert.match(unoffered.error.message, /no tool "query"/);
 });

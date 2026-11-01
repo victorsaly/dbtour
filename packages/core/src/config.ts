@@ -6,6 +6,11 @@ export interface SourceConfig {
   name: string;
   /** `${NAME}`: the environment variable holding the connection string. Never the string itself. */
   connection?: string;
+  /**
+   * `${NAME}`: the variable holding the connection string queries run with, for a login of its own with
+   * db_datareader alone. Never the extract's connection.
+   */
+  reader?: string;
   /** A module to import instead of dbtour-source-<type>. */
   module?: string;
   [option: string]: unknown;
@@ -70,6 +75,8 @@ sources:
     name: ${type === 'mssql' ? 'MyDatabase' : 'my-database'}
     # The name of the environment variable holding the connection string. Never the string itself.
     connection: \${${variable}}
+    # Optional: a read-only login of its own (db_datareader), for dbtour sql and the MCP query tool.
+    # reader: \${${variable}_READER}
 # Descriptions, relations and groups the database cannot say. Optional.
 notes: dbtour.notes.yaml
 # What else render writes. explorer is the page: npm install --save-dev dbtour-addon-explorer
@@ -90,4 +97,30 @@ export function resolveConnection(value: string | undefined, env: Record<string,
     throw Object.assign(new Error(`Set ${match[1]} to the connection string, then run it again`), { exitCode: 2 });
   }
   return resolved;
+}
+
+/**
+ * The connection queries run with: the source's reader, a login of its own. Refused when it is missing (exit
+ * 2, with what to add), when it names the same variable as the extract's connection, or when the two
+ * variables hold the same string, since then a query would run with a login that may write.
+ */
+export function resolveReader(source: SourceConfig, env: Record<string, string | undefined>): string {
+  const example = `\${DBTOUR_${source.type.toUpperCase()}_READER}`;
+  if (typeof source.reader !== 'string' || source.reader === '') {
+    throw Object.assign(
+      new Error(`Source ${source.name} has no reader, the login dbtour runs queries with: add "reader: ${example}" to it in ${configFile}, naming a login with db_datareader alone, and set that variable`),
+      { exitCode: 2 },
+    );
+  }
+  const readerVariable = variablePattern.exec(source.reader)?.[1];
+  const connectionVariable = typeof source.connection === 'string' ? variablePattern.exec(source.connection)?.[1] : undefined;
+  if (readerVariable !== undefined && readerVariable === connectionVariable) {
+    throw new Error(`reader names the same variable as connection (${readerVariable}): a reader is a login of its own, with db_datareader alone, so a query can never write`);
+  }
+  const reader = resolveConnection(source.reader, env)!;
+  const connection = connectionVariable === undefined ? undefined : env[connectionVariable];
+  if (connection !== undefined && connection === reader) {
+    throw new Error(`reader resolves to the same connection string as connection: give ${readerVariable} a login of its own, with db_datareader alone`);
+  }
+  return reader;
 }
