@@ -2,7 +2,7 @@
 import { tableRef, type Model } from 'dbtour/model';
 
 export interface Hit {
-  kind: 'table' | 'column' | 'group';
+  kind: 'table' | 'view' | 'column' | 'group';
   /** schema.table for a table or column, the group's name for a group. */
   ref: string;
   column?: string;
@@ -24,7 +24,14 @@ export function buildIndex(model: Model): Entry[] {
     for (const schema of database.schemas) {
       for (const table of schema.tables) {
         const ref = tableRef(schema.name, table.name);
-        entries.push({ kind: 'table', ref, title: ref, detail: table.description ?? table.kind, name: table.name.toLowerCase(), text: `${ref} ${table.description ?? ''}`.toLowerCase() });
+        entries.push({
+          kind: table.kind,
+          ref,
+          title: ref,
+          detail: table.description ?? `${table.columns.length} ${table.columns.length === 1 ? 'column' : 'columns'}`,
+          name: table.name.toLowerCase(),
+          text: `${ref} ${table.description ?? ''}`.toLowerCase(),
+        });
         for (const column of table.columns) {
           entries.push({
             kind: 'column',
@@ -47,7 +54,7 @@ export function buildIndex(model: Model): Entry[] {
 
 // A table is what people look for first, then a group, then a column; within a kind a name that starts
 // with the word beats one that contains it, which beats a match in the description.
-const kindWeight: Record<Hit['kind'], number> = { table: 10, group: 9, column: 6 };
+const kindWeight: Record<Hit['kind'], number> = { table: 10, view: 10, group: 9, column: 6 };
 const prefixScore = 3;
 const nameScore = 2;
 const textScore = 1;

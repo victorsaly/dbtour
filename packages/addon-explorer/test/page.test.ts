@@ -45,7 +45,8 @@ test('search ranks a table whose name starts with the word first, then groups, t
     ['group', 'Ordering'],
   ]);
   assert.ok(hits.some((h) => h.kind === 'column' && h.title === 'dbo.OrderLines.OrderId'));
-  assert.ok(hits.some((h) => h.title === 'dbo.vOrderTotals'), 'a name containing the word is found');
+  assert.ok(hits.some((h) => h.kind === 'view' && h.title === 'dbo.vOrderTotals'), 'a view containing the word is found, as a view');
+  assert.equal(hits.find((h) => h.title === 'dbo.OrderLines')?.detail, '3 columns', 'a table without a description says its size');
 });
 
 test('search matches descriptions and types, needs every word, and is empty for no words', () => {

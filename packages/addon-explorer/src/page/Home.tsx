@@ -3,13 +3,19 @@ import { driverName } from 'dbtour/markdown';
 import { findTable, relationsOf, type Model } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
 import { Plot } from './Plot.tsx';
-import { profile } from './plot.ts';
+import { peaks, profile } from './plot.ts';
 import { groupHash, tableHash } from './route.ts';
+import { lastOpened } from './TableView.tsx';
 
-/** The height of one line in the stack, in plot units. */
-const lineHeight = 22;
+// The stack fills the field: a few tables get tall lines, a long catalogue keeps a tight pitch that still
+// shows every table. In pixels, the SVG's height; the row adds 8px.
+export function lineHeight(tables: number): number {
+  return tables <= 12 ? 40 : tables <= 40 ? 26 : 16;
+}
 
 export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
+  const height = lineHeight(cat.entries.length);
+  const last = lastOpened();
   return (
     <div className="with-panel">
       <article className="page home">
@@ -29,20 +35,22 @@ export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
         })}
 
         <div className="label plots-label">Index · one line per table, a key is a peak</div>
-        <ol className="plots">
+        <ol className="plots" style={{ '--row': `${height + 8}px` } as React.CSSProperties}>
           {cat.entries.map((entry, i) => {
             const found = findTable(model, entry.ref)!;
             const ticks = profile(found.table, relationsOf(model, entry.ref).out.flatMap((r) => r.from.columns));
             return (
-              <li key={entry.ref}>
+              <li key={entry.ref} className={entry.ref === last ? 'is-last' : ''}>
                 <a href={tableHash(entry.ref)}>
-                  <span className="block" style={{ background: cat.colours.get(entry.schema) }} />
-                  <span className="no">{entry.number}</span>
-                  <span className="name">
-                    {entry.table}
-                    {found.table.kind === 'view' && <span className="tag">view</span>}
+                  <span className="plot-label">
+                    <span className="block" style={{ background: cat.colours.get(entry.schema) }} />
+                    <span className="no">{entry.number}</span>
+                    <span className="name">
+                      {entry.table}
+                      {found.table.kind === 'view' && <span className="tag">view</span>}
+                    </span>
                   </span>
-                  <Plot ticks={ticks} height={lineHeight} index={i} />
+                  <Plot ticks={ticks} height={height} index={i} />
                 </a>
               </li>
             );
@@ -85,24 +93,23 @@ export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
         )}
         <section>
           <h2>Reading a line</h2>
-          <ul className="legend keys">
-            <li>
-              <Plot ticks={[{ column: 'key', height: 1 }]} height={14} className="key-sample" />
-              <span className="name">primary key</span>
-            </li>
-            <li>
-              <Plot ticks={[{ column: 'fk', height: 0.6 }]} height={14} className="key-sample" />
-              <span className="name">foreign key</span>
-            </li>
-            <li>
-              <Plot ticks={[{ column: 'unique', height: 0.45 }]} height={14} className="key-sample" />
-              <span className="name">unique</span>
-            </li>
-            <li>
-              <Plot ticks={[{ column: 'column', height: 0.18 }]} height={14} className="key-sample" />
-              <span className="name">column</span>
-            </li>
-          </ul>
+          <div className="key-sample">
+            <Plot
+              ticks={[
+                { column: 'primary key', height: peaks.primary },
+                { column: 'foreign key', height: peaks.foreign },
+                { column: 'unique', height: peaks.unique },
+                { column: 'column', height: peaks.plain },
+              ]}
+              height={36}
+            />
+            <div className="key-labels">
+              <span>primary key</span>
+              <span>foreign key</span>
+              <span>unique</span>
+              <span>column</span>
+            </div>
+          </div>
         </section>
       </aside>
     </div>

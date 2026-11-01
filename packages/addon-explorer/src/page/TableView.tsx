@@ -11,6 +11,23 @@ import { diagramHash, groupHash, tableHash } from './route.ts';
 
 /** How long the button says "Copied" before it offers to copy again. */
 const copiedForMs = 1500;
+
+/** The entry opened last, so the home can lift its line; kept for the tab, never beyond it. */
+const lastKey = 'dbtour.last';
+export function lastOpened(): string | undefined {
+  try {
+    return sessionStorage.getItem(lastKey) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+function remember(ref: string): void {
+  try {
+    sessionStorage.setItem(lastKey, ref);
+  } catch {
+    // A page opened where storage is refused still works; the home just lifts nothing.
+  }
+}
 /** The entry's own plot is this tall, in plot units. */
 const plotHeight = 56;
 
@@ -26,6 +43,7 @@ export function TableView({ model, cat, tableRef, column }: Props) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    remember(tableRef);
     if (column) document.getElementById(`column-${column}`)?.scrollIntoView({ block: 'center' });
     else document.querySelector('.main')?.scrollTo(0, 0);
   }, [tableRef, column]);
@@ -56,13 +74,17 @@ export function TableView({ model, cat, tableRef, column }: Props) {
     <div className="with-panel">
       <article className="page table">
         <header className="entry-head">
-          <div className="entry-id">
+          <h1 className="entry-title">
             <span className="block" style={{ background: cat.colours.get(schema.name) }} />
-            <span className="label">No. {entry?.number}</span>
-            <span className="label">{schema.name}</span>
-            {table.kind === 'view' && <span className="label">view</span>}
-          </div>
-          <h1>{table.name}</h1>
+            <span className="no">{entry?.number}</span>
+            <span className="entry-schema">{schema.name}.</span>
+            {table.name}
+            {table.kind === 'view' && <span className="tag">view</span>}
+          </h1>
+          <p className="meta">
+            {table.columns.length} {table.columns.length === 1 ? 'column' : 'columns'} · {keyCount} {keyCount === 1 ? 'key' : 'keys'} · {relations.out.length} references ·{' '}
+            {relations.in.length} referenced by
+          </p>
           {table.description && <p className="description">{table.description}</p>}
           <div className="actions">
             <a className="button is-primary" href={diagramHash(withNeighbours(model, [tableRef]))}>
@@ -173,26 +195,10 @@ export function TableView({ model, cat, tableRef, column }: Props) {
       </article>
 
       <aside className="panel">
-        <dl className="facts">
-          <div>
-            <dt>Columns</dt>
-            <dd>{table.columns.length}</dd>
-          </div>
-          <div>
-            <dt>Keys</dt>
-            <dd>{keyCount}</dd>
-          </div>
-          <div>
-            <dt>References</dt>
-            <dd>{relations.out.length}</dd>
-          </div>
-          <div>
-            <dt>Referenced by</dt>
-            <dd>{relations.in.length}</dd>
-          </div>
-        </dl>
         <section>
-          <h2>References</h2>
+          <h2>
+            References <span className="count">{relations.out.length}</span>
+          </h2>
           {relations.out.length === 0 ? (
             <p className="muted">No other table.</p>
           ) : (
@@ -211,7 +217,9 @@ export function TableView({ model, cat, tableRef, column }: Props) {
           )}
         </section>
         <section>
-          <h2>Referenced by</h2>
+          <h2>
+            Referenced by <span className="count">{relations.in.length}</span>
+          </h2>
           {relations.in.length === 0 ? (
             <p className="muted">No other table.</p>
           ) : (

@@ -12,6 +12,7 @@ mkdirSync(out, { recursive: true });
 
 const ink = '#0b0b0b';
 writeFileSync(`${out}/mark.svg`, markSvg(96, ink, 1.5) + '\n');
+writeFileSync(`${out}/mark-light.svg`, markSvg(96, '#f5f5f5', 1.5) + '\n');
 
 // The wordmark is set in Archivo from the page's own font file, so the logo needs no font installed.
 const { readFileSync } = await import('node:fs');
@@ -50,8 +51,7 @@ html,body{margin:0;background:#0b0b0b;color:#f5f5f5;font-family:Archivo,system-u
 <div class="line">Tour your database. Every table an entry, every relation a line, in one file that opens anywhere.</div>
 <div class="sub">Schema docs from the catalogue your database already is. SQL Server first.</div>
 <svg class="plot" viewBox="0 0 1040 120" preserveAspectRatio="none"><path vector-effect="non-scaling-stroke" d="M0,118 L40,118 L60,4 L80,118 L130,118 L150,52 L170,118 L220,118 L240,100 L260,118 L310,118 L330,100 L350,118 L400,118 L420,66 L440,118 L490,118 L510,100 L530,118 L580,118 L600,4 L620,118 L670,118 L690,100 L710,118 L760,118 L780,52 L800,118 L850,118 L870,100 L890,118 L940,118 L960,100 L980,118 L1040,118"/></svg>
-<div class="strip"><i style="background:#e2001a"></i><i style="background:#ffd500"></i><i style="background:#0057b8"></i><i style="background:#f5f5f5"></i><i style="background:#8c8c8c"></i></div>
-<div class="cat">NO. 001 · github.com/victorsaly/dbtour</div>
+<div class="cat">github.com/victorsaly/dbtour</div>
 </div></body></html>`;
 const page = `${out}/social.html`;
 writeFileSync(page, social);
