@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import sql from 'mssql';
-import { extract } from '../../src/index.ts';
+import { extract, run as runQuery } from '../../src/index.ts';
 
 const connection = process.env.DBTOUR_E2E_MSSQL;
 
@@ -112,6 +112,21 @@ test('extract reads a real SQL Server', { skip: connection ? false : 'DBTOUR_E2E
     assert.equal(pageViews.rows, 2);
     assert.ok(pageViews.dataBytes > 0, 'the delta store holding the rows is counted');
     assert.match(database.statsReadAt!, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+
+    // Running a query: the rows, a limit that stops it, two columns of one name, and a rollback.
+    const config = { type: 'mssql', name: 'E2E', connection };
+    const options = { limit: 100, timeoutMs: 30_000 };
+    const emails = await runQuery(config, 'SELECT Id, Email, Email FROM dbtour_e2e.Customers ORDER BY Id', options);
+    assert.deepEqual(emails.columns, ['Id', 'Email', 'Email']);
+    assert.deepEqual(emails.rows.map((r) => r[1]), ['a@example.com', 'b@example.com', 'c@example.com']);
+    assert.equal(emails.truncated, false);
+    const two = await runQuery(config, 'WITH c AS (SELECT Id FROM dbtour_e2e.Customers) SELECT Id FROM c ORDER BY Id', { ...options, limit: 2 });
+    assert.deepEqual([two.rows.length, two.truncated], [2, true], 'the limit stops it, and says so');
+    // dbtour refuses a write before it gets here; handed one anyway, the source still keeps nothing of it.
+    await runQuery(config, "UPDATE dbtour_e2e.Customers SET Email = 'changed@example.com'", options);
+    const after = await runQuery(config, 'SELECT COUNT(*) FROM dbtour_e2e.Customers WHERE Email = \'changed@example.com\'', options);
+    assert.deepEqual(after.rows, [[0]], 'rolled back');
+    assert.deepEqual(after.columns, ['(column 1)']);
   } finally {
     await run(teardown);
   }

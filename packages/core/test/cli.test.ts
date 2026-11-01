@@ -213,3 +213,81 @@ test('extract refuses two sources with the same name, since refs could not tell 
   assert.match(a.err.join('\n'), /two databases are named Shop: give each source its own name in dbtour\.yaml/);
   assert.equal(existsSync(join(cwd, 'docs/dbtour/schema.json')), false);
 });
+
+test('sql runs one read through the source\'s reader, refuses before connecting, and prints a table or JSON', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: fake\n    name: Shop\n    connection: ${DBTOUR_FAKE}\n    reader: ${DBTOUR_FAKE_READER}\n');
+  const ran: { connection?: string; sql: string; limit: number; timeoutMs: number }[] = [];
+  const load = async () => ({
+    extract: async () => { throw new Error('extract is not what sql runs'); },
+    run: async (config: { connection?: string }, sql: string, options: { limit: number; timeoutMs: number }) => {
+      ran.push({ connection: config.connection, sql, ...options });
+      return { columns: ['Id', 'At'], rows: [[1, new Date('2026-11-01T00:00:00Z')]], truncated: false, limit: options.limit };
+    },
+  });
+  const env = { DBTOUR_FAKE: 'Server=x;User Id=owner', DBTOUR_FAKE_READER: 'Server=x;User Id=reader' };
+
+  const a = io();
+  assert.equal(await main(['sql', 'SELECT Id, At FROM dbo.Orders;'], { cwd, env, load, ...a.io }), 0);
+  assert.deepEqual(ran, [{ connection: 'Server=x;User Id=reader', sql: 'SELECT Id, At FROM dbo.Orders', limit: 100, timeoutMs: 30000 }]);
+  assert.equal(a.out.join('\n'), '| Id | At |\n|---|---|\n| 1 | 2026-11-01T00:00:00.000Z |\n\n1 row.');
+
+  const b = io();
+  assert.equal(await main(['sql', 'SELECT 1', '--limit', '7', '--json'], { cwd, env, load, ...b.io }), 0);
+  assert.equal(ran[1].limit, 7);
+  assert.deepEqual(JSON.parse(b.out.join('\n')), { columns: ['Id', 'At'], rows: [[1, '2026-11-01T00:00:00.000Z']], truncated: false, limit: 7 });
+
+  const c = io();
+  assert.equal(await main(['sql', 'DELETE FROM dbo.Orders'], { cwd, env, load, ...c.io }), 1);
+  assert.match(c.err.join('\n'), /starts with DELETE/);
+  assert.equal(ran.length, 2, 'a refused query never reaches the source');
+
+  const d = io();
+  assert.equal(await main(['sql'], { cwd, env, load, ...d.io }), 1);
+  assert.match(d.err.join('\n'), /dbtour sql "SELECT/);
+
+  const e = io();
+  assert.equal(await main(['sql', 'SELECT 1'], { cwd, env: { DBTOUR_FAKE: 'Server=x' }, load, ...e.io }), 2);
+  assert.match(e.err.join('\n'), /Set DBTOUR_FAKE_READER/);
+
+  const f = io();
+  const failing = async () => ({ extract: async (): Promise<never> => { throw new Error('sql never extracts'); }, run: async () => { throw new Error("Invalid object name 'dbo.Nope'."); } });
+  assert.equal(await main(['sql', 'SELECT * FROM dbo.Nope'], { cwd, env, load: failing, ...f.io }), 1);
+  assert.match(f.err.join('\n'), /Shop \(fake\): Invalid object name 'dbo\.Nope'\./);
+
+  const g = io();
+  const old = async () => ({ extract: async (): Promise<never> => { throw new Error('sql never extracts'); } });
+  assert.equal(await main(['sql', 'SELECT 1'], { cwd, env, load: old, ...g.io }), 2);
+  assert.match(g.err.join('\n'), /cannot run queries.*update/);
+});
+
+test('sql picks the one source with a reader, wants --source when several have one, and says so when none has', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: fake\n    name: Sales\n    connection: ${A}\n    reader: ${A_READER}\n  - type: fake\n    name: Stock\n    connection: ${B}\n    reader: ${B_READER}\n  - type: fake\n    name: Logs\n    connection: ${C}\n');
+  const names: string[] = [];
+  const load = async (source: { name: string }) => ({ extract: async (): Promise<never> => { throw new Error('sql never extracts'); }, run: async () => (names.push(source.name), { columns: ['n'], rows: [[1]], truncated: false, limit: 100 }) });
+  const env = { A: 'a', A_READER: 'ar', B: 'b', B_READER: 'br', C: 'c' };
+  const a = io();
+  assert.equal(await main(['sql', 'SELECT 1'], { cwd, env, load, ...a.io }), 1);
+  assert.match(a.err.join('\n'), /--source Sales or --source Stock/);
+  const b = io();
+  assert.equal(await main(['sql', 'SELECT 1', '--source', 'Stock'], { cwd, env, load, ...b.io }), 0);
+  assert.deepEqual(names, ['Stock']);
+  const c = io();
+  assert.equal(await main(['sql', 'SELECT 1', '--source', 'Logs'], { cwd, env, load, ...c.io }), 2);
+  assert.match(c.err.join('\n'), /Logs has no reader/);
+  const d = io();
+  assert.equal(await main(['sql', 'SELECT 1', '--source', 'Nope'], { cwd, env, load, ...d.io }), 1);
+  assert.match(d.err.join('\n'), /no source named Nope: Sales, Stock, Logs/);
+});
+
+test('the review: two sources of one name are ambiguous, and sql refuses to guess which', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: fake\n    name: Sales\n    connection: ${A}\n    reader: ${A_READER}\n  - type: fake\n    name: Sales\n    connection: ${B}\n    reader: ${B_READER}\n');
+  let ran = false;
+  const load = async () => ({ extract: async (): Promise<never> => { throw new Error('no'); }, run: async () => ((ran = true), { columns: [], rows: [], truncated: false, limit: 1 }) });
+  const a = io();
+  assert.equal(await main(['sql', 'SELECT 1', '--source', 'Sales'], { cwd, env: { A: 'a', A_READER: 'ar', B: 'b', B_READER: 'br' }, load, ...a.io }), 1);
+  assert.match(a.err.join('\n'), /Two sources are named Sales: give each its own name in dbtour\.yaml/);
+  assert.equal(ran, false);
+});

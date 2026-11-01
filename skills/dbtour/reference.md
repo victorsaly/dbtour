@@ -9,6 +9,7 @@ sources:
     name: Shop
     connection: ${DBTOUR_MSSQL}             # the name of an environment variable, never the string itself
     exclude: [dbo.sys*, "*.webpages_*"]     # optional: tables to leave out
+    reader: ${DBTOUR_MSSQL_READER}          # optional: a read-only login of its own, for dbtour sql and query
 notes: dbtour.notes.yaml                    # optional
 addons:
   - explorer                                # the page; leave out for Markdown only
@@ -31,6 +32,7 @@ their own shell: `export DBTOUR_MSSQL='…'`. It never goes in a file.
 | `npx dbtour extract` | Reads each source into `<out>/schema.json`. Says what the login could not read. |
 | `npx dbtour render` | Writes `<out>/README.md`, a page per table under `<out>/tables/` (a folder per database when there are several), and the add-ons' files. |
 | `npx dbtour mcp [project]` | Serves the model over MCP on stdin and stdout, for an agent. |
+| `npx dbtour sql "<query>"` | Runs one SELECT through the source's `reader`, rolled back, at most `--limit` rows (100); `--source <name>` when several have a reader, `--json` for the rows as JSON. |
 
 Exit codes: 1 for what was asked, 2 for what is missing (no `dbtour.yaml`, no `schema.json`, an unset
 variable), 3 for nothing to do. Every error says what to do next.
@@ -56,7 +58,8 @@ groups:
 ## The MCP server
 
 `dbtour mcp` reads `schema.json` and the notes, again when they change, and never connects to the database.
-Its four tools are read-only: **overview**, **search**, **table** and **path**.
+Its four tools are read-only: **overview**, **search**, **table** and **path**. When a source has a `reader`, a
+fifth, **query**, runs one SELECT through it, as `dbtour sql` does; that one reads rows, not only the structure.
 
 - **Claude Code**, from the project's folder: `claude mcp add dbtour -- npx dbtour mcp`. Installing the dbtour
   plugin (`/plugin marketplace add victorsaly/dbtour`, then `/plugin install dbtour@dbtour`) adds it for you.
@@ -65,3 +68,29 @@ Its four tools are read-only: **overview**, **search**, **table** and **path**.
 
 What it answers goes to the model provider the agent uses: a schema that must not leave a network wants a
 model that stays inside it.
+
+## A reader login
+
+`dbtour sql` and the **query** tool run only through a source's `reader`: a login of its own that can read and
+nothing more. dbtour refuses the extract's connection for it. The person makes it, as the database's owner:
+
+```sql
+-- SQL Server: a login, and a user for it in the database.
+CREATE LOGIN dbtour_reader WITH PASSWORD = '<a new password>';
+USE Shop;
+CREATE USER dbtour_reader FOR LOGIN dbtour_reader;
+ALTER ROLE db_datareader ADD MEMBER dbtour_reader;
+
+-- Azure SQL Database: a user contained in the database (or an Entra identity: CREATE USER [name] FROM EXTERNAL PROVIDER).
+CREATE USER dbtour_reader WITH PASSWORD = '<a new password>';
+ALTER ROLE db_datareader ADD MEMBER dbtour_reader;
+```
+
+Then `export DBTOUR_MSSQL_READER='Server=…;Database=Shop;User Id=dbtour_reader;Password=…'` in their own shell.
+Even so, every query runs inside a transaction that is rolled back, with a row limit, a byte budget and a timeout.
+
+What dbtour checks before a query runs is its shape: one read, nothing that writes, runs code or ends the
+transaction. It cannot see what a name points to: a synonym, another database's table (`OtherDb.dbo.T`) or a
+linked server. The reader's permissions are that boundary, so keep it to this database alone: a contained user
+on Azure SQL, or on SQL Server a login with a user in this database and none in the others, no linked-server
+login, and the `guest` user disabled where it need not be on.

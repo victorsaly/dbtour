@@ -5,7 +5,7 @@
 
 **Tour your database and its API.**
 
-[![version](https://img.shields.io/badge/version-0.7.1-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.8.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -43,6 +43,7 @@ sources:
     name: Shop
     connection: ${DBTOUR_MSSQL}   # the name of an environment variable, never the string itself
     exclude: [dbo.sys*, "*.webpages_*"]   # optional: tables to leave out
+    reader: ${DBTOUR_MSSQL_READER}        # optional: a read-only login of its own, for dbtour sql
 notes: dbtour.notes.yaml          # optional
 addons:
   - explorer                      # the page; leave out for Markdown only
@@ -130,6 +131,24 @@ groups:
   - name: Billing
     tables: [dbo.Orders, dbo.OrderLines, dbo.Invoices]
 ```
+
+## Run a query
+
+With a `reader` on a source (a login with `db_datareader` alone, never the one `extract` uses), dbtour runs a
+query too:
+
+```bash
+export DBTOUR_MSSQL_READER='Server=…;Database=Shop;User Id=dbtour_reader;Password=…'
+npx dbtour sql "SELECT TOP (10) Id, Status FROM dbo.Orders ORDER BY Id DESC"
+```
+
+and `dbtour mcp` offers a **query** tool beside the others, so an agent can check what it wrote. Either way it
+runs one SELECT, or WITH … SELECT: anything that writes, runs code or reaches out of the database is refused
+before a connection is made, and what runs does so inside a transaction that is always rolled back, at most
+100 rows (`--limit` up to 5,000), 10 MB and 30 seconds. The rows are shown, never written into the model.
+Through the MCP server they go to the model provider your agent uses. What dbtour checks is the query's shape;
+what a name can reach (another database, a linked server) is the reader's permissions, so keep the reader to
+this database alone.
 
 ## Develop
 

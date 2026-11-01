@@ -5,6 +5,7 @@
 import { findTables, localRef, tableRef, type Database, type Model, type Relation } from './model.ts';
 import { driverName, formatCount, renderTableMarkdown } from './render/markdown.ts';
 import { buildIndex, search, type Hit } from './search.ts';
+import { checkQuery, defaultLimit, maxLimit } from './sql.ts';
 
 // The versions this server speaks, newest first. It uses only initialize, ping, tools/list and tools/call,
 // which none of them changed, so it agrees to whichever the client asks for and offers the newest otherwise.
@@ -22,6 +23,11 @@ export interface Context {
   /** The model with its notes, read again when the files change; throws when there is none. */
   model: () => Model;
   version: string;
+  /**
+   * Runs a query through a source's reader. Given only when a source has one, and only then is the query
+   * tool offered: the other tools read the model, this one reads rows.
+   */
+  run?: (sql: string, source: string | undefined, limit: number | undefined) => Promise<ToolResult>;
 }
 
 export interface ToolResult {
@@ -87,7 +93,7 @@ const toolNames = toolList.map((t) => t.name);
 type Id = string | number | null;
 
 /** One line in, at most one line out: a notification and a blank line get none. */
-export function answerLine(line: string, context: Context): string | undefined {
+export function answerLine(line: string, context: Context): string | undefined | Promise<string | undefined> {
   if (line.trim() === '') return undefined;
   let message: unknown;
   try {
@@ -96,10 +102,12 @@ export function answerLine(line: string, context: Context): string | undefined {
     return JSON.stringify(failure(null, -32700, 'That line is not JSON: send one JSON-RPC message per line.'));
   }
   const response = answer(message, context);
+  if (response instanceof Promise) return response.then((r) => JSON.stringify(r));
   return response === undefined ? undefined : JSON.stringify(response);
 }
 
-export function answer(message: unknown, context: Context): object | undefined {
+/** The answer to one request; a promise only for a query, the one tool that waits on the database. */
+export function answer(message: unknown, context: Context): object | undefined | Promise<object> {
   if (typeof message !== 'object' || message === null || Array.isArray(message)) return failure(null, -32600, 'Send one JSON-RPC request as an object; batches are not accepted.');
   const request = message as Record<string, unknown>;
   // An id that is neither a string nor a number cannot be echoed back, so its error carries null.
@@ -124,11 +132,13 @@ export function answer(message: unknown, context: Context): object | undefined {
     case 'ping':
       return success(id, {});
     case 'tools/list':
-      return success(id, { tools: toolList });
+      return success(id, { tools: context.run ? [...toolList, queryTool] : toolList });
     case 'tools/call': {
       const name = params.name;
-      if (typeof name !== 'string' || !toolNames.includes(name)) return failure(id, -32602, `There is no tool "${String(name)}": the tools are ${toolNames.join(', ')}.`);
+      const offered = context.run ? [...toolNames, queryTool.name] : toolNames;
+      if (typeof name !== 'string' || !offered.includes(name)) return failure(id, -32602, `There is no tool "${String(name)}": the tools are ${offered.join(', ')}.`);
       const args = typeof params.arguments === 'object' && params.arguments !== null ? (params.arguments as Record<string, unknown>) : {};
+      if (name === queryTool.name) return callQuery(context.run!, args).then((result) => success(id, result));
       let model: Model;
       try {
         model = context.model();
@@ -139,6 +149,36 @@ export function answer(message: unknown, context: Context): object | undefined {
     }
     default:
       return failure(id, -32601, `dbtour does not answer ${request.method}: it offers tools only.`);
+  }
+}
+
+/** Offered beside the others only when a source has a reader; see Context.run. */
+export const queryTool = {
+  name: 'query',
+  title: 'Query',
+  description: `Run one SELECT (or WITH … SELECT) through the project's read-only login, inside a transaction that is always rolled back, and get the rows as a table, ${defaultLimit} at most unless you ask for fewer or more (up to ${maxLimit}). Read every table you name with the table tool first. The rows go to the model provider your agent uses: leave out columns that are masked, encrypted or carry a sensitivity label unless the question needs them.`,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sql: { type: 'string', description: 'One SELECT, or a WITH followed by a SELECT, in the database\'s dialect.' },
+      source: { type: 'string', description: 'The source to run it in, by its name in dbtour.yaml, when more than one has a reader.' },
+      limit: { type: 'number', description: `The most rows to return; ${defaultLimit} if not given.` },
+    } as Record<string, unknown>,
+    required: ['sql'],
+  },
+  annotations: { readOnlyHint: true, openWorldHint: false },
+};
+
+/** A query refused here never reaches the source; one that runs comes back as the source's answer. */
+async function callQuery(run: NonNullable<Context['run']>, args: Record<string, unknown>): Promise<ToolResult> {
+  if (typeof args.sql !== 'string' || args.sql.trim() === '') return problem('query needs sql: one SELECT, like SELECT TOP (10) * FROM dbo.Orders.');
+  const checked = checkQuery(args.sql);
+  if (!checked.ok) return problem(checked.reason);
+  // Whatever goes wrong in the database is this call's failure, not the server's: the next request is answered.
+  try {
+    return await run(checked.sql, typeof args.source === 'string' ? args.source : undefined, typeof args.limit === 'number' ? args.limit : undefined);
+  } catch (error) {
+    return problem(error instanceof Error ? error.message : String(error));
   }
 }
 

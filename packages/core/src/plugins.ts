@@ -3,11 +3,20 @@
 // in the project.
 import type { AddonConfig, SourceConfig } from './config.ts';
 import type { Api, Database, Model } from './model.ts';
+import type { QueryResult, RunOptions } from './sql.ts';
 
 export type Extract = (config: SourceConfig) => Promise<Database | Api>;
 
+/**
+ * Runs one query dbtour has already checked, with `config.connection` set to the source's reader: read-only,
+ * inside a transaction the source always rolls back, at most `limit` rows, cancelled after `timeoutMs`.
+ */
+export type Run = (config: SourceConfig, sql: string, options: RunOptions) => Promise<QueryResult>;
+
 export interface Source {
   extract: Extract;
+  /** Absent from a source that cannot run queries, or from one published before it could. */
+  run?: Run;
 }
 
 export type Importer = (specifier: string) => Promise<unknown>;
@@ -27,7 +36,8 @@ export async function loadSource(source: SourceConfig, importer: Importer = (s) 
   }
   const extract = (loaded as { extract?: unknown } | null)?.extract;
   if (typeof extract !== 'function') throw new Error(`${name} does not export extract(config), so it is not a dbtour source`);
-  return { extract: extract as Extract };
+  const run = (loaded as { run?: unknown }).run;
+  return typeof run === 'function' ? { extract: extract as Extract, run: run as Run } : { extract: extract as Extract };
 }
 
 /** Files to write under `out`, keyed by path, like renderMarkdown returns them. */

@@ -1,6 +1,6 @@
 // Turns the thirteen result sets of query.sql into a Database. Pure, so it is tested on rows kept in a file.
 // Every field a newer set or column adds is optional here, so rows from an older query still map.
-import type { Column, Constraint, Database, Index, Properties, Relation, Schema, SecurityPredicate, Table, Trigger } from 'dbtour';
+import type { Column, Constraint, Database, Index, Properties, QueryResult, Relation, Schema, SecurityPredicate, Table, Trigger } from 'dbtour';
 
 /** node-mssql returns a bigint as a string, since it may not fit a JavaScript number. */
 type Count = number | string;
@@ -310,4 +310,64 @@ function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
 
 function pattern(text: string): RegExp {
   return new RegExp('^' + text.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$', 'i');
+}
+
+/** Roughly how many bytes a value holds in memory: text two to a character, bytes as they are. */
+export function sizeOf(value: unknown): number {
+  if (value === null || value === undefined) return 1;
+  if (typeof value === 'string') return value.length * 2;
+  if (value instanceof Uint8Array) return value.length;
+  return 8;
+}
+
+/**
+ * The rows of a query as they stream in, kept until one is past the limit or they outgrow the byte budget.
+ * add() says whether to go on; run() cancels the query when it says no, so neither the rows nor their size
+ * is ever more than one row past what is kept.
+ */
+export class RowCollector {
+  private columns: string[] = [];
+  private rows: unknown[][] = [];
+  private bytes = 0;
+  private stopped?: 'limit' | 'size';
+  private readonly limit: number;
+  private readonly budget: number;
+
+  constructor(limit: number, budget: number) {
+    this.limit = limit;
+    this.budget = budget;
+  }
+
+  /** A new result set: its columns, and its rows from nothing. */
+  start(columns: { name: string }[]): void {
+    this.columns = columns.map((c, i) => c.name || `(column ${i + 1})`);
+    this.rows = [];
+    this.bytes = 0;
+  }
+
+  add(row: unknown[]): boolean {
+    if (this.rows.length >= this.limit) {
+      this.stopped = 'limit';
+      return false;
+    }
+    const size = row.reduce<number>((sum, value) => sum + sizeOf(value), 0);
+    if (this.bytes + size > this.budget) {
+      this.stopped = 'size';
+      return false;
+    }
+    this.rows.push(row);
+    this.bytes += size;
+    return true;
+  }
+
+  /** Whether add() has stopped it; a cancelled query's error is then expected, not a failure. */
+  get done(): boolean {
+    return this.stopped !== undefined;
+  }
+
+  result(): QueryResult {
+    const result: QueryResult = { columns: this.columns, rows: this.rows, truncated: this.stopped !== undefined, limit: this.limit };
+    if (this.stopped) result.reason = this.stopped;
+    return result;
+  }
 }

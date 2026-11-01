@@ -3,7 +3,7 @@ name: dbtour
 description: Documents a project's database from its structure and answers questions about it without reading a row - which table holds something, how two tables join, what a column means, how big a table is - and writes SQL against it from the real tables and columns, through dbtour (dbtour.yaml, docs/dbtour/schema.json, the dbtour MCP server). Use when asked to document a database or keep its docs current, to find where data lives, to explain a schema, to write or check a query for the project's database, or to set up dbtour. Load it before writing SQL against a database the project uses, even a short query.
 license: MIT
 metadata:
-  version: 0.7.1
+  version: 0.8.0
   homepage: https://github.com/victorsaly/dbtour
 allowed-tools: Bash(npx dbtour *)
 ---
@@ -74,9 +74,22 @@ loading the whole file. If the person uses Claude Code and asks, connect it:
   not select it unless the question needs it, and say so when you do.
 - Give the query with the tables it reads named beside it, so the person can check it against the docs.
 
-dbtour does not run queries yet. Hand the query to the person to run in their own tool.
+## 4. Run it, when the project allows it
 
-## 4. Keep the docs current
+When a source in `dbtour.yaml` has a `reader` (a read-only login of its own), the MCP server also offers
+`query`, and `npx dbtour sql "<query>"` does the same from the terminal (`--limit`, `--source`, `--json`). Each
+runs one SELECT, or WITH … SELECT, after checking it is one: inside a transaction that is always rolled back,
+at most 100 rows unless asked, cancelled after 30 seconds.
+
+- Read the tables with **table** first all the same: running a query is how you check it, not how you guess.
+- The rows go to the model provider your agent uses. Select only what the question needs, never a whole large
+  table, and leave out masked, encrypted or labelled columns unless the person asks for them.
+- A refusal says why: a second statement, a write, `SELECT … INTO`. Fix the query; do not work around it.
+
+Without a reader, hand the query to the person to run in their own tool. Do not ask them for a login or a
+password: setting up a reader is theirs, and [reference.md](reference.md) shows how.
+
+## 5. Keep the docs current
 
 After a migration, or when asked: `npx dbtour extract` and `npx dbtour render`, then show what changed
 (`git diff docs/dbtour/`). What the database cannot say (what a status code means, a relation nobody

@@ -1,6 +1,33 @@
 # Changelog
 
-## 0.7.1 (unreleased)
+## 0.8.0 (unreleased)
+
+- Running a query, the first half of the SQL add-on. A source gets a `reader` in `dbtour.yaml`: the
+  environment variable for a login of its own with `db_datareader` alone. `dbtour sql "<query>"` runs one
+  SELECT through it (`--limit`, `--source`, `--json`), and `dbtour mcp` offers a `query` tool beside the others
+  when a source has one. dbtour refuses a reader that names the extract's variable or holds its connection
+  string.
+- What runs is checked first, in core (`checkQuery`), reading T-SQL's strings, quoted names and comments as
+  SQL Server does: one SELECT or WITH, nothing that writes, runs code, declares or sets, reaches out of the
+  database (OPENROWSET and the like) or writes a table with SELECT … INTO. A refusal says why and never
+  connects.
+- The SQL Server source exports `run()`: inside a transaction that is always rolled back, rows streamed
+  into a collector that stops at the limit (100 by default, 5,000 at most) or 10 MB, whichever comes first,
+  and cancels the query there, `SET ROWCOUNT` one row past the limit, cancelled after 30 seconds (the driver's
+  own timeout set past it), rows as arrays so two columns of one name both come back. The result is a table
+  for the terminal and the agent, or JSON.
+- The check does not trust semicolons, which T-SQL does not need: a second top-level SELECT not joined by
+  UNION, EXCEPT or INTERSECT is refused, as are transaction control, NEXT VALUE FOR (a sequence moves on
+  through a rollback) and a `--` comment's carriage return hiding a statement. It cannot see what a name
+  points to, so the reader's permissions are the boundary for other databases and linked servers, as
+  `reference.md` says. Two sources of one name are refused rather than guessed between, and a query tool call
+  that fails is the call's error, never the MCP server's end.
+- The skill learns to run what it writes: read the tables first all the same, select only what the question
+  needs, leave protected columns out, and without a reader hand the query over rather than ask for a login.
+  `reference.md` shows how to make the reader, on SQL Server and Azure SQL.
+- `dbtour init` writes the `reader` line, commented out.
+
+## 0.7.1 (1 November 2026)
 
 - The skill, tightened by its evals. It never quotes a password back, not even to point at it, and shows the
   variable as `export DBTOUR_MSSQL='Server=…;Password=…'`. With no model to read (no MCP tools, no docs) it

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { main } from '../../packages/core/src/cli.ts';
-import { toolList } from '../../packages/core/src/mcp.ts';
+import { queryTool, toolList } from '../../packages/core/src/mcp.ts';
 
 const root = new URL('../../', import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8');
@@ -75,4 +75,14 @@ test('every eval\'s frontmatter is YAML a runner can read', () => {
     const files = [`evals/${name.name}/prompt.md`, ...readdirSync(new URL(`evals/${name.name}/graders/`, root)).map((g) => `evals/${name.name}/graders/${g}`)];
     for (const file of files) assert.doesNotThrow(() => frontmatter(read(file)), file);
   }
+});
+
+test('the skill says how to run a query: the query tool and dbtour sql, through a reader, never asking for a login', () => {
+  assert.match(skill, new RegExp(`\`${queryTool.name}\``), 'SKILL.md names the query tool');
+  assert.match(skill, /npx dbtour sql/);
+  assert.match(skill, /`reader`/);
+  assert.match(skill, /model provider/, 'it says where the rows go');
+  assert.doesNotMatch(skill, /does not run queries yet/);
+  assert.match(reference, /db_datareader/, 'reference.md shows how to make a reader login');
+  assert.match(reference, new RegExp(`\\*\\*${queryTool.name}\\*\\*`));
 });

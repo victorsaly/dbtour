@@ -6,10 +6,11 @@ import type { Readable, Writable } from 'node:stream';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { configFile, defaultConfigText, modelFile, parseConfig, resolveConnection, type AddonConfig, type Config, type SourceConfig } from './config.ts';
+import { configFile, defaultConfigText, modelFile, parseConfig, resolveConnection, resolveReader, type AddonConfig, type Config, type SourceConfig } from './config.ts';
 import { emptyModel, scope, validate, type Api, type Database, type Model } from './model.ts';
 import { applyNotes, parseNotes } from './notes.ts';
-import { answerLine } from './mcp.ts';
+import { answerLine, type ToolResult } from './mcp.ts';
+import { checkQuery, clampLimit, defaultTimeoutMs, resultText, type QueryResult } from './sql.ts';
 import { loadAddon, loadSource, type Addon, type Importer, type Source } from './plugins.ts';
 import { renderMarkdown } from './render/markdown.ts';
 
@@ -35,11 +36,18 @@ const help = `Usage: dbtour <command>
                           add-ons in ${configFile} render (explorer: index.html) under <out>
   mcp [project]           answer an agent's questions about <out>/${modelFile} and the notes over MCP,
                           on stdin and stdout: claude mcp add dbtour -- npx dbtour mcp
+  sql "<query>"           run one SELECT through a source's reader, a read-only login of its own,
+                          rolled back, at most --limit rows (100); --source <name>, --json
 
 Set the connection string in the environment variable ${configFile} names, never in the file.`;
 
 export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: console.log, error: console.error }): Promise<number> {
-  const { values, positionals } = parseArgs({ args: argv, options: { help: { type: 'boolean', short: 'h' }, source: { type: 'string' } }, allowPositionals: true, strict: false });
+  const { values, positionals } = parseArgs({
+    args: argv,
+    options: { help: { type: 'boolean', short: 'h' }, source: { type: 'string' }, limit: { type: 'string' }, json: { type: 'boolean' } },
+    allowPositionals: true,
+    strict: false,
+  });
   const command = positionals[0];
   if (values.help || command === undefined) {
     io.log(help);
@@ -55,6 +63,12 @@ export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: c
         return await render(io);
       case 'mcp':
         return await mcp(positionals[1] === undefined ? io : { ...io, cwd: resolve(io.cwd, positionals[1]) });
+      case 'sql':
+        return await sql(io, positionals[1], {
+          source: typeof values.source === 'string' ? values.source : undefined,
+          limit: typeof values.limit === 'string' ? Number(values.limit) : undefined,
+          json: values.json === true,
+        });
       default:
         io.error(`"${command}" is not a dbtour command.\n\n${help}`);
         return 1;
@@ -192,9 +206,70 @@ async function mcp(io: Io): Promise<number> {
   };
   const version = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
   const output = io.stdout ?? process.stdout;
+  // The query tool is offered only when a source has a reader; its errors go back to the agent as text.
+  const run = config.sources.some((s) => s.reader !== undefined)
+    ? async (text: string, source: string | undefined, limit: number | undefined): Promise<ToolResult> => {
+        try {
+          return { content: [{ type: 'text', text: resultText(await runQuery(io, config, text, source, limit)) }] };
+        } catch (error) {
+          return { content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true };
+        }
+      }
+    : undefined;
+  // One request at a time, in order: a query is awaited before the next line is read.
   for await (const line of createInterface({ input: io.stdin ?? process.stdin, crlfDelay: Infinity })) {
-    const reply = answerLine(line, { model: current, version });
+    const reply = await answerLine(line, { model: current, version, run });
     if (reply !== undefined) output.write(reply + '\n');
   }
   return 0;
+}
+
+async function sql(io: Io, text: string | undefined, options: { source?: string; limit?: number; json: boolean }): Promise<number> {
+  if (text === undefined || text.trim() === '') {
+    io.error('Give the query to run: dbtour sql "SELECT TOP (10) * FROM dbo.Orders"');
+    return 1;
+  }
+  const result = await runQuery(io, readConfig(io), text, options.source, options.limit);
+  io.log(options.json ? JSON.stringify(result, cellJson, 2) : resultText(result));
+  return 0;
+}
+
+/** JSON for a cell: a date as ISO, bytes as hex. */
+function cellJson(_key: string, value: unknown): unknown {
+  if (value && typeof value === 'object' && (value as { type?: string }).type === 'Buffer') return `0x${Buffer.from((value as { data: number[] }).data).toString('hex')}`;
+  return value;
+}
+
+/**
+ * The query checked, then run through the chosen source's reader. Refusals throw before any connection is
+ * made: a query that is not one read, no reader or the extract's own login, a source that cannot run.
+ */
+async function runQuery(io: Io, config: Config, text: string, sourceName: string | undefined, limit: number | undefined): Promise<QueryResult> {
+  const checked = checkQuery(text);
+  if (!checked.ok) throw new Error(checked.reason);
+  const source = pickSource(config, sourceName);
+  const reader = resolveReader(source, io.env ?? process.env);
+  const load = io.load ?? ((s: SourceConfig) => loadSource(s, importer(io.cwd)));
+  const { run } = await load(source);
+  if (run === undefined) throw missing(`Source ${source.name} (${source.type}) cannot run queries: update ${source.module ?? `dbtour-source-${source.type}`} to the version of dbtour you have, then run it again`);
+  try {
+    return await run({ ...source, connection: reader }, checked.sql, { limit: clampLimit(limit), timeoutMs: defaultTimeoutMs });
+  } catch (error) {
+    throw new Error(`${source.name} (${source.type}): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+}
+
+/** The source named, or the only one with a reader; several want a name, and none says what to add. */
+function pickSource(config: Config, name: string | undefined): SourceConfig {
+  if (name !== undefined) {
+    const named = config.sources.filter((s) => s.name === name);
+    if (named.length === 0) throw new Error(`There is no source named ${name}: ${config.sources.map((s) => s.name).join(', ')}`);
+    // Two of one name would leave which database the query runs in to the order of the file.
+    if (named.length > 1) throw new Error(`Two sources are named ${name}: give each its own name in ${configFile}, then run it again`);
+    return named[0];
+  }
+  const readers = config.sources.filter((s) => s.reader !== undefined);
+  if (readers.length === 1) return readers[0];
+  if (readers.length > 1) throw new Error(`Several sources have a reader: say which with ${readers.map((s) => `--source ${s.name}`).join(' or ')}`);
+  return config.sources[0];
 }
