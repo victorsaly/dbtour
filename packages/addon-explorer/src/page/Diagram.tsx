@@ -114,7 +114,7 @@ export function DiagramView({ model, cat, refs, title, description }: Props) {
             elementsSelectable={false}
             proOptions={{ hideAttribution: true }}
           >
-            <Background variant={BackgroundVariant.Lines} gap={32} lineWidth={1} color="var(--grid)" />
+            <Background variant={BackgroundVariant.Lines} gap={32} lineWidth={1} color="var(--grid)" bgColor="var(--bg)" />
             <Controls showInteractive={false} />
           </ReactFlow>
         ) : (

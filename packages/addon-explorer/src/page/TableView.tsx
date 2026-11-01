@@ -82,8 +82,8 @@ export function TableView({ model, cat, tableRef, column }: Props) {
             {table.kind === 'view' && <span className="tag">view</span>}
           </h1>
           <p className="meta">
-            {table.columns.length} {table.columns.length === 1 ? 'column' : 'columns'} · {keyCount} {keyCount === 1 ? 'key' : 'keys'} · {relations.out.length} references ·{' '}
-            {relations.in.length} referenced by
+            {table.columns.length} {table.columns.length === 1 ? 'column' : 'columns'} · {keyCount} {keyCount === 1 ? 'key' : 'keys'} · references {relations.out.length} · referenced by{' '}
+            {relations.in.length}
           </p>
           {table.description && <p className="description">{table.description}</p>}
           <div className="actions">

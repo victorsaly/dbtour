@@ -8,9 +8,9 @@ import { groupHash, tableHash } from './route.ts';
 import { lastOpened } from './TableView.tsx';
 
 // The stack fills the field: a few tables get tall lines, a long catalogue keeps a tight pitch that still
-// shows every table. In pixels, the SVG's height; the row adds 8px.
+// shows every table. In pixels, the SVG's height; the label beneath adds its own line.
 export function lineHeight(tables: number): number {
-  return tables <= 12 ? 40 : tables <= 40 ? 26 : 16;
+  return tables <= 12 ? 40 : tables <= 40 ? 24 : 14;
 }
 
 export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
@@ -35,7 +35,7 @@ export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
         })}
 
         <div className="label plots-label">Index · one line per table, a key is a peak</div>
-        <ol className="plots" style={{ '--row': `${height + 8}px` } as React.CSSProperties}>
+        <ol className="plots">
           {cat.entries.map((entry, i) => {
             const found = findTable(model, entry.ref)!;
             const ticks = profile(found.table, relationsOf(model, entry.ref).out.flatMap((r) => r.from.columns));

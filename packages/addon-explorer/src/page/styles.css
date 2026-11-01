@@ -505,11 +505,11 @@ kbd {
   margin: 0;
   padding: 0;
 }
-/* Each line runs the full width; its label sits at the left, on the baseline, and the pulses start after it. */
+/* Each line runs the full width; its label sits at the left end, just under the baseline. */
 .plots li a {
-  position: relative;
-  display: block;
-  height: var(--row, 48px);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  padding: 6px 0 4px;
   text-decoration: none;
 }
 .plots li a:hover {
@@ -520,16 +520,11 @@ kbd {
   stroke-width: 2;
 }
 .plot-label {
-  position: absolute;
-  left: 0;
-  bottom: 6px;
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 240px;
-  padding-right: 12px;
-  background: var(--bg);
-  z-index: 1;
+  margin-top: 4px;
+  min-width: 0;
 }
 .plots .name {
   font-family: var(--mono);
@@ -539,12 +534,8 @@ kbd {
   white-space: nowrap;
 }
 .plots .plot {
-  position: absolute;
-  left: 240px;
-  right: 0;
-  bottom: 4px;
-  width: auto;
   display: block;
+  width: 100%;
 }
 .hint {
   margin-top: 36px;
@@ -725,6 +716,8 @@ pre {
   opacity: 0;
 }
 .react-flow {
+  --xy-background-color: var(--bg);
+  --xy-background-color-default: var(--bg);
   background-color: var(--bg) !important;
 }
 .react-flow__edge-path {
@@ -807,14 +800,8 @@ pre {
   .page {
     padding: 18px 16px 32px;
   }
-  .plot-label {
-    width: 190px;
-  }
-  .plot-label .tag {
-    display: none;
-  }
-  .plots .plot {
-    left: 190px;
+  .with-panel {
+    grid-template-columns: minmax(0, 1fr);
   }
   .diagram-head {
     padding: 16px;
