@@ -1,13 +1,13 @@
 {
-  "info": [{ "name": "Shop", "version": "16.0.4135.4", "description": "The web shop." }],
+  "info": [{ "name": "Shop", "version": "16.0.4135.4", "description": "The web shop.", "readAt": "2026-11-01T09:30:00.1234567Z" }],
   "tables": [
-    { "schema": "billing", "name": "Invoices", "kind": "table", "description": null, "definition": null },
-    { "schema": "dbo", "name": "Customers", "kind": "table", "description": "One row per account.", "definition": null },
-    { "schema": "dbo", "name": "OrderLines", "kind": "table", "description": null, "definition": null },
-    { "schema": "dbo", "name": "Orders", "kind": "table", "description": null, "definition": null },
-    { "schema": "dbo", "name": "Shipments", "kind": "table", "description": null, "definition": null },
-    { "schema": "dbo", "name": "sysdiagrams_old", "kind": "table", "description": null, "definition": null },
-    { "schema": "dbo", "name": "vOrderTotals", "kind": "view", "description": null, "definition": "CREATE VIEW dbo.vOrderTotals AS SELECT OrderId, SUM(Quantity) AS Total FROM dbo.OrderLines GROUP BY OrderId" }
+    { "schema": "billing", "name": "Invoices", "kind": "table", "description": null, "definition": null, "rows": 298551, "dataBytes": 41943040, "indexBytes": 0 },
+    { "schema": "dbo", "name": "Customers", "kind": "table", "description": "One row per account.", "definition": null, "rows": "48213", "dataBytes": "7397376", "indexBytes": "1654784" },
+    { "schema": "dbo", "name": "OrderLines", "kind": "table", "description": null, "definition": null, "rows": 1204377, "dataBytes": 81920000, "indexBytes": 25165824 },
+    { "schema": "dbo", "name": "Orders", "kind": "table", "description": null, "definition": null, "rows": 312904, "dataBytes": 30859264, "indexBytes": 9764864 },
+    { "schema": "dbo", "name": "Shipments", "kind": "table", "description": null, "definition": null, "rows": 0, "dataBytes": 0, "indexBytes": 0 },
+    { "schema": "dbo", "name": "sysdiagrams_old", "kind": "table", "description": null, "definition": null, "rows": 3, "dataBytes": 16384, "indexBytes": 0 },
+    { "schema": "dbo", "name": "vOrderTotals", "kind": "view", "description": null, "definition": "CREATE VIEW dbo.vOrderTotals AS SELECT OrderId, SUM(Quantity) AS Total FROM dbo.OrderLines GROUP BY OrderId", "rows": null, "dataBytes": null, "indexBytes": null }
   ],
   "columns": [
     { "schema": "billing", "table": "Invoices", "name": "Id", "position": 1, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": true, "default": null, "computed": null, "description": null },

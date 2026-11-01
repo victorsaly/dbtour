@@ -1,12 +1,15 @@
 // One entry: its number and name, its plot, its columns ruled beneath; the facts, relations and the sequence
 // on the right. Indexes, constraints and a view's definition fold below.
 import { useEffect, useState } from 'react';
-import { findTable, isUniqueColumn, relationsOf, type Column, type Model, type Relation, type Table } from 'dbtour/model';
+import { driverName, formatBytes, formatCount } from 'dbtour/markdown';
+import { findTable, isUniqueColumn, relationsOf, type Column, type Model, type Relation, type Table, type TableStats } from 'dbtour/model';
 import { neighboursOf, type Catalogue } from './catalogue.ts';
 import { DiagramView } from './Diagram.tsx';
 import { withNeighbours } from './graph.ts';
 import { Plot } from './Plot.tsx';
 import { profile } from './plot.ts';
+import { rankByRows, sizeTerms } from './size.ts';
+import { SizeBar, Swatch } from './SizeBar.tsx';
 import { prompt } from './prompt.ts';
 import { diagramHash, groupHash, tableHash } from './route.ts';
 import { rememberTool, storedTool, toolById, tools } from './tools.ts';
@@ -127,6 +130,8 @@ export function TableView({ model, cat, tableRef, column }: Props) {
             </div>
           </div>
         </header>
+
+        {table.stats && <Size stats={table.stats} rank={rankByRows(cat, tableRef)} readAt={found.database.statsReadAt} driver={found.database.driver} />}
 
         <div className="entry-plot" key={tableRef}>
           <Plot ticks={profile(table, foreign)} height={plotHeight} tableRef={tableRef} activeColumn={column} />
@@ -365,4 +370,42 @@ async function copyText(text: string): Promise<boolean> {
       area.remove();
     }
   }
+}
+
+/**
+ * The table's size where the entry opens: its rows, its place among the tables, a bar of its bytes split
+ * into data and indexes with each figure written under it, and what each figure is.
+ */
+function Size({ stats, rank, readAt, driver }: { stats: TableStats; rank?: string; readAt?: string; driver: string }) {
+  const terms = sizeTerms(driverName(driver));
+  return (
+    <section className="size-block" aria-label="Size">
+      <div className="size-head">
+        <span className="label">Size</span>
+        {readAt && <span className="label">As of {readAt.slice(0, 10)}</span>}
+      </div>
+      <p className="size-rows">
+        <span className="figure">{formatCount(stats.rows)} rows</span>
+        {rank && <span className="muted">{rank}</span>}
+      </p>
+      <SizeBar stats={stats} largest={stats.dataBytes + stats.indexBytes} />
+      <p className="size-legend">
+        <span>
+          <Swatch kind="data" /> {formatBytes(stats.dataBytes)} data
+        </span>
+        <span>
+          <Swatch kind="indexes" /> {formatBytes(stats.indexBytes)} indexes
+        </span>
+        <span>{formatBytes(stats.dataBytes + stats.indexBytes)} in all</span>
+      </p>
+      <dl className="terms terms-row">
+        <dt>Rows</dt>
+        <dd>{terms.rows}</dd>
+        <dt>Data</dt>
+        <dd>{terms.data}</dd>
+        <dt>Indexes</dt>
+        <dd>{terms.indexes}</dd>
+      </dl>
+    </section>
+  );
 }

@@ -103,8 +103,28 @@ function publishMissing() {
     fail(error.message);
   }
   const flags = args.has('--provenance') ? ['--provenance'] : [];
-  for (const workspace of missing) run('npm', ['publish', '--workspace', workspace, '--access', 'public', ...flags], { stdio: 'inherit' });
+  for (const workspace of missing) {
+    // npm's account of a refusal is kept to name the fix; it is shown as it comes as well. The terminal's
+    // input stays npm's, for the one-time password it asks for when published by hand.
+    const result = spawnSync('npm', ['publish', '--workspace', workspace, '--access', 'public', ...flags], { cwd: repo, encoding: 'utf8', stdio: ['inherit', 'inherit', 'pipe'] });
+    process.stderr.write(result.stderr ?? '');
+    if (result.status !== 0) fail(refusal(manifests.find((m) => m.workspace === workspace), result.stderr ?? ''));
+  }
   return missing.length;
+}
+
+/** What to do about a publish npm refused, in a sentence; the two refusals trusted publishing gives first. */
+function refusal({ name, repository }, stderr) {
+  const spec = `${name}@${version}`;
+  const github = process.env.GITHUB_REPOSITORY ?? /github\.com[/:]([^/]+\/[^/.]+)/.exec(repository?.url ?? '')?.[1] ?? '<owner>/<repo>';
+  if (/OIDC permission denied/.test(stderr)) {
+    return `npm refused to publish ${spec}: its trusted publisher may only stage, the default for one made after 3 September 2026. Allow publishing (npx npm@latest trust list ${name} gives the id to revoke first): npx npm@latest trust github ${name} --file release.yml --repo ${github} --allow-publish, then run it again.`;
+  }
+  if (/\bE?404\b/.test(stderr)) {
+    return `npm does not trust this workflow to publish ${name}. On npmjs.com, give ${name} a trusted publisher (GitHub Actions, ${github}, release.yml, no environment) or correct the one it has, then run it again.`;
+  }
+  const said = stderr.trim().split('\n').find((line) => line.trim() !== '') ?? 'no reason given';
+  return `npm did not publish ${spec} (${said}). Fix what npm says above, then run it again: what is on npm already is skipped.`;
 }
 
 if (released && !args.has('--publish')) {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { renderMarkdown, renderTableMarkdown } from '../src/render/markdown.ts';
+import { formatBytes, formatCount, renderMarkdown, renderTableMarkdown } from '../src/render/markdown.ts';
 import type { Model } from '../src/model.ts';
 
 const shop = (): Model => JSON.parse(readFileSync(new URL('./fixtures/shop.json', import.meta.url), 'utf8'));
@@ -23,8 +23,10 @@ test('the index lists every table with its description and links to its page', (
   const readme = renderMarkdown(shop())['README.md'];
   assert.match(readme, /^# Shop\n/);
   assert.match(readme, /The web shop\./);
-  assert.match(readme, /\| \[dbo\.Customers\]\(tables\/dbo\.Customers\.md\) \| table \| 3 \| One row per account\. \|/);
-  assert.match(readme, /\| \[dbo\.vOrderTotals\]\(tables\/dbo\.vOrderTotals\.md\) \| view \| 2 \| {2}\|/);
+  assert.match(readme, /\| Table \| Kind \| Columns \| Rows \| Size \| Description \|/);
+  assert.match(readme, /\| \[dbo\.Customers\]\(tables\/dbo\.Customers\.md\) \| table \| 3 \| 48,213 \| 8\.6 MB \| One row per account\. \|/);
+  assert.match(readme, /\| \[dbo\.OrderLines\]\(tables\/dbo\.OrderLines\.md\) \| table \| \d+ \| 1,204,377 \| 102 MB \|/);
+  assert.match(readme, /\| \[dbo\.vOrderTotals\]\(tables\/dbo\.vOrderTotals\.md\) \| view \| 2 \| {2}\| {2}\| {2}\|/);
   assert.match(readme, /```mermaid\nerDiagram\n[\s\S]*dbo_Orders \}o--\|\| dbo_Customers/);
 });
 
@@ -66,4 +68,37 @@ test('pipes in descriptions do not break the tables', () => {
 test('renderTableMarkdown renders one table page, and says when the table is not there', () => {
   assert.equal(renderTableMarkdown(shop(), 'dbo.Orders'), renderMarkdown(shop())['tables/dbo.Orders.md']);
   assert.throws(() => renderTableMarkdown(shop(), 'dbo.Ghost'), /dbo\.Ghost is not a table/);
+});
+
+test('a database without stats has no Rows or Size columns in the index, and its pages say nothing of size', () => {
+  const model = shop();
+  for (const schema of model.databases[0].schemas) for (const table of schema.tables) delete table.stats;
+  delete model.databases[0].statsReadAt;
+  const files = renderMarkdown(model);
+  assert.match(files['README.md'], /\| Table \| Kind \| Columns \| Description \|/);
+  assert.match(files['README.md'], /\| \[dbo\.Customers\]\(tables\/dbo\.Customers\.md\) \| table \| 3 \| One row per account\. \|/);
+  assert.doesNotMatch(files['tables/dbo.Customers.md'], /rows/);
+});
+
+test('a table page says its rows and bytes under the title, approximate as the database counts them, and when', () => {
+  const files = renderMarkdown(shop());
+  assert.match(files['tables/dbo.Customers.md'], /^# dbo\.Customers\n\nOne row per account\.\n\nAbout 48,213 rows · 7\.1 MB of data · 1\.6 MB of indexes, as the database counted them on 2026-11-01\.\n/);
+  assert.match(files['tables/billing.Invoices.md'], /^# billing\.Invoices\n\nAbout 298,551 rows · 40 MB of data · 0 B of indexes, as the database counted them on 2026-11-01\.\n/);
+  assert.doesNotMatch(files['tables/dbo.vOrderTotals.md'], /rows/, 'a view has no stats');
+  const undated = shop();
+  delete undated.databases[0].statsReadAt;
+  assert.match(renderMarkdown(undated)['tables/dbo.Products.md'], /About 1,874 rows · 480 KB of data · 64 KB of indexes\.\n/);
+});
+
+test('formatCount groups thousands and formatBytes uses binary units, one decimal below ten', () => {
+  assert.equal(formatCount(0), '0');
+  assert.equal(formatCount(999), '999');
+  assert.equal(formatCount(1204377), '1,204,377');
+  assert.equal(formatBytes(0), '0 B');
+  assert.equal(formatBytes(1023), '1023 B');
+  assert.equal(formatBytes(8192), '8 KB');
+  assert.equal(formatBytes(1536 * 1024), '1.5 MB');
+  assert.equal(formatBytes(107085824), '102 MB');
+  assert.equal(formatBytes(3 * 1024 ** 4), '3 TB');
+  assert.equal(formatBytes(5000 * 1024 ** 4), '5000 TB');
 });
