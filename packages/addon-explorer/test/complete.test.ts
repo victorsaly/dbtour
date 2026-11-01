@@ -8,7 +8,9 @@ import { CompletionContext, type Completion, type CompletionResult, type Complet
 import { ensureSyntaxTree } from '@codemirror/language';
 import { EditorState } from '@codemirror/state';
 import { scope, type Model } from 'dbtour/model';
-import { sqlSupport } from '../src/page/complete.ts';
+import { expandStar, pickOf, snippets, sqlSupport } from '../src/page/complete.ts';
+import { formatQuery } from '../src/page/format.ts';
+import { describe } from '../../core/test/fixtures/described.ts';
 import { twoDatabases } from '../../core/test/fixtures/two.ts';
 
 const shop = (): Model => JSON.parse(readFileSync(new URL('../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
@@ -24,11 +26,14 @@ interface Listed {
  * well the label matches what is typed, plus the option's boost, then the label. Only prefix matches are kept:
  * the fuzzy ones CodeMirror also lists come last there, and no case here rests on them.
  */
-async function suggest(text: string, { explicit = false, model = shop(), database = 'Shop' } = {}): Promise<Listed[]> {
+async function suggest(
+  text: string,
+  { explicit = false, model = shop(), database = 'Shop', used = {} as Record<string, number> } = {},
+): Promise<Listed[]> {
   const pos = text.indexOf('|');
   assert.ok(pos >= 0, 'a case marks the caret with |');
   const doc = text.slice(0, pos) + text.slice(pos + 1);
-  const state = EditorState.create({ doc, selection: { anchor: pos }, extensions: [sqlSupport(model, database)] });
+  const state = EditorState.create({ doc, selection: { anchor: pos }, extensions: [sqlSupport(model, database, (key) => used[key] ?? 0)] });
   ensureSyntaxTree(state, doc.length, 5000);
   const context = new CompletionContext(state, pos, explicit);
   const sources = state.languageDataAt<CompletionSource>('autocomplete', pos);
@@ -114,10 +119,11 @@ test('after ON, the conditions the declared keys give, the joined table first as
 
 test('where a table belongs, tables and joins, not columns', async () => {
   const from = await applies('SELECT * FROM |', { explicit: true });
-  assert.ok(!from.includes('CustomerId') && from.includes('Orders'));
+  assert.ok(!from.includes('CustomerId') && from.includes('dbo.Orders AS o'));
+  assert.ok(from.indexOf('dbo.Products AS p') < from.indexOf('billing'), 'the tables, then the schemas');
   const join = await applies('SELECT * FROM dbo.Orders o JOIN |');
   assert.deepEqual(join.slice(0, 2), ['dbo.Customers AS c ON c.Id = o.CustomerId', 'dbo.OrderLines AS ol ON ol.OrderId = o.Id'], 'the joins first, what Orders points at before what points at it');
-  assert.deepEqual(await applies('SELECT * FROM billing.|', { explicit: true }), ['Invoices'], 'a schema\'s tables');
+  assert.deepEqual(await applies('SELECT * FROM billing.|', { explicit: true }), ['Invoices AS i'], 'a schema\'s tables');
 });
 
 test('nothing from the model inside a string or a comment, or for a table it does not know', async () => {
@@ -149,4 +155,73 @@ test('after ON for a table the model does not know, or a derived one, no conditi
   const joined = 'SELECT * FROM dbo.Orders o JOIN dbo.Customers c ON c.Id = o.CustomerId ';
   assert.deepEqual(await applies(`${joined}JOIN dbo.UnknownTable x ON |`), []);
   assert.deepEqual(await applies(`${joined}JOIN (SELECT 1 AS a) d ON |`), []);
+});
+
+/** The query once Tab has expanded the * before the caret, or null when Tab would leave the editor. */
+function tab(text: string, model = describe(shop())): string | null {
+  const pos = text.indexOf('|');
+  const doc = text.slice(0, pos) + text.slice(pos + 1);
+  const state = EditorState.create({ doc, selection: { anchor: pos }, extensions: [sqlSupport(model, 'Shop')] });
+  ensureSyntaxTree(state, doc.length, 5000);
+  const spec = expandStar(state);
+  return spec ? state.update(spec).state.doc.toString() : null;
+}
+
+test('Tab after * in the select list writes the columns, the protected ones left out as a starter leaves them', () => {
+  assert.equal(tab('SELECT *| FROM dbo.Customers'), 'SELECT Id, Email, Name FROM dbo.Customers');
+  assert.equal(
+    tab('SELECT *| FROM dbo.Orders o JOIN dbo.Customers c ON c.Id = o.CustomerId'),
+    'SELECT o.Id, o.CustomerId, o.Total, c.Id, c.Email, c.Name FROM dbo.Orders o JOIN dbo.Customers c ON c.Id = o.CustomerId',
+    'Orders\' Status and CreatedAt are masked or encrypted in the described model',
+  );
+  assert.equal(tab('SELECT c.*| FROM dbo.Orders o JOIN dbo.Customers c ON c.Id = o.CustomerId'), 'SELECT c.Id, c.Email, c.Name FROM dbo.Orders o JOIN dbo.Customers c ON c.Id = o.CustomerId');
+  assert.equal(tab('SELECT TOP (10) *| FROM dbo.Products'), 'SELECT TOP (10) Id, Sku, Price FROM dbo.Products');
+  assert.equal(tab('SELECT COUNT(*|) FROM dbo.Products'), null, 'COUNT(*) is not a column list');
+  assert.equal(tab('SELECT Price *| 2 FROM dbo.Products'), null, 'a product is not a column list');
+  assert.equal(tab('SELECT *| FROM dbo.Nope'), null, 'nothing known to write');
+  assert.equal(tab('SELECT Id| FROM dbo.Products'), null, 'Tab leaves the editor anywhere else');
+});
+
+test('Ctrl+Space after * offers both: without the protected columns, and every column', async () => {
+  const listed = await suggest('SELECT *| FROM dbo.Orders', { explicit: true, model: describe(shop()) });
+  assert.deepEqual(listed.slice(0, 2).map((s) => s.apply), ['Id, CustomerId, Total', 'Id, CustomerId, Status, CreatedAt, Total']);
+  assert.match(listed[0].detail ?? '', /leaves out Status, CreatedAt/);
+  assert.deepEqual(await suggest('SELECT *| FROM dbo.Orders'), [], 'not while typing: Enter after * stays a new line');
+});
+
+test('a table after FROM or JOIN is written with an alias, one the query has not taken', async () => {
+  assert.equal((await applies('SELECT * FROM Cust|'))[0], 'dbo.Customers AS c');
+  assert.equal((await applies('SELECT * FROM dbo.Prod|'))[0], 'Products AS p', 'after the schema, the table alone');
+  const join = await applies('SELECT * FROM dbo.Orders o JOIN dbo.OrderL|');
+  assert.deepEqual(join.slice(0, 2), ['dbo.OrderLines AS ol ON ol.OrderId = o.Id', 'OrderLines AS ol'], 'the join with its ON first, then the table alone');
+  assert.ok((await applies('SELECT * FROM dbo.Orders o JOIN dbo.Products p ON 1 = 1 JOIN Ord|')).includes('dbo.Orders AS o2'), 'o is taken');
+  assert.equal((await applies('SELECT * FROM dbo.Products p, Cust|'))[0], 'dbo.Customers AS c', 'after a comma in FROM');
+  assert.ok(!(await applies('SELECT * FROM dbo.Orders o|')).some((a) => / AS /.test(a)), 'no table where the alias goes');
+  assert.ok(!(await applies('UPDATE Ord|')).includes('dbo.Orders AS o'), 'UPDATE takes no alias');
+});
+
+test('snippets write the start of a read: whole names lead, a part does not', async () => {
+  assert.deepEqual(await applies('ssf|'), ['SELECT * FROM ']);
+  assert.equal((await applies('st100|'))[0], 'SELECT TOP (100) * FROM ');
+  assert.equal((await applies('scf|'))[0], 'SELECT COUNT(*) FROM ');
+  assert.notEqual((await suggest('S|', { explicit: true }))[0]?.label, 'ssf', 'a letter is not a snippet\'s name');
+  assert.ok(!(await applies('SELECT * FROM dbo.Orders o WHERE o.ss|')).includes('SELECT * FROM '), 'not after a dot');
+  for (const s of snippets) assert.match(s.template, /^(SELECT|WITH|WHERE)\b/, `${s.name} writes a read, as dbtour sql runs only reads`);
+  assert.deepEqual(pickOf({ label: 'ssf', key: 'snippet:ssf', reopen: true } as Completion), { key: 'snippet:ssf', reopen: true }, 'the table list opens after it');
+  assert.deepEqual(pickOf({ label: 'SELECT' }), { key: undefined, reopen: false }, 'a keyword is not counted');
+});
+
+test('what was picked before comes first among equals, never above a better match', async () => {
+  const used = { 'column:dbo.Orders.Total': 5 };
+  const top = await suggest('SELECT | FROM dbo.Orders', { explicit: true, used });
+  assert.equal(top[0].apply, 'Total');
+  assert.equal((await applies('SELECT Cu| FROM dbo.Orders', { used }))[0], 'CustomerId', 'Total does not match Cu');
+  const tables = await applies('SELECT * FROM |', { explicit: true, used: { 'table:dbo.Products': 3 } });
+  assert.equal(tables[0], 'dbo.Products AS p');
+});
+
+test('Format lays a query out in T-SQL, upper-case keywords and its comments kept, and leaves one it cannot read', () => {
+  assert.equal(formatQuery('select o.Id,c.[Name] from dbo.Orders o join dbo.Customers c on c.Id=o.CustomerId -- who\nwhere o.Total>10'),
+    'SELECT\n  o.Id,\n  c.[Name]\nFROM\n  dbo.Orders o\n  JOIN dbo.Customers c ON c.Id = o.CustomerId -- who\nWHERE\n  o.Total > 10');
+  assert.equal(formatQuery('SELECT "unclosed'), null);
 });
