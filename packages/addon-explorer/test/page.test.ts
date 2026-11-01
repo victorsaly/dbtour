@@ -27,7 +27,7 @@ test('every route round-trips through the hash, and an odd hash falls back to ho
   ];
   for (const route of routes) assert.deepEqual(parseRoute(routeHash(route)), route);
   assert.equal(mapHash, '#map');
-  assert.deepEqual(parseRoute('#map/x'), { kind: 'table', ref: 'map/x' }, 'only the bare word is the map');
+  assert.deepEqual(parseRoute('#map/x'), { kind: 'home' }, 'only the bare word is the map, and map/x is no ref');
   assert.equal(tableHash('dbo.Orders'), '#dbo.Orders');
   assert.equal(tableHash('dbo.Orders', 'Status'), '#dbo.Orders.Status');
   assert.equal(diagramHash(['dbo.Orders', 'dbo.Customers']), '#diagram/dbo.Orders,dbo.Customers');
