@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.7.0 (unreleased)
+## 0.7.1 (unreleased)
+
+- The skill, tightened by its evals. It never quotes a password back, not even to point at it, and shows the
+  variable as `export DBTOUR_MSSQL='Server=…;Password=…'`. With no model to read (no MCP tools, no docs) it
+  writes no SQL, nor a fragment with likely names: it says what it will read and describes the query in words
+  or with placeholders that are plainly not names. With the skill, every case now scores 1.00 against
+  0.00 to 1.00 without it (`claude plugin eval .`).
+- Two graders say what they allow: the person setting the variable with `export` in their own shell, the rest
+  of a connection string with the password left out, and a query written wholly in placeholders.
+
+## 0.7.0 (1 November 2026)
 
 - Several databases, each its own namespace. With more than one source, a table is named with its database,
   `Sales:dbo.Customers`, everywhere a name is read or shown: the Markdown writes each database's tables
