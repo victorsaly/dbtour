@@ -19,18 +19,23 @@ and win over what the database says.
 
 ### Beyond the structure
 
-The structure says what a table is; three more things say how it is used, and the database already keeps
-all three in its catalogue, so a source reads them without touching a row.
+The structure says what a table is; three more things say how it is used. Two of them the database keeps
+about itself and a package reads without touching a row; the third is written by the agent.
 
-- **Size and shape**: rows, data and index bytes per table, with the moment they were read. Cheap
-  (`sys.dm_db_partition_stats` on SQL Server, `pg_class` and `pg_stat_user_tables` on Postgres), and the
-  difference between a lookup table and the one everything hangs off. Lives on the table as `stats`.
-- **Usage**: which indexes are read and which only cost writes, which indexes the engine wishes it had,
-  which tables are hot. From the management views, so it describes the window since the last restart, not
-  history, and needs `VIEW DATABASE STATE`. An add-on, since it is a report on the structure rather than
-  part of it.
-- **Queries that explain the data**: written by the agent from the model, not by sampling rows. The SQL
-  add-on gives it the tables to cite and runs what it writes through a read-only login with a row limit.
+- **Size and shape**, read by the source with the structure: rows, data and index bytes per table, with
+  the moment they were read. Cheap (`sys.dm_db_partition_stats` on SQL Server, `pg_class` and
+  `pg_stat_user_tables` on Postgres), and the difference between a lookup table and the one everything
+  hangs off. Lives on the table as `stats`.
+- **Usage**, read by an add-on, since it is a report on the structure rather than part of it: which
+  indexes are read and which only cost writes, which indexes the engine wishes it had, which tables are
+  hot. From the management views, so it describes the window since the last restart, not history. The
+  permission depends on the engine: SQL Server itself wants the server-scoped `VIEW SERVER STATE` for
+  `sys.dm_db_index_usage_stats` and the missing-index views; Azure SQL Database takes `VIEW DATABASE
+  STATE` on most tiers, while Basic, S0, S1 and pooled databases want the server admin or the Entra admin.
+  The add-on reports what the login could not read rather than failing.
+- **Queries that explain the data**, written by the agent from the model, not read from anywhere and
+  never from sampled rows. The SQL add-on gives it the tables to cite and runs what it writes through a
+  read-only login with a row limit.
 
 None of this samples values. A count or a size describes the table; a row would be data, and the model
 never holds data. What a source cannot read (no permission, a database that does not keep it) is simply
