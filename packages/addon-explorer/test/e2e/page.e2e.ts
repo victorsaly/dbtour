@@ -567,7 +567,8 @@ test('several databases through dbtour serve: the home lists them, and a databas
     { name: 'Billing', driver: 'mssql', server: 'billing.example', database: 'Billing', reader: false, read: true, tables: 6 },
     { name: 'Logs', driver: 'mssql', server: 'logs.example', database: 'AppLogs', reader: false, read: false },
   ];
-  const html = render({ version: model.version, generatedAt: model.generatedAt, databases: [], apis: [], groups: [] } as unknown as Model)['index.html'];
+  // The home is the page with no model: the served databases are its content.
+  const html = render({ ...model, databases: [], groups: [] })['index.html'];
   const server = await startServer({ root, port: 0, token: 'e2e', sources: [], home: { html, databases: () => databases } });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
