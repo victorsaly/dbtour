@@ -29,7 +29,7 @@ their own shell: `export DBTOUR_MSSQL='…'`. It never goes in a file.
 |---|---|
 | `npx dbtour init` | Writes `dbtour.yaml` here, for SQL Server. |
 | `npx dbtour extract` | Reads each source into `<out>/schema.json`. Says what the login could not read. |
-| `npx dbtour render` | Writes `<out>/README.md`, a page per table under `<out>/tables/`, and the add-ons' files. |
+| `npx dbtour render` | Writes `<out>/README.md`, a page per table under `<out>/tables/` (a folder per database when there are several), and the add-ons' files. |
 | `npx dbtour mcp [project]` | Serves the model over MCP on stdin and stdout, for an agent. |
 
 Exit codes: 1 for what was asked, 2 for what is missing (no `dbtour.yaml`, no `schema.json`, an unset

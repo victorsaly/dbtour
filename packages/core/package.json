@@ -1,6 +1,6 @@
 {
   "name": "dbtour",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Tour your database and its API: searchable docs, relations and diagrams, generated from the schema, kept in the repo.",
   "type": "module",
   "license": "MIT",

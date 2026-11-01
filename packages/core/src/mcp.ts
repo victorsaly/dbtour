@@ -2,7 +2,7 @@
 // table, read it, join two) instead of being handed all of it. JSON-RPC, one message per line; written here
 // rather than taken from the SDK, since four methods are all it needs and core keeps its one dependency.
 // Read-only and structure only, like the model: there are no rows to give.
-import { findTable, tableRef, type Database, type Model, type Relation } from './model.ts';
+import { findTables, localRef, tableRef, type Database, type Model, type Relation } from './model.ts';
 import { driverName, formatCount, renderTableMarkdown } from './render/markdown.ts';
 import { buildIndex, search, type Hit } from './search.ts';
 
@@ -29,7 +29,7 @@ export interface ToolResult {
   isError?: boolean;
 }
 
-const instructions = `dbtour knows the structure of this project's databases: tables, views, columns, keys, relations, indexes and the descriptions people wrote. It never holds rows. Start with overview for the databases and their largest tables; search finds a table or column by any part of its name or description; table gives one table's columns, keys and relations as Markdown; path gives the joins between two tables. Name tables as schema.table, and read a table before writing SQL against it.`;
+const instructions = `dbtour knows the structure of this project's databases: tables, views, columns, keys, relations, indexes and the descriptions people wrote. It never holds rows. Start with overview for the databases and their largest tables; search finds a table or column by any part of its name or description; table gives one table's columns, keys and relations as Markdown; path gives the joins between two tables. Name tables as overview and search do (schema.table, or Database:schema.table when there are several databases), and read a table before writing SQL against it.`;
 
 const readOnly = { readOnlyHint: true, openWorldHint: false };
 
@@ -61,7 +61,7 @@ export const toolList = [
     description: 'One table or view as Markdown: its columns with types, keys and descriptions, the relations both ways, indexes, constraints, a view\'s SQL and a diagram of its neighbours. Read it before writing SQL against the table.',
     inputSchema: {
       type: 'object',
-      properties: { ref: { type: 'string', description: 'schema.table, like dbo.Orders. A bare name works when only one schema has it.' } } as Record<string, unknown>,
+      properties: { ref: { type: 'string', description: 'schema.table, like dbo.Orders, or Sales:dbo.Orders with several databases. A shorter name works when only one table has it.' } } as Record<string, unknown>,
       required: ['ref'],
     },
     annotations: readOnly,
@@ -73,8 +73,8 @@ export const toolList = [
     inputSchema: {
       type: 'object',
       properties: {
-        from: { type: 'string', description: 'The table to start from, schema.table.' },
-        to: { type: 'string', description: 'The table to reach, schema.table.' },
+        from: { type: 'string', description: 'The table to start from, named as table takes it.' },
+        to: { type: 'string', description: 'The table to reach, named as table takes it.' },
       } as Record<string, unknown>,
       required: ['from', 'to'],
     },
@@ -240,17 +240,30 @@ function searchText(model: Model, query: string, limit: number): string {
   return hits.map((h) => `- ${h.kind} ${h.title}: ${h.detail}`).join('\n');
 }
 
-/** What an agent wrote, as the table it means: exact, then ignoring case, then a bare name in one schema. */
+/**
+ * What an agent wrote, as the table it means: exact, then ignoring case, as the whole name, the name without
+ * its database, or a bare table name. A name several tables answer to is a problem that lists them.
+ */
 function resolve(model: Model, written: string): { ref: string } | { problem: string } {
   const parts = written.trim().split('.');
   // schema.table.column is the table; a bare name is looked up by name alone.
   const wanted = parts.length === 3 ? parts.slice(0, 2).join('.') : parts.join('.');
-  if (parts.length >= 2 && parts.length <= 3 && !parts.includes('') && findTable(model, wanted)) return { ref: wanted };
-  const all = model.databases.flatMap((d) => d.schemas.flatMap((s) => s.tables.map((t) => tableRef(s.name, t.name))));
+  const several = (refs: string[]) => ({ problem: `${refs.slice(0, -1).join(', ')} and ${refs.at(-1)} are ${refs.length === 2 ? 'both' : 'all'} called ${wanted}: ask for one by the name given here.` });
+  if (parts.length >= 2 && parts.length <= 3 && !parts.includes('')) {
+    const exact = findTables(model, wanted).map((f) => f.ref);
+    if (exact.length === 1) return { ref: exact[0] };
+    if (exact.length > 1) return several(exact);
+  }
+  const all = [...new Set(model.databases.flatMap((d) => d.schemas.flatMap((s) => s.tables.map((t) => tableRef(s.name, t.name)))))];
   const lower = wanted.toLowerCase();
-  const matches = [...new Set(all)].filter((ref) => ref.toLowerCase() === lower || (!lower.includes('.') && ref.slice(ref.indexOf('.') + 1).toLowerCase() === lower));
+  // The whole name, the name an agent writes when it does not know there are several databases, the table's.
+  const forms = (ref: string) => {
+    const local = localRef(model, ref);
+    return [ref, local, local.slice(local.indexOf('.') + 1)];
+  };
+  const matches = all.filter((ref) => forms(ref).some((form) => form.toLowerCase() === lower));
   if (matches.length === 1) return { ref: matches[0] };
-  if (matches.length > 1) return { problem: `${matches.slice(0, -1).join(', ')} and ${matches.at(-1)} are ${matches.length === 2 ? 'both' : 'all'} called ${wanted}: ask for one as schema.table.` };
+  if (matches.length > 1) return several(matches);
   const name = wanted.slice(wanted.lastIndexOf('.') + 1);
   const near = [...new Set(hitsFor(model, name, searchDefault).filter((h) => h.kind === 'table' || h.kind === 'view').map((h) => h.ref))].slice(0, 5);
   return { problem: `"${written}" is not a table. ${near.length > 0 ? `Did you mean ${near.join(', ')}?` : 'overview lists them, and search finds one by any part of its name.'}` };
@@ -278,9 +291,11 @@ function quote(driver: string, name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
-function quoteRef(driver: string, ref: string, column?: string): string {
-  const dot = ref.indexOf('.');
-  const names = [ref.slice(0, dot), ref.slice(dot + 1), ...(column === undefined ? [] : [column])];
+/** schema.table as its database names it, quoted: the SQL runs in the database the path was found in. */
+function quoteRef(model: Model, driver: string, ref: string, column?: string): string {
+  const local = localRef(model, ref);
+  const dot = local.indexOf('.');
+  const names = [local.slice(0, dot), local.slice(dot + 1), ...(column === undefined ? [] : [column])];
   return names.map((name) => quote(driver, name)).join('.');
 }
 
@@ -302,13 +317,13 @@ function pathText(model: Model, from: string, to: string): string {
     return `No relation connects ${from} and ${to}, declared or in the notes. If they are related all the same, add the relation to dbtour.notes.yaml so the docs and this path know it.`;
   }
   const { driver } = best.database;
-  const lines = [`FROM ${quoteRef(driver, from)}`];
+  const lines = [`FROM ${quoteRef(model, driver, from)}`];
   let at = from;
   for (const step of best.steps) {
     const mine = step.forward ? step.relation.to.columns : step.relation.from.columns;
     const theirs = step.forward ? step.relation.from.columns : step.relation.to.columns;
-    const on = mine.map((column, i) => `${quoteRef(driver, step.table, column)} = ${quoteRef(driver, at, theirs[i] ?? theirs[0])}`).join(' AND ');
-    lines.push(`JOIN ${quoteRef(driver, step.table)} ON ${on}${step.relation.virtual ? ' -- from the notes, not a declared key' : ''}`);
+    const on = mine.map((column, i) => `${quoteRef(model, driver, step.table, column)} = ${quoteRef(model, driver, at, theirs[i] ?? theirs[0])}`).join(' AND ');
+    lines.push(`JOIN ${quoteRef(model, driver, step.table)} ON ${on}${step.relation.virtual ? ' -- from the notes, not a declared key' : ''}`);
     at = step.table;
   }
   const where = model.databases.length > 1 ? `In ${best.database.name}, ` : '';

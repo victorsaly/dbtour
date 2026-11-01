@@ -2,7 +2,7 @@
 // on the right. Indexes, constraints and a view's definition fold below.
 import { Fragment, useEffect, useState } from 'react';
 import { driverName, formatBytes, formatCount } from 'dbtour/markdown';
-import { findTable, isUniqueColumn, relationsOf, type Column, type Model, type Relation, type Table, type TableStats } from 'dbtour/model';
+import { findTable, findTables, isUniqueColumn, relationsOf, type Column, type Model, type Relation, type Table, type TableStats } from 'dbtour/model';
 import { neighboursOf, type Catalogue } from './catalogue.ts';
 import { DiagramView } from './Diagram.tsx';
 import { withNeighbours } from './graph.ts';
@@ -59,6 +59,22 @@ export function TableView({ model, cat, tableRef, column }: Props) {
   }, [tableRef, column]);
 
   if (!found) {
+    // A name two databases share is two tables: offer both rather than say there is none.
+    const shared = findTables(model, tableRef);
+    if (shared.length > 1) {
+      return (
+        <article className="page">
+          <h1>{tableRef} is in {shared.length} databases</h1>
+          <ul>
+            {shared.map((f) => (
+              <li key={f.ref}>
+                <a href={tableHash(f.ref, column)}>{f.ref}</a>
+              </li>
+            ))}
+          </ul>
+        </article>
+      );
+    }
     return (
       <article className="page">
         <h1>No table named {tableRef}</h1>

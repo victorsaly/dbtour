@@ -12,6 +12,11 @@ keys, relations, indexes, descriptions), APIs (endpoints, parameters, responses)
 Its version is the `dbtour` field; `validate()` in `packages/core/src/model.ts` checks what a source emits and names what is wrong. It
 never holds data rows or credentials.
 
+A table is named `schema.table`. With several databases the name carries its database, `Sales:dbo.Orders`,
+since two can have the same table: `scope()` names each schema `Database:schema` when the model is read, so
+everything that composes a name from a schema and a table stays as it is, and `schema.json` keeps what the
+sources wrote. A name without its database still finds a table only one database has.
+
 Beside it, `dbtour.notes.yaml`, written by people or the agent: table and column descriptions, relations that
 were never declared as foreign keys, groups of tables by domain, and which endpoints touch which tables. This
 is how a SQL Server shop documents production without altering it. Notes merge into the model at render time
@@ -169,7 +174,8 @@ shop window, and nothing goes on the page before it is released.
    index kinds and untrusted keys from the SQL Server source, and the page and the Markdown showing
    them.
 5. The skill and the SQL add-on, with the stats telling the agent where to look first. `dbtour mcp` came
-   first (0.5.0), then the skill (0.6.0); the SQL add-on is next. ← here
+   first (0.5.0), then the skill (0.6.0), then tables named with their database when there are
+   several (0.7.0); the SQL add-on is next. ← here
 6. `source-openapi` and table-to-endpoint links.
 7. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
    and the comments its database keeps.

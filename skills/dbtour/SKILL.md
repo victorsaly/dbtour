@@ -3,7 +3,7 @@ name: dbtour
 description: Documents a project's database from its structure and answers questions about it without reading a row - which table holds something, how two tables join, what a column means, how big a table is - and writes SQL against it from the real tables and columns, through dbtour (dbtour.yaml, docs/dbtour/schema.json, the dbtour MCP server). Use when asked to document a database or keep its docs current, to find where data lives, to explain a schema, to write or check a query for the project's database, or to set up dbtour. Load it before writing SQL against a database the project uses, even a short query.
 license: MIT
 metadata:
-  version: 0.6.0
+  version: 0.7.0
   homepage: https://github.com/victorsaly/dbtour
 allowed-tools: Bash(npx dbtour *)
 ---
@@ -48,14 +48,18 @@ rather than reading `schema.json` whole:
    says (a trigger, row-level security, a masked or labelled column).
 4. **path** to join two tables that are not related directly: it gives the JOINs.
 
-Without the server, read the table pages in `docs/dbtour/tables/<schema.table>.md`, or search `schema.json`
-for the name, rather than loading the whole file. If the person uses Claude Code and asks, connect it:
+Without the server, read the table pages in `docs/dbtour/tables/<schema.table>.md` (in a folder per database,
+`tables/Sales/dbo.Orders.md`, when there are several), or search `schema.json` for the name, rather than
+loading the whole file. If the person uses Claude Code and asks, connect it:
 `claude mcp add dbtour -- npx dbtour mcp`.
 
 ## 3. Write SQL from the model, never from memory
 
 - Name only tables and columns you have read with **table**, as `schema.table`. Never invent one; if what is
   asked is not in the model, say so and say what is closest.
+- With several databases the tools name a table with its database, `Sales:dbo.Orders`, and two databases may
+  both have a `dbo.Orders`: pass that name back to the tools, but the `Sales:` is not SQL. Write `dbo.Orders`
+  and say the query runs in Sales.
 - Join through the relations the model has, or **path**'s JOINs. A relation marked **(notes)** was written by
   a person, not declared by the database; one marked **not trusted** is not enforced on existing rows.
 - Write the database's dialect: the model's `driver` (`mssql` is T-SQL: `TOP`, `[brackets]`, `N'text'`).

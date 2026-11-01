@@ -1,7 +1,7 @@
 // The notes file: what people add that the database cannot say. Merged into the model at render time and
 // winning over it, so a production database nobody may alter still gets documented.
 import { parse } from 'yaml';
-import { findTable, parseRef, tableRef, type Group, type Model, type Relation } from './model.ts';
+import { findTables, parseRef, type Found, type Group, type Model, type Relation } from './model.ts';
 
 export interface TableNotes {
   description?: string;
@@ -78,13 +78,18 @@ export interface Applied {
 export function applyNotes(input: Model, notes: Notes): Applied {
   const model = structuredClone(input);
   const warnings: string[] = [];
+  // The one table a name in the notes means, or a warning: a name two databases share wants its database.
+  const find = (ref: string, what: string): Found | undefined => {
+    const found = findTables(model, ref);
+    if (found.length === 1) return found[0];
+    if (found.length === 0) warnings.push(`notes: ${what}`);
+    else warnings.push(`notes: ${parseRef(ref).schema}.${parseRef(ref).table} is in ${found.map((f) => f.database.name).join(' and ')}: write ${found.map((f) => f.ref).join(' or ')}`);
+    return undefined;
+  };
 
   for (const [ref, tableNotes] of Object.entries(notes.tables)) {
-    const found = findTable(model, ref);
-    if (!found) {
-      warnings.push(`notes: ${ref} is not a table in the model`);
-      continue;
-    }
+    const found = find(ref, `${ref} is not a table in the model`);
+    if (!found) continue;
     if (tableNotes.description !== undefined) found.table.description = tableNotes.description;
     for (const [name, description] of Object.entries(tableNotes.columns ?? {})) {
       const column = found.table.columns.find((c) => c.name === name);
@@ -97,29 +102,25 @@ export function applyNotes(input: Model, notes: Notes): Applied {
   }
 
   for (const note of notes.relations) {
-    const from = parseRef(note.from);
-    const to = parseRef(note.to);
-    const relation: Relation = {
-      from: { table: tableRef(from.schema, from.table), columns: [from.column!] },
-      to: { table: tableRef(to.schema, to.table), columns: [to.column!] },
-      virtual: true,
-    };
-    const fromTable = findTable(model, relation.from.table);
-    const toTable = findTable(model, relation.to.table);
-    if (!fromTable || !toTable) {
-      warnings.push(`notes: relation ${note.from} → ${note.to} names a table that is not in the model`);
+    const missing = `relation ${note.from} → ${note.to} names a table that is not in the model`;
+    const fromTable = find(note.from, missing);
+    const toTable = fromTable && find(note.to, missing);
+    if (!fromTable || !toTable) continue;
+    if (fromTable.database !== toTable.database) {
+      warnings.push(`notes: relation ${note.from} → ${note.to} joins ${fromTable.database.name} to ${toTable.database.name}: relations stay inside one database`);
       continue;
     }
+    const relation: Relation = {
+      from: { table: fromTable.ref, columns: [parseRef(note.from).column!] },
+      to: { table: toTable.ref, columns: [parseRef(note.to).column!] },
+      virtual: true,
+    };
     const exists = fromTable.database.relations.some((r) => sameEnd(r.from, relation.from) && sameEnd(r.to, relation.to));
     if (!exists) fromTable.database.relations.push(relation);
   }
 
   for (const group of notes.groups) {
-    const tables = group.tables.filter((ref) => {
-      if (findTable(model, ref)) return true;
-      warnings.push(`notes: group ${group.name} lists ${ref}, which is not a table in the model`);
-      return false;
-    });
+    const tables = group.tables.flatMap((ref) => find(ref, `group ${group.name} lists ${ref}, which is not a table in the model`)?.ref ?? []);
     model.groups.push({ ...group, tables });
   }
   return { model, warnings };

@@ -1,6 +1,6 @@
 // Markdown GitHub shows: an index with every table, and one page per table with its columns, keys,
 // relations both ways, indexes, constraints and the diagram of its neighbourhood.
-import { findTable, isUniqueColumn, relationsOf, tableRef, type Column, type Constraint, type Database, type Index, type Model, type Properties, type Relation, type Table, type TableStats } from '../model.ts';
+import { databaseSeparator, findTable, isUniqueColumn, relationsOf, tableRef, type Column, type Constraint, type Database, type Index, type Model, type Properties, type Relation, type Table, type TableStats } from '../model.ts';
 import { erDiagram, neighbourhood } from './mermaid.ts';
 
 // Mermaid lays out a whole database only while it is small; above this many tables the index shows the
@@ -13,7 +13,7 @@ export function renderMarkdown(model: Model): Record<string, string> {
     for (const schema of database.schemas) {
       for (const table of schema.tables) {
         const ref = tableRef(schema.name, table.name);
-        files[`tables/${ref}.md`] = renderTable(model, ref, table, database);
+        files[`tables/${tableFile(ref)}`] = renderTable(model, ref, table, database);
       }
     }
   }
@@ -36,7 +36,7 @@ function renderIndex(model: Model): string {
       for (const table of schema.tables) {
         const ref = tableRef(schema.name, table.name);
         const size = !sized ? '' : table.stats ? ` ${formatCount(table.stats.rows)} | ${formatBytes(table.stats.dataBytes + table.stats.indexBytes)} |` : '  |  |';
-        parts.push(`| [${ref}](tables/${ref}.md) | ${table.kind} | ${table.columns.length} |${size} ${cell(table.description)} |`);
+        parts.push(`| [${ref}](${href(`tables/${tableFile(ref)}`)}) | ${table.kind} | ${table.columns.length} |${size} ${cell(table.description)} |`);
       }
     }
     parts.push('');
@@ -47,7 +47,7 @@ function renderIndex(model: Model): string {
   for (const group of model.groups) {
     parts.push(`## ${group.name}\n`);
     if (group.description) parts.push(`${group.description}\n`);
-    parts.push(group.tables.map((ref) => `- [${ref}](tables/${ref}.md)`).join('\n') + '\n');
+    parts.push(group.tables.map((ref) => `- [${ref}](${href(`tables/${tableFile(ref)}`)})`).join('\n') + '\n');
     parts.push(mermaid(erDiagram(model, group.tables)));
   }
   const refs = model.databases.flatMap((d) => d.schemas.flatMap((s) => s.tables.map((t) => tableRef(s.name, t.name))));
@@ -171,11 +171,29 @@ export function statsLine(stats: TableStats, readAt?: string): string {
   return `About ${formatCount(stats.rows)} rows · ${formatBytes(stats.dataBytes)} of data · ${formatBytes(stats.indexBytes)} of indexes${when}.`;
 }
 
+/** A table's page under tables/: Sales:dbo.Orders is in a folder for its database, dbo.Orders is not. */
+export function tableFile(ref: string): string {
+  return ref.replace(databaseSeparator, '/') + '.md';
+}
+
+/** A link from one table's page to another's: the file beside it, or up and across to another folder. */
+function pageLink(from: string, to: string): string {
+  const folder = (ref: string) => (ref.includes(databaseSeparator) ? ref.slice(0, ref.indexOf(databaseSeparator)) : '');
+  const file = tableFile(to);
+  if (folder(from) === folder(to)) return href(file.slice(file.indexOf('/') + 1));
+  return href((folder(from) ? '../' : '') + file);
+}
+
+/** A path as a link's destination: each part encoded, so a space or a # in a name still reaches its file. */
+function href(path: string): string {
+  return path.split('/').map((part) => (part === '..' ? part : encodeURIComponent(part))).join('/');
+}
+
 /** One table's page on its own: what the page hands to an agent. */
 export function renderTableMarkdown(model: Model, ref: string): string {
   const found = findTable(model, ref);
   if (!found) throw new Error(`${ref} is not a table in the model`);
-  return renderTable(model, ref, found.table, found.database);
+  return renderTable(model, found.ref, found.table, found.database);
 }
 
 function renderTable(model: Model, ref: string, table: Table, database: Database): string {
@@ -186,7 +204,7 @@ function renderTable(model: Model, ref: string, table: Table, database: Database
   if (listed.length > 0) {
     parts.push('## Features\n');
     // A table the feature names gets a link when it is in the model, as a relation's would.
-    const linked = (f: Feature): string | undefined => (f.ref && f.detail && findTable(model, f.ref) ? f.detail.replace(f.ref, `[${f.ref}](${f.ref}.md)`) : f.detail);
+    const linked = (f: Feature): string | undefined => (f.ref && f.detail && findTable(model, f.ref) ? f.detail.replace(f.ref, `[${f.ref}](${pageLink(ref, f.ref)})`) : f.detail);
     parts.push(listed.map((f) => `- **${f.name}**${f.detail ? `: ${linked(f)}` : ''}`).join('\n') + '\n');
   }
   const relations = relationsOf(model, ref);
@@ -200,7 +218,7 @@ function renderTable(model: Model, ref: string, table: Table, database: Database
       if (i === -1) continue;
       const { table: toTable, columns } = relation.to;
       const state = [relation.virtual ? 'notes' : '', ...enforcement(relation)].filter(Boolean);
-      keys.push(`FK → [${toTable}](${toTable}.md).${columns[i] ?? columns.join(',')}${state.length ? ` (${state.join(', ')})` : ''}`);
+      keys.push(`FK → [${toTable}](${pageLink(ref, toTable)}).${columns[i] ?? columns.join(',')}${state.length ? ` (${state.join(', ')})` : ''}`);
     }
     if (isUniqueColumn(table, column.name)) keys.push('unique');
     keys.push(...columnTraits(column));
@@ -212,7 +230,7 @@ function renderTable(model: Model, ref: string, table: Table, database: Database
   if (relations.in.length > 0) {
     parts.push('## Referenced by\n');
     const lines = relations.in
-      .map((r) => `- [${r.from.table}](${r.from.table}.md).${r.from.columns.join(', ')}${r.virtual ? ' (notes)' : ''}`)
+      .map((r) => `- [${r.from.table}](${pageLink(ref, r.from.table)}).${r.from.columns.join(', ')}${r.virtual ? ' (notes)' : ''}`)
       .sort();
     parts.push(lines.join('\n') + '\n');
   }

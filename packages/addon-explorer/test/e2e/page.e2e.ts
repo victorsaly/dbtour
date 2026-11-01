@@ -8,9 +8,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium, type Browser } from 'playwright-core';
-import type { Model } from 'dbtour/model';
+import { scope, type Model } from 'dbtour/model';
 import { render } from '../../src/index.ts';
 import { describe } from '../../../core/test/fixtures/described.ts';
+import { twoDatabases } from '../../../core/test/fixtures/two.ts';
 
 /** Evaluated in the page, where the DOM is; written as text because this file is typed for Node. */
 const nodeCount = (n: number): string => `document.querySelectorAll('.react-flow__node').length === ${n}`;
@@ -257,6 +258,44 @@ test('what the catalogue says: an About block in sentences, a Protection column,
     assert.equal(await page.getByRole('region', { name: 'About' }).count(), 0);
     assert.equal(await page.locator('table.columns th', { hasText: 'Protection' }).count(), 0);
 
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('two databases with a table of the same name: each is its own entry, an old link finds the one it can', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  try {
+    const file = join(mkdtempSync(join(tmpdir(), 'dbtour-page-')), 'index.html');
+    writeFileSync(file, render(scope(twoDatabases()))['index.html']);
+    const url = pathToFileURL(file).href;
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+
+    await page.goto(url);
+    await page.locator('.tree').waitFor();
+    assert.equal(await page.locator('.tree li a').count(), 4, 'both databases\' tables are listed, the two Customers apart');
+    await page.keyboard.press('/');
+    await page.keyboard.type('customers');
+    const hits = (await page.locator('.hits a').allTextContents()).slice(0, 2).join(' | ');
+    assert.match(hits, /Sales:dbo\.Customers.*Billing:dbo\.Customers/, 'the two tables come first, each with its database');
+
+    await page.goto(`${url}#dbo.Payments`);
+    await page.locator('h1', { hasText: 'Payments' }).waitFor();
+    assert.match((await page.locator('.panel').textContent()) ?? '', /Billing:dbo\.Customers/, 'the relation names the table in its own database');
+
+    await page.goto(`${url}#dbo.Customers`);
+    await page.locator('h1', { hasText: 'is in 2 databases' }).waitFor();
+    await page.locator('article.page').getByRole('link', { name: 'Billing:dbo.Customers' }).click();
+    await page.locator('h1', { hasText: 'Customers' }).waitFor();
+    assert.equal(new URL(page.url()).hash, '#Billing:dbo.Customers');
+    assert.match((await page.locator('.panel').textContent()) ?? '', /Referenced by.*Billing:dbo\.Payments/);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import type { Model } from '../src/model.ts';
+import { scope, type Model } from '../src/model.ts';
+import { twoDatabases } from './fixtures/two.ts';
 import { renderTableMarkdown } from '../src/render/markdown.ts';
 import { answer, answerLine, callTool, overviewLimit, protocolVersions, toolList, type Context } from '../src/mcp.ts';
 
@@ -195,23 +196,13 @@ test('path quotes every name as its database does, so a space, a bracket or a re
 });
 
 test('path keeps each database to itself: a table of the same name in two does not join them', () => {
-  const table = (name: string) => ({ name, kind: 'table' as const, columns: [], indexes: [], constraints: [] });
-  const model: Model = {
-    dbtour: 1,
-    databases: [
-      { name: 'Sales', driver: 'mssql', schemas: [{ name: 'dbo', tables: [table('Invoices'), table('Customers')] }], relations: [{ from: { table: 'dbo.Invoices', columns: ['CustomerId'] }, to: { table: 'dbo.Customers', columns: ['Id'] } }] },
-      { name: 'Billing', driver: 'mssql', schemas: [{ name: 'dbo', tables: [table('Payments'), table('Customers')] }], relations: [{ from: { table: 'dbo.Payments', columns: ['CustomerId'] }, to: { table: 'dbo.Customers', columns: ['Id'] } }] },
-    ],
-    apis: [],
-    links: [],
-    groups: [],
-  };
+  const model = scope(twoDatabases());
   const apart = call(model, 'path', { from: 'dbo.Invoices', to: 'dbo.Payments' });
   assert.equal(apart.isError, false);
-  assert.match(apart.text, /dbo\.Invoices is in Sales and dbo\.Payments in Billing: relations do not cross databases/);
-  const billing = call(model, 'path', { from: 'dbo.Payments', to: 'dbo.Customers' }).text;
-  assert.match(billing, /^In Billing, dbo\.Payments to dbo\.Customers: 1 join\./);
-  const sales = call(model, 'path', { from: 'dbo.Customers', to: 'dbo.Invoices' }).text;
-  assert.match(sales, /^In Sales, dbo\.Customers to dbo\.Invoices: 1 join\./);
-  assert.match(call(model, 'path', { from: 'customers', to: 'invoices' }).text, /^In Sales, dbo\.Customers to dbo\.Invoices/, 'a bare name in two databases is still one table name');
+  assert.match(apart.text, /Sales:dbo\.Invoices is in Sales and Billing:dbo\.Payments in Billing: relations do not cross databases/);
+  const billing = call(model, 'path', { from: 'dbo.Payments', to: 'Billing:dbo.Customers' }).text;
+  assert.match(billing, /^In Billing, Billing:dbo\.Payments to Billing:dbo\.Customers: 1 join\./);
+  const shared = call(model, 'path', { from: 'dbo.Customers', to: 'dbo.Invoices' });
+  assert.equal(shared.isError, true, 'a name two databases share wants its database');
+  assert.match(shared.text, /Sales:dbo\.Customers and Billing:dbo\.Customers are both called dbo\.Customers/);
 });

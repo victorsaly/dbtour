@@ -1,5 +1,8 @@
 // Every view has a URL in the hash, so a link opens the same view and the page works from a file:
 // #dbo.Orders, #dbo.Orders.Status (that column highlighted), #diagram/dbo.Orders,dbo.Customers, #group/Billing.
+// With several databases a ref carries its own: #Sales:dbo.Orders.
+import { findTable, type Model } from 'dbtour/model';
+
 export type Route =
   | { kind: 'home' }
   | { kind: 'table'; ref: string; column?: string }
@@ -50,14 +53,26 @@ export function routeHash(route: Route): string {
   }
 }
 
+/**
+ * The route with each ref as the model names it, so a link written before a second database was added,
+ * #dbo.Orders, opens Sales:dbo.Orders when only Sales has it. A name both databases have stays as written,
+ * and the table view says it is not one table.
+ */
+export function canonicalRoute(route: Route, model: Model): Route {
+  const named = (ref: string) => findTable(model, ref)?.ref ?? ref;
+  if (route.kind === 'table') return { ...route, ref: named(route.ref) };
+  if (route.kind === 'diagram') return { ...route, refs: route.refs.map(named) };
+  return route;
+}
+
 export const tableHash = (ref: string, column?: string): string => routeHash({ kind: 'table', ref, column });
 export const diagramHash = (refs: string[]): string => routeHash({ kind: 'diagram', refs });
 export const groupHash = (name: string): string => routeHash({ kind: 'group', name });
 export const mapHash = '#map';
 
-/** Dots stay readable in the address bar; commas and slashes are separators, so they are encoded. */
+/** Dots and colons stay readable in the address bar; commas and slashes are separators, so they are encoded. */
 function encode(text: string): string {
-  return encodeURIComponent(text).replace(/%2E/gi, '.');
+  return encodeURIComponent(text).replace(/%2E/gi, '.').replace(/%3A/gi, ':');
 }
 
 function decode(text: string): string {

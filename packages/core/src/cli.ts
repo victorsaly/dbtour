@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { configFile, defaultConfigText, modelFile, parseConfig, resolveConnection, type AddonConfig, type Config, type SourceConfig } from './config.ts';
-import { emptyModel, validate, type Api, type Database, type Model } from './model.ts';
+import { emptyModel, scope, validate, type Api, type Database, type Model } from './model.ts';
 import { applyNotes, parseNotes } from './notes.ts';
 import { answerLine } from './mcp.ts';
 import { loadAddon, loadSource, type Addon, type Importer, type Source } from './plugins.ts';
@@ -129,15 +129,19 @@ function importer(cwd: string): Importer {
   return (specifier) => import(specifier.startsWith('.') || specifier.startsWith('/') ? pathToFileURL(resolve(cwd, specifier)).href : specifier);
 }
 
-/** <out>/schema.json with the notes merged in, as render and mcp read it. */
+/**
+ * <out>/schema.json with the notes merged in, as render and mcp read it: scoped first, so with several
+ * databases the notes may name a table with its database or, where only one has it, without.
+ */
 function readModel(io: Io, config: Config): Model {
   const modelPath = join(io.cwd, config.out, modelFile);
   if (!existsSync(modelPath)) throw missing(`No ${join(config.out, modelFile)} yet. Run dbtour extract to write it.`);
   const checked = validate(JSON.parse(readFileSync(modelPath, 'utf8')));
   if (!checked.ok) throw new Error(`${join(config.out, modelFile)} is not a model:\n  ${checked.errors.join('\n  ')}`);
+  const model = scope(checked.model);
   const notesPath = join(io.cwd, config.notes);
-  if (!existsSync(notesPath)) return checked.model;
-  const applied = applyNotes(checked.model, parseNotes(readFileSync(notesPath, 'utf8')));
+  if (!existsSync(notesPath)) return model;
+  const applied = applyNotes(model, parseNotes(readFileSync(notesPath, 'utf8')));
   for (const warning of applied.warnings) io.error(warning);
   return applied.model;
 }

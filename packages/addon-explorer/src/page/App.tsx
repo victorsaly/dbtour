@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { Model } from 'dbtour/model';
 import { catalogue } from './catalogue.ts';
 import { allTables } from './graph.ts';
-import { parseRoute } from './route.ts';
+import { canonicalRoute, parseRoute } from './route.ts';
 import { buildIndex } from 'dbtour/search';
 import { Sidebar } from './Sidebar.tsx';
 import { Home } from './Home.tsx';
@@ -17,7 +17,7 @@ function subscribe(onChange: () => void): () => void {
 
 export function App({ model }: { model: Model }) {
   const hash = useSyncExternalStore(subscribe, () => window.location.hash);
-  const route = useMemo(() => parseRoute(hash), [hash]);
+  const route = useMemo(() => canonicalRoute(parseRoute(hash), model), [hash, model]);
   const index = useMemo(() => buildIndex(model), [model]);
   const cat = useMemo(() => catalogue(model), [model]);
   const searchInput = useRef<HTMLInputElement>(null);

@@ -1,6 +1,27 @@
 # Changelog
 
-## 0.6.0 (unreleased)
+## 0.7.0 (unreleased)
+
+- Several databases, each its own namespace. With more than one source, a table is named with its database,
+  `Sales:dbo.Customers`, everywhere a name is read or shown: the Markdown writes each database's tables
+  in a folder of its own (`tables/Sales/dbo.Customers.md`, links between them unchanged), the page's
+  addresses (`#Sales:dbo.Customers`, the colon kept readable), its index, search and colours, and the MCP
+  tools. Before, two databases with a `dbo.Customers` overwrote each other's page and the notes and the
+  page reached only the first. `schema.json` is unchanged: `scope()` names each schema `Database:schema`
+  as the model is read, so one database keeps the names it has always had.
+- A name without its database still works wherever only one database has the table: in the notes, an old
+  page link (`#dbo.Payments` opens `Billing:dbo.Payments`) and an agent's question. Where both have it, the
+  notes warn with the two names to choose from, the page offers both, and the MCP tools ask which. A
+  relation in the notes between two databases is refused, since relations stay inside one.
+- `validate()` wants each database named apart, without a dot, a colon or a slash, once there are several:
+  `extract` stops on two sources with the same `name` and says to rename one.
+- The SQL `path` writes keeps the database out of its names, since it runs in that database; with one
+  database a colon in a name is part of it and stays.
+- The Markdown's links are URLs: a space, a `#` or a colon in a database, schema or table name is encoded,
+  so the link reaches its page. The files keep their names.
+- The skill says how to read and write a name with its database.
+
+## 0.6.0 (1 November 2026)
 
 - The dbtour agent skill, the first half of the plan's fifth milestone. `npx skills add victorsaly/dbtour`
   installs it in any agent that reads Agent Skills. It tells the agent when to reach for dbtour (documenting a
