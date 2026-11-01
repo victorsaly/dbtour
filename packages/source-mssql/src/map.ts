@@ -1,8 +1,14 @@
 // Turns the seven result sets of query.sql into a Database. Pure, so it is tested on rows kept in a file.
 import type { Column, Constraint, Database, Index, Relation, Schema, Table } from 'dbtour';
 
-export interface InfoRow { name: string; version: string | null; description: string | null }
-export interface TableRow { schema: string; name: string; kind: 'table' | 'view'; description: string | null; definition: string | null }
+/** node-mssql returns a bigint as a string, since it may not fit a JavaScript number. */
+type Count = number | string;
+
+export interface InfoRow { name: string; version: string | null; description: string | null; readAt?: string | null }
+export interface TableRow {
+  schema: string; name: string; kind: 'table' | 'view'; description: string | null; definition: string | null;
+  rows?: Count | null; dataBytes?: Count | null; indexBytes?: Count | null;
+}
 export interface ColumnRow {
   schema: string; table: string; name: string; position: number; type: string; maxLength: number; precision: number; scale: number;
   nullable: boolean; identity: boolean; default: string | null; computed: string | null; description: string | null;
@@ -53,6 +59,9 @@ export function mapRecordsets(sets: Recordsets, options: MapOptions = {}): Datab
     const table: Table = { name: row.name, kind: row.kind, columns: [], indexes: [], constraints: [] };
     if (row.description) table.description = row.description;
     if (row.kind === 'view' && row.definition) table.definition = row.definition;
+    // A byte count past 2^53 loses its last digits as a number, which no reader of a size will miss. Only a
+    // table: an indexed view has rows in sys.partitions too, but they are the view's results, not stored data.
+    if (row.kind === 'table' && row.rows !== null && row.rows !== undefined) table.stats = { rows: Number(row.rows), dataBytes: Number(row.dataBytes ?? 0), indexBytes: Number(row.indexBytes ?? 0) };
     schema.tables.push(table);
     tables.set(`${row.schema}.${row.name}`, table);
   }
@@ -113,6 +122,7 @@ export function mapRecordsets(sets: Recordsets, options: MapOptions = {}): Datab
   const database: Database = { name: options.name ?? info.name, driver: 'mssql', schemas, relations };
   if (info.version) database.version = info.version;
   if (info.description) database.description = info.description;
+  if (info.readAt && [...tables.values()].some((t) => t.stats)) database.statsReadAt = info.readAt;
   return database;
 }
 

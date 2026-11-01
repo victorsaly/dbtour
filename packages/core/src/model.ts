@@ -30,6 +30,18 @@ export interface Constraint {
   definition?: string;
 }
 
+/**
+ * How big a table is, as the database keeps it about itself: counted from its catalogue, never by reading
+ * rows, so the count is the database's own estimate. Absent when the source could not read it.
+ */
+export interface TableStats {
+  rows: number;
+  /** The pages the rows take, the heap or clustered index, in bytes. */
+  dataBytes: number;
+  /** The pages every other index takes, in bytes. */
+  indexBytes: number;
+}
+
 export interface Table {
   name: string;
   kind: 'table' | 'view';
@@ -40,6 +52,7 @@ export interface Table {
   constraints: Constraint[];
   /** The SQL of a view. */
   definition?: string;
+  stats?: TableStats;
 }
 
 export interface Schema {
@@ -67,6 +80,8 @@ export interface Database {
   driver: string;
   version?: string;
   description?: string;
+  /** When the source read its tables' stats, as an ISO timestamp: they change, so they carry their moment. */
+  statsReadAt?: string;
   schemas: Schema[];
   relations: Relation[];
 }
@@ -229,6 +244,7 @@ function checkDatabase(check: Checker, d: unknown, p: string): void {
   check.string(d.driver, `${p}.driver`);
   check.optionalString(d.version, `${p}.version`);
   check.optionalString(d.description, `${p}.description`);
+  check.optionalString(d.statsReadAt, `${p}.statsReadAt`);
   check.list(d.schemas, `${p}.schemas`, (s, sp) => {
     if (!check.object(s, sp)) return;
     check.string(s.name, `${sp}.name`);
@@ -253,6 +269,9 @@ function checkTable(check: Checker, t: unknown, p: string): void {
   if (t.kind !== 'table' && t.kind !== 'view') check.errors.push(`${p}.kind must be "table" or "view"`);
   check.optionalString(t.description, `${p}.description`);
   check.optionalString(t.definition, `${p}.definition`);
+  if (t.stats !== undefined && check.object(t.stats, `${p}.stats`)) {
+    for (const field of ['rows', 'dataBytes', 'indexBytes']) check.count(t.stats[field], `${p}.stats.${field}`);
+  }
   if (t.primaryKey !== undefined) check.strings(t.primaryKey, `${p}.primaryKey`);
   check.list(t.columns, `${p}.columns`, (c, cp) => {
     if (!check.object(c, cp)) return;
@@ -302,6 +321,10 @@ class Checker {
 
   optionalBoolean(value: unknown, path: string): void {
     if (value !== undefined && typeof value !== 'boolean') this.errors.push(`${path} must be true or false when given`);
+  }
+
+  count(value: unknown, path: string): void {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) this.errors.push(`${path} must be a number of 0 or more`);
   }
 
   strings(value: unknown, path: string): void {

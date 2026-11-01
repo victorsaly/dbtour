@@ -50,3 +50,4 @@ export function plotPath(ticks: Tick[], width: number, height: number): string {
 export function tickCentre(i: number, columns: number, width: number): number {
   return i * tickWidth(columns, width) + tickWidth(columns, width) / 2;
 }
+

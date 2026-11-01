@@ -59,3 +59,22 @@ test('findTable and relationsOf walk the model', () => {
   assert.deepEqual(rel.out.map((r) => r.to.table), ['dbo.Customers']);
   assert.deepEqual(rel.in.map((r) => r.from.table).sort(), ['billing.Invoices', 'dbo.OrderLines']);
 });
+
+test('stats are optional, and when given are counts and byte sizes that are not negative', () => {
+  const model = shop();
+  const customers = model.databases[0].schemas[0].tables[0];
+  delete customers.stats;
+  assert.equal(validate(model).ok, true, 'a table without stats is valid');
+  customers.stats = { rows: -1, dataBytes: 8192, indexBytes: 'big' as unknown as number };
+  model.databases[0].statsReadAt = 20261101 as unknown as string;
+  const result = validate(model);
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  const errors = result.errors.join('\n');
+  assert.match(errors, /databases\[0\]\.schemas\[0\]\.tables\[0\]\.stats\.rows must be a number of 0 or more/);
+  assert.match(errors, /tables\[0\]\.stats\.indexBytes must be a number of 0 or more/);
+  assert.doesNotMatch(errors, /dataBytes/);
+  assert.match(errors, /databases\[0\]\.statsReadAt must be a string/);
+  model.databases[0].schemas[0].tables[0].stats = 'none' as unknown as undefined;
+  assert.match((validate(model) as { errors: string[] }).errors.join('\n'), /tables\[0\]\.stats must be an object/);
+});

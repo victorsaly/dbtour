@@ -109,3 +109,67 @@ test('the page searches, opens a table, draws its neighbourhood, expands it and 
     await browser.close();
   }
 });
+
+test('with sizes, a bar beside each line shows the bytes, the index orders and remembers it, and an entry opens on its size', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  try {
+    const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+    const dir = mkdtempSync(join(tmpdir(), 'dbtour-page-'));
+    writeFileSync(join(dir, 'index.html'), render(model)['index.html']);
+    const url = pathToFileURL(join(dir, 'index.html')).href;
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(url);
+
+    await page.getByRole('heading', { name: 'Shop' }).waitFor();
+    assert.match((await page.locator('.entry-head .meta').textContent()) ?? '', /as of 2026-11-01/);
+    const names = () => page.locator('.plots .name').allTextContents();
+    assert.equal((await names())[0], 'Customers', 'catalogue order first');
+    assert.match((await page.locator('.plots li').first().locator('.size').textContent()) ?? '', /48,213 rows · 8\.6 MB/);
+
+    await page.getByRole('group', { name: 'Order' }).getByRole('button', { name: 'Rows' }).click();
+    assert.deepEqual((await names()).slice(0, 2), ['OrderLines', 'Orders']);
+    // The bar is the bytes against the largest table: OrderLines fills it, the view has none and says so.
+    const bar = (n: number) => page.locator('.plots li').nth(n).locator('.size-bar');
+    assert.equal(await bar(0).getAttribute('aria-label'), '78 MB of data, 24 MB of indexes');
+    // The browser rounds the widths it keeps, so they are compared to a tenth of a per cent.
+    const widths = async (n: number) =>
+      (await bar(n).locator('span').evaluateAll((parts) => parts.map((p) => (p as unknown as { style: { width: string } }).style.width))).map((w) => parseFloat(w).toFixed(1));
+    assert.deepEqual(await widths(0), ['76.5', '23.5'], 'OrderLines fills the bar: 78 MB of data, 24 MB of indexes');
+    assert.deepEqual(await widths(1), ['28.8', '9.1'], 'Orders, 39 MB, is drawn to the same scale');
+    assert.equal(await bar(5).count(), 0);
+    assert.equal((await page.locator('.plots li').nth(5).locator('.size').textContent())?.trim(), 'no rows of its own');
+
+    await page.reload();
+    await page.getByRole('heading', { name: 'Shop' }).waitFor();
+    assert.equal((await names())[0], 'OrderLines', 'the order is remembered');
+    assert.equal(await page.getByRole('button', { name: 'Rows' }).getAttribute('aria-pressed'), 'true');
+
+    await page.goto(`${url}#dbo.Customers`);
+    await page.locator('h1', { hasText: 'Customers' }).waitFor();
+    const size = page.getByRole('region', { name: 'Size' });
+    assert.match((await size.textContent()) ?? '', /As of 2026-11-01.*48,213 rows.*the 4th largest of 5 tables by rows.*7\.1 MB data.*1\.6 MB indexes.*8\.6 MB in all/);
+    assert.match((await size.textContent()) ?? '', /SQL Server's own count of the rows, an estimate/);
+    assert.doesNotMatch((await page.locator('.entry-head .meta').textContent()) ?? '', /rows/, 'the size lives in its block, not the meta line');
+
+    // A model without sizes keeps the plain index: no order to choose, no bars, no size block.
+    for (const schema of model.databases[0].schemas) for (const table of schema.tables) delete table.stats;
+    writeFileSync(join(dir, 'bare.html'), render(model)['index.html']);
+    await page.goto(pathToFileURL(join(dir, 'bare.html')).href);
+    await page.getByRole('heading', { name: 'Shop' }).waitFor();
+    assert.equal(await page.getByRole('group', { name: 'Order' }).count(), 0);
+    assert.equal(await page.locator('.plots .size, .plots .size-bar').count(), 0);
+    await page.goto(`${pathToFileURL(join(dir, 'bare.html')).href}#dbo.Customers`);
+    await page.locator('h1', { hasText: 'Customers' }).waitFor();
+    assert.equal(await page.getByRole('region', { name: 'Size' }).count(), 0);
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});

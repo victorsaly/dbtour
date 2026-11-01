@@ -46,9 +46,11 @@ The structure says what a table is; three more things say how it is used. Two of
 about itself and a package reads without touching a row; the third is written by the agent.
 
 - **Size and shape**, read by the source with the structure: rows, data and index bytes per table, with
-  the moment they were read. Cheap (`sys.dm_db_partition_stats` on SQL Server, `pg_class` and
-  `pg_stat_user_tables` on Postgres), and the difference between a lookup table and the one everything
-  hangs off. Lives on the table as `stats`.
+  the moment they were read. Cheap (`sys.partitions` and `sys.allocation_units` on SQL Server, catalogue
+  views a login with `VIEW DEFINITION` reads, where `sys.dm_db_partition_stats` would want `VIEW DATABASE
+  STATE`; `pg_class` and `pg_stat_user_tables` on Postgres), and the difference between a lookup table and
+  the one everything hangs off. Lives on the table as `stats`, its moment on the database as
+  `statsReadAt`. The count is the database's own estimate, and the Markdown says so.
 - **Usage**, read by an add-on, since it is a report on the structure rather than part of it: which
   indexes are read and which only cost writes, which indexes the engine wishes it had, which tables are
   hot. From the management views, so it describes the window since the last restart, not history. The
@@ -149,9 +151,10 @@ shop window, and nothing goes on the page before it is released.
    computed columns, fixing composite keys.
 2. **The page**: search, table view, neighbourhood diagram.
 3. **Size and shape**: `stats` on each table from the SQL Server source, and the page and the Markdown
-   showing it: rows and bytes on the entry, the index ordered by them, lines weighted by rows. ← here
+   showing it: rows and bytes on the entry, the index ordered by them, lines weighted by rows.
 4. **All the catalogue says**: every extended property, the table's features, column labels and masking,
-   index kinds and untrusted keys from the SQL Server source, and the page and the Markdown showing them.
+   index kinds and untrusted keys from the SQL Server source, and the page and the Markdown showing
+   them. ← here
 5. The skill and the SQL add-on, with the stats telling the agent where to look first.
 6. `source-openapi` and table-to-endpoint links.
 7. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats

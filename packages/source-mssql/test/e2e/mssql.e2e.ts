@@ -36,16 +36,20 @@ CREATE TABLE dbtour_e2e.Shipments (
   LineNo smallint NOT NULL,
   CONSTRAINT FK_e2e_Shipments_OrderLines FOREIGN KEY (OrderId, LineNo) REFERENCES dbtour_e2e.OrderLines (OrderId, LineNo)
 );
+-- A clustered columnstore: rows this few stay in its delta store, which sys.partitions does not list.
+CREATE TABLE dbtour_e2e.PageViews (Id int NOT NULL, At datetime2 NOT NULL, INDEX CCI_e2e_PageViews CLUSTERED COLUMNSTORE);
 GO
 CREATE VIEW dbtour_e2e.vOrderTotals AS SELECT OrderId, SUM(Quantity) AS Total FROM dbtour_e2e.OrderLines GROUP BY OrderId;
 GO
+INSERT INTO dbtour_e2e.Customers (Email) VALUES ('a@example.com'), ('b@example.com'), ('c@example.com');
+INSERT INTO dbtour_e2e.PageViews (Id, At) VALUES (1, SYSUTCDATETIME()), (2, SYSUTCDATETIME());
 EXEC sys.sp_addextendedproperty @name = 'MS_Description', @value = 'One row per account.', @level0type = 'SCHEMA', @level0name = 'dbtour_e2e', @level1type = 'TABLE', @level1name = 'Customers';
 EXEC sys.sp_addextendedproperty @name = 'MS_Description', @value = 'Login address.', @level0type = 'SCHEMA', @level0name = 'dbtour_e2e', @level1type = 'TABLE', @level1name = 'Customers', @level2type = 'COLUMN', @level2name = 'Email';
 `;
 
 const teardown = `
 DROP VIEW IF EXISTS dbtour_e2e.vOrderTotals;
-DROP TABLE IF EXISTS dbtour_e2e.Shipments, dbtour_e2e.OrderLines, dbtour_e2e.Orders, dbtour_e2e.Customers;
+DROP TABLE IF EXISTS dbtour_e2e.Shipments, dbtour_e2e.OrderLines, dbtour_e2e.Orders, dbtour_e2e.Customers, dbtour_e2e.PageViews;
 DROP SCHEMA IF EXISTS dbtour_e2e;
 `;
 
@@ -67,7 +71,7 @@ test('extract reads a real SQL Server', { skip: connection ? false : 'DBTOUR_E2E
     const database = await extract({ type: 'mssql', name: 'E2E', connection });
     const schema = database.schemas.find((s) => s.name === 'dbtour_e2e');
     assert.ok(schema, 'the dbtour_e2e schema is in the model');
-    assert.deepEqual(schema.tables.map((t) => `${t.name}:${t.kind}`), ['Customers:table', 'OrderLines:table', 'Orders:table', 'Shipments:table', 'vOrderTotals:view']);
+    assert.deepEqual(schema.tables.map((t) => `${t.name}:${t.kind}`), ['Customers:table', 'OrderLines:table', 'Orders:table', 'PageViews:table', 'Shipments:table', 'vOrderTotals:view']);
     const customers = schema.tables[0];
     assert.equal(customers.description, 'One row per account.');
     assert.deepEqual(customers.columns.map((c) => c.type), ['int', 'nvarchar(320)', 'varchar(max)']);
@@ -81,6 +85,15 @@ test('extract reads a real SQL Server', { skip: connection ? false : 'DBTOUR_E2E
     const shipments = database.relations.find((r) => r.name === 'FK_e2e_Shipments_OrderLines')!;
     assert.deepEqual(shipments.from.columns, ['OrderId', 'LineNo']);
     assert.equal(database.relations.find((r) => r.name === 'FK_e2e_OrderLines_Orders')!.onDelete, 'CASCADE');
+    // Sizes from the catalogue: the three rows inserted, at least a page for them, and none for the view.
+    assert.equal(customers.stats!.rows, 3);
+    assert.ok(customers.stats!.dataBytes >= 8192 && customers.stats!.dataBytes % 8192 === 0, `whole pages, got ${customers.stats!.dataBytes}`);
+    assert.deepEqual(orders.stats, { rows: 0, dataBytes: 0, indexBytes: 0 });
+    assert.equal(schema.tables.find((t) => t.name === 'vOrderTotals')!.stats, undefined);
+    const pageViews = schema.tables.find((t) => t.name === 'PageViews')!.stats!;
+    assert.equal(pageViews.rows, 2);
+    assert.ok(pageViews.dataBytes > 0, 'the delta store holding the rows is counted');
+    assert.match(database.statsReadAt!, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
   } finally {
     await run(teardown);
   }

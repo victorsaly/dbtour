@@ -1,22 +1,50 @@
 -- Everything dbtour needs from SQL Server, in one batch of seven result sets, read in this order by map.ts.
--- Reads the catalogue views only: a login with VIEW DEFINITION on the database is enough.
+-- Reads the catalogue views only: a login with VIEW DEFINITION on the database is enough. That is why the
+-- sizes come from sys.partitions and sys.allocation_units, catalogue views, rather than
+-- sys.dm_db_partition_stats, which wants VIEW DATABASE STATE and would fail the whole batch without it.
 SET NOCOUNT ON;
 
 -- 1. The database
 SELECT DB_NAME() AS [name],
        CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(50)) AS [version],
-       (SELECT TOP (1) CAST([value] AS nvarchar(max)) FROM sys.extended_properties WHERE class = 0 AND [name] = 'MS_Description') AS [description];
+       (SELECT TOP (1) CAST([value] AS nvarchar(max)) FROM sys.extended_properties WHERE class = 0 AND [name] = 'MS_Description') AS [description],
+       CONVERT(nvarchar(33), SYSUTCDATETIME(), 127) + 'Z' AS [readAt];
 
--- 2. Tables and views
+-- 2. Tables and views, with each table's rows and bytes as the catalogue counts them (no row is read).
+--    Rows are the heap's or the clustered index's (index_id 0 or 1); data bytes are those pages, index bytes
+--    every other index's. A page is 8 KB. A view has no partitions, so its three are NULL.
 SELECT s.[name] AS [schema],
        o.[name] AS [name],
        CASE o.[type] WHEN 'V' THEN 'view' ELSE 'table' END AS [kind],
        CAST(ep.[value] AS nvarchar(max)) AS [description],
-       m.[definition] AS [definition]
+       m.[definition] AS [definition],
+       r.[rows] AS [rows],
+       b.dataBytes AS [dataBytes],
+       b.indexBytes AS [indexBytes]
 FROM sys.objects o
 JOIN sys.schemas s ON s.schema_id = o.schema_id
 LEFT JOIN sys.extended_properties ep ON ep.class = 1 AND ep.major_id = o.object_id AND ep.minor_id = 0 AND ep.[name] = 'MS_Description'
 LEFT JOIN sys.sql_modules m ON m.object_id = o.object_id
+-- Counted apart: joining the allocation units to the partitions repeats each partition's rows.
+OUTER APPLY (SELECT SUM(p.[rows]) AS [rows] FROM sys.partitions p WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)) r
+OUTER APPLY (
+    SELECT SUM(CASE WHEN u.index_id IN (0, 1) THEN u.used_pages ELSE 0 END) * 8192 AS dataBytes,
+           SUM(CASE WHEN u.index_id > 1 THEN u.used_pages ELSE 0 END) * 8192 AS indexBytes
+    FROM (
+        -- In-row and row-overflow pages belong to the partition's hobt, large-object pages to the partition.
+        SELECT p.index_id, au.used_pages
+        FROM sys.partitions p
+        JOIN sys.allocation_units au ON au.container_id = CASE WHEN au.[type] = 2 THEN p.partition_id ELSE p.hobt_id END
+        WHERE p.object_id = o.object_id
+        UNION ALL
+        -- A columnstore's delta stores, rows not yet compressed, are hobts of their own that sys.partitions
+        -- does not list: their pages are counted with the columnstore index they belong to.
+        SELECT rg.index_id, au.used_pages
+        FROM sys.column_store_row_groups rg
+        JOIN sys.allocation_units au ON au.container_id = rg.delta_store_hobt_id
+        WHERE rg.object_id = o.object_id AND rg.delta_store_hobt_id IS NOT NULL
+    ) u
+) b
 WHERE o.[type] IN ('U', 'V') AND o.is_ms_shipped = 0
 ORDER BY s.[name], o.[name];
 

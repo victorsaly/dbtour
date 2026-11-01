@@ -1,6 +1,31 @@
 # Changelog
 
-## 0.2.4 (unreleased)
+## 0.3.0 (unreleased)
+
+- Size and shape, the plan's third milestone. The SQL Server source reads each table's rows and its bytes
+  of data and of indexes from `sys.partitions` and `sys.allocation_units`, catalogue views, so a login
+  with `VIEW DEFINITION` is still all it needs; the model keeps them as `stats` on the table and when they
+  were read as `statsReadAt` on the database, and `validate()` checks them. A view has none, an indexed
+  view included, and a columnstore's delta stores, which `sys.partitions` does not list, are counted with
+  it.
+- The Markdown: the index gains Rows and Size columns, and a table's page says "About 48,213 rows · 7.1 MB
+  of data · 1.6 MB of indexes, as the database counted them on 2026-11-01", since the count is the
+  database's estimate. A model without stats renders as before.
+- The page: a size bar beside each line of the home's index, its length the table's bytes against the
+  largest table's, data solid and indexes outlined, with the rows and size written over it (a view says it has no rows of its own; a table without stats says
+  nothing); the index can
+  be read by Rows or Size, largest first, as well as in catalogue order, remembered in the browser; and a
+  key under the index and "Reading a bar" in the panel say what the bar and each figure are. The plot line
+  keeps one meaning, the columns and keys. An entry opens on a Size block: its rows, its place among the
+  tables by rows, a bar of its data and indexes with each figure named, the date they were counted, and
+  what rows, data and indexes mean. The database's meta line keeps each item whole at phone width.
+- A publish npm refuses ends in a sentence saying what to do, not a Node stack trace: for "OIDC permission
+  denied", the `npm trust github … --allow-publish` command that lets the workflow publish; for a 404, the
+  trusted publisher to set on npmjs.com. A publish by hand keeps the terminal, so npm can still ask for the
+  one-time password.
+- The plan moves on to the skill and the SQL add-on.
+
+## 0.2.4 (1 November 2026)
 
 - The release workflow retries a failed publish. It decides the tag and the publish apart: a version
   already tagged is not tagged again, and a version npm lacks is published package by package, even when

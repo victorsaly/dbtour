@@ -5,7 +5,7 @@
 
 **Tour your database and its API.**
 
-[![version](https://img.shields.io/badge/version-0.2.4-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.3.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -24,6 +24,10 @@ export DBTOUR_MSSQL='Server=localhost,1433;Database=Shop;User Id=reader;Password
 npx dbtour extract                               # → docs/dbtour/schema.json
 npx dbtour render                                # → docs/dbtour/README.md, one page per table, index.html
 ```
+
+The SQL Server source reads the catalogue and nothing else: a login with `VIEW DEFINITION` on the database is
+enough. Each table's rows and bytes come from the catalogue too, as SQL Server counts them, without reading a
+row.
 
 `dbtour.yaml`:
 
@@ -58,6 +62,10 @@ It holds the structure and never the rows.
   Gemini, Copilot, Cursor or any other; the choice is remembered, and tools with a web chat get an Open link.
 - Every table has a number and every schema a colour, and each table is drawn as one line: a pulse per
   column, a key as a peak. Dark mode follows the system.
+- Sizes, when the source read them: a bar beside each line of the index shows the table's bytes against
+  the largest, split into data and indexes, with its rows written over it; the index can be read by
+  **Rows** or **Size**, largest first, as well as in catalogue order; and an entry opens on its size, its
+  place among the tables, and what each figure means.
 
 `dbtour.notes.yaml` adds what the database cannot say, and wins over it:
 
