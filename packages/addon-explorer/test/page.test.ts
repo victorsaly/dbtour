@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { Model } from 'dbtour/model';
 import { pageHtml, render } from '../src/index.ts';
-import { parseRoute, routeHash, tableHash, diagramHash, groupHash, type Route } from '../src/page/route.ts';
+import { parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, type Route } from '../src/page/route.ts';
+import { allTables, relationId } from '../src/page/graph.ts';
+import { tools, toolById, storedTool, rememberTool } from '../src/page/tools.ts';
 import { buildIndex, search } from '../src/page/search.ts';
 import { neighbours, withNeighbours, expand, subgraph } from '../src/page/graph.ts';
 import { layout, nodeHeight, nodeWidth } from '../src/page/layout.ts';
@@ -21,8 +23,11 @@ test('every route round-trips through the hash, and an odd hash falls back to ho
     { kind: 'table', ref: 'dbo.Orders', column: 'Status' },
     { kind: 'diagram', refs: ['dbo.Orders', 'billing.Invoices'] },
     { kind: 'group', name: 'Money in/out, now' },
+    { kind: 'map' },
   ];
   for (const route of routes) assert.deepEqual(parseRoute(routeHash(route)), route);
+  assert.equal(mapHash, '#map');
+  assert.deepEqual(parseRoute('#map/x'), { kind: 'table', ref: 'map/x' }, 'only the bare word is the map');
   assert.equal(tableHash('dbo.Orders'), '#dbo.Orders');
   assert.equal(tableHash('dbo.Orders', 'Status'), '#dbo.Orders.Status');
   assert.equal(diagramHash(['dbo.Orders', 'dbo.Customers']), '#diagram/dbo.Orders,dbo.Customers');
@@ -73,6 +78,39 @@ test('a subgraph keeps only tables the model has and relations with both ends sh
   const sub = subgraph(model, ['dbo.Orders', 'dbo.Customers', 'dbo.Ghost', 'dbo.Orders']);
   assert.deepEqual(sub.tables, ['dbo.Orders', 'dbo.Customers']);
   assert.deepEqual(sub.relations.map((r) => `${r.from.table}→${r.to.table}`), ['dbo.Orders→dbo.Customers']);
+});
+
+test('the whole catalogue is every table in model order, and a relation has one id', () => {
+  const model = shop();
+  assert.deepEqual(allTables(model), ['dbo.Customers', 'dbo.Orders', 'dbo.OrderLines', 'dbo.Products', 'dbo.vOrderTotals', 'billing.Invoices']);
+  assert.equal(relationId(model.databases[0].relations[0]), 'dbo.Orders.CustomerId>dbo.Customers.Id');
+  const ids = model.databases[0].relations.map(relationId);
+  assert.equal(new Set(ids).size, ids.length, 'ids are distinct');
+});
+
+test('a node drawn with fewer rows is shorter, and names alone are just the header', async () => {
+  const model = shop();
+  assert.equal(nodeHeight(0), 34);
+  assert.equal(nodeHeight(2), 34 + 12 + 44);
+  const sub = subgraph(model, ['dbo.Orders', 'dbo.Customers']);
+  const tall = await layout(model, sub);
+  const flat = await layout(model, sub, () => 0);
+  const spanOf = (placed: Map<string, { x: number; y: number }>) => Math.max(...[...placed.values()].map((p) => p.y)) - Math.min(...[...placed.values()].map((p) => p.y));
+  assert.ok(spanOf(flat) <= spanOf(tall), 'header-only nodes never spread further than full ones');
+});
+
+test('the copy tool is remembered, defaults to any agent, and an unknown id falls back', () => {
+  assert.equal(tools[0].id, 'agent');
+  assert.equal(toolById('claude').url, 'https://claude.ai/new');
+  assert.equal(toolById('nope').id, 'agent');
+  const store = new Map<string, string>();
+  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+  assert.equal(storedTool(storage).id, 'agent');
+  rememberTool('chatgpt', storage);
+  assert.equal(storedTool(storage).name, 'ChatGPT');
+  rememberTool('nope', storage);
+  assert.equal(storedTool(storage).id, 'agent');
+  assert.equal(storedTool(undefined).id, 'agent', 'no storage at all is fine');
 });
 
 test('layout places every table without overlap, from the referencing table towards the referenced one', async () => {
@@ -140,6 +178,7 @@ test('the mark is one geometry at every size and a favicon-safe data URI', () =>
   assert.match(small, /width="16" height="16" viewBox="0 0 24 24"/);
   assert.match(big, /stroke="#fff" stroke-width="1"/);
   assert.ok(small.includes(markPulse) && big.includes(markPulse));
+  assert.match(small, /<ellipse /, 'the top of the cylinder');
   assert.match(markDataUri(), /^data:image\/svg\+xml,%3Csvg/);
   assert.doesNotMatch(markDataUri(), /[<>"]/);
 });

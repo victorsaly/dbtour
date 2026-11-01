@@ -50,7 +50,15 @@ Strategy: restrained. No gradient, no shadow, no radius.
 - **Facts**: four mono-caps labels with 20px mono values, in two columns, each over a hairline: columns,
   keys, references, referenced by. Every entry shows the same four in the same place.
 - **Map nodes**: 240px wide, a 34px head with block, number and name, 22px rows, 6px padding; sizes
-  `layout.ts` counts with. Edges are white hairlines with mono labels; virtual relations are dashed.
+  `layout.ts` counts with. Three levels: Names (the head alone), Keys, Columns, chosen in a segmented
+  control whose active item carries a 2px red underline. Edges are white hairlines with mono labels;
+  virtual relations are dashed. The Links panel lists every relation with a checkbox (accent red) and a
+  checkbox per group, declared and from the notes. An entry page embeds the map at names level, 300px tall,
+  in a hairline frame, with "Open the map" to the full one.
+- **Copy group**: the copy button, a select naming the tool (mono caps, hairline, a drawn chevron) and,
+  for a tool with a web chat, an "Open …" button, joined edge to edge.
+- **Mark and wordmark**: a database cylinder with the pulse through it, 1.5 stroke in the 24 box; "db" in
+  Red Hat Mono 500 in `--ink-2`, "tour" in Archivo 600 in `--ink`.
 - **Tags** (`view`, `notes`): 9.5px mono caps in a hairline outline.
 
 ## Layout

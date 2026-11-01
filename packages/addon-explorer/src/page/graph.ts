@@ -32,6 +32,16 @@ export function expand(model: Model, refs: string[], ref: string): string[] {
   return all;
 }
 
+/** Every table in the model, in the order it lists them. */
+export function allTables(model: Model): string[] {
+  return model.databases.flatMap((d) => d.schemas.flatMap((s) => s.tables.map((t) => `${s.name}.${t.name}`)));
+}
+
+/** One relation, named for the links panel and the hidden set. */
+export function relationId(relation: Relation): string {
+  return `${relation.from.table}.${relation.from.columns.join(',')}>${relation.to.table}.${relation.to.columns.join(',')}`;
+}
+
 /** Only tables the model has, and only relations with both ends among them. */
 export function subgraph(model: Model, refs: string[]): Subgraph {
   const tables = [...new Set(refs)].filter((ref) => findTable(model, ref) !== undefined);

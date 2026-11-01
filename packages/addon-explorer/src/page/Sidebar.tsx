@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState, type KeyboardEvent, type RefObject } from 'react';
 import { tableRef, type Model } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
-import { Mark } from './Logo.tsx';
-import { groupHash, tableHash, type Route } from './route.ts';
+import { Mark, Wordmark } from './Logo.tsx';
+import { groupHash, mapHash, tableHash, type Route } from './route.ts';
 import { search, type Entry, type Hit } from './search.ts';
 
 /** Below this width the index folds; the same breakpoint as the stylesheet's. */
@@ -116,7 +116,7 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
     <aside className="side">
       <a className="brand" href="#" aria-label="dbtour, home">
         <Mark size={22} />
-        <span className="wordmark">dbtour</span>
+        <Wordmark />
       </a>
       <div className="side-db label">{model.databases.map((d) => d.name).join(' · ')}</div>
       <div className="search">
@@ -133,6 +133,9 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
         />
         {!searching && <kbd>/</kbd>}
       </div>
+      <a className={`side-map${route.kind === 'map' ? ' is-current' : ''}`} href={mapHash} aria-current={route.kind === 'map' ? 'page' : undefined}>
+        Map of the whole catalogue
+      </a>
       {searching ? (
         <ul className="hits" role="listbox" aria-label="Results">
           {hits.length === 0 && <li className="empty">Nothing matches “{query.trim()}”.</li>}

@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react';
 import { findTable, isUniqueColumn, relationsOf, type Column, type Model, type Relation, type Table } from 'dbtour/model';
 import { neighboursOf, type Catalogue } from './catalogue.ts';
+import { DiagramView } from './Diagram.tsx';
 import { withNeighbours } from './graph.ts';
 import { Plot } from './Plot.tsx';
 import { profile } from './plot.ts';
 import { prompt } from './prompt.ts';
 import { diagramHash, groupHash, tableHash } from './route.ts';
+import { rememberTool, storedTool, toolById, tools } from './tools.ts';
 
 /** How long the button says "Copied" before it offers to copy again. */
 const copiedForMs = 1500;
@@ -41,6 +43,7 @@ interface Props {
 export function TableView({ model, cat, tableRef, column }: Props) {
   const found = findTable(model, tableRef);
   const [copied, setCopied] = useState(false);
+  const [tool, setTool] = useState(() => storedTool());
 
   useEffect(() => {
     remember(tableRef);
@@ -63,6 +66,11 @@ export function TableView({ model, cat, tableRef, column }: Props) {
   const groups = model.groups.filter((g) => g.tables.includes(tableRef));
   const sequence = neighboursOf(cat, tableRef);
   const keyCount = (table.primaryKey?.length ?? 0) + table.columns.filter((c) => isUniqueColumn(table, c.name)).length;
+  const around = withNeighbours(model, [tableRef]);
+  const chooseTool = (id: string) => {
+    setTool(toolById(id));
+    rememberTool(id);
+  };
 
   const copy = async () => {
     await copyText(prompt(model, [tableRef]));
@@ -96,18 +104,40 @@ export function TableView({ model, cat, tableRef, column }: Props) {
           </p>
           {table.description && <p className="description">{table.description}</p>}
           <div className="actions">
-            <a className="button is-primary" href={diagramHash(withNeighbours(model, [tableRef]))}>
-              Diagram
+            <a className="button" href={diagramHash(around)}>
+              Open the map
             </a>
-            <button type="button" className="button" onClick={copy}>
-              {copied ? 'Copied' : 'Copy for Claude'}
-            </button>
+            <div className="copy">
+              <button type="button" className="button" onClick={copy}>
+                {copied ? 'Copied' : `Copy for ${tool.name}`}
+              </button>
+              <span className="select">
+                <select aria-label="Which tool the copy is for" value={tool.id} onChange={(event) => chooseTool(event.target.value)}>
+                  {tools.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </span>
+              {tool.url && (
+                <a className="button" href={tool.url} target="_blank" rel="noreferrer">
+                  Open {tool.name} ↗
+                </a>
+              )}
+            </div>
           </div>
         </header>
 
         <div className="entry-plot" key={tableRef}>
           <Plot ticks={profile(table, foreign)} height={plotHeight} tableRef={tableRef} activeColumn={column} />
         </div>
+
+        {around.length > 1 ? (
+          <DiagramView key={`around-${tableRef}`} model={model} cat={cat} refs={around} embedded openHash={diagramHash(around)} />
+        ) : (
+          <p className="muted around-none">No relation to map: nothing references this table and it references nothing.</p>
+        )}
 
         <div className="scroll-x">
         <table className="columns">

@@ -47,12 +47,15 @@ It holds the structure and never the rows.
 - `/` searches tables, columns and groups; arrows and Enter open a result.
 - A table shows its columns with type, nullability, default, keys and description, the relations in and out
   as links, and its indexes and constraints below.
-- **Diagram** draws the table with its neighbours one relation away, laid out by ELK. **+** on any node adds
-  that table's neighbours; the browser's back button takes it away again. A group from the notes is a
-  diagram of its tables.
+- Every entry carries a small map of the table and its neighbours; **Open the map** draws it large, laid out
+  by ELK. **+** on any node adds that table's neighbours, and back takes them away. **Map of the whole
+  catalogue** draws everything. Three levels of detail, Names, Keys and Columns, keep wide tables readable,
+  and the **Links** panel switches any relation off, by itself or as a group. A group from the notes is a
+  map of its tables.
 - Every view has a URL: `#dbo.Orders`, `#dbo.Orders.Status`, `#diagram/dbo.Orders,dbo.Customers`,
-  `#group/Billing`.
-- **Copy for Claude** puts the table's Markdown on the clipboard, ready to paste into an agent.
+  `#group/Billing`, `#map`.
+- **Copy for …** puts the table's Markdown on the clipboard for whichever agent you use, Claude, ChatGPT,
+  Gemini, Copilot, Cursor or any other; the choice is remembered, and tools with a web chat get an Open link.
 - Every table has a number and every schema a colour, and each table is drawn as one line: a pulse per
   column, a key as a peak. Dark mode follows the system.
 

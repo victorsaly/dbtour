@@ -52,7 +52,7 @@ table or the canvas in the centre, relations and notes on the right.
   Never the whole schema. React Flow for the canvas, elkjs for layout. Groups from the notes are named views.
 - Endpoints grouped by tag, each with parameters and responses and "touches" links to tables. A table shows
   the endpoints that touch it.
-- "Ask Claude" copies the selected tables and endpoints as a prompt.
+- "Copy for …" copies the selected tables and endpoints as a prompt for whichever agent the reader uses.
 - Dark mode follows the system. Works opened from a file, with no network.
 
 ## Local and deployed

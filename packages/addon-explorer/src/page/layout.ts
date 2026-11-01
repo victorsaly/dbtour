@@ -19,8 +19,9 @@ export const rowHeight = 22;
 /** Above the first row and below the last. */
 export const nodePadding = 6;
 
-export function nodeHeight(columns: number): number {
-  return headerHeight + nodePadding * 2 + rowHeight * columns;
+/** A node with no rows is its header alone. */
+export function nodeHeight(rows: number): number {
+  return rows === 0 ? headerHeight : headerHeight + nodePadding * 2 + rowHeight * rows;
 }
 
 export interface Position {
@@ -30,7 +31,8 @@ export interface Position {
 
 const elk = new Elk();
 
-export async function layout(model: Model, graph: Subgraph): Promise<Map<string, Position>> {
+/** `rows` says how many rows each node shows; every column unless the map is drawn with less. */
+export async function layout(model: Model, graph: Subgraph, rows: (ref: string) => number = (ref) => findTable(model, ref)?.table.columns.length ?? 0): Promise<Map<string, Position>> {
   const root: ElkNode = {
     id: 'root',
     layoutOptions: {
@@ -40,7 +42,7 @@ export async function layout(model: Model, graph: Subgraph): Promise<Map<string,
       'elk.layered.spacing.nodeNodeBetweenLayers': '90',
       'elk.spacing.nodeNode': '36',
     },
-    children: graph.tables.map((ref) => ({ id: ref, width: nodeWidth, height: nodeHeight(findTable(model, ref)?.table.columns.length ?? 0) })),
+    children: graph.tables.map((ref) => ({ id: ref, width: nodeWidth, height: nodeHeight(rows(ref)) })),
     edges: graph.relations.map((relation, i) => ({ id: `e${i}`, sources: [relation.from.table], targets: [relation.to.table] })),
   };
   const laid = await elk.layout(root);

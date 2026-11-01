@@ -172,9 +172,38 @@ kbd {
   text-decoration: none;
 }
 .wordmark {
-  font-weight: 600;
   font-size: 16px;
   letter-spacing: -0.02em;
+}
+/* "db" is the data, set like an identifier; "tour" is the way through it. */
+.wm-db {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.wm-tour {
+  font-weight: 600;
+}
+.side-map {
+  display: block;
+  margin: 0 16px 18px;
+  padding: 8px 12px;
+  outline: var(--hair) solid var(--line);
+  text-decoration: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.side-map:hover {
+  background: var(--fill);
+}
+.side-map.is-current {
+  outline-color: var(--ink);
 }
 .side-db {
   padding: 0 16px 14px;
@@ -454,6 +483,55 @@ kbd {
 .button:focus-visible {
   outline-offset: 3px;
 }
+.button.is-on {
+  color: var(--bg);
+  background: var(--ink);
+}
+
+/* Copy for a tool: the button, the tool, and the tool's chat when it has one. */
+.copy {
+  display: flex;
+  align-items: stretch;
+}
+.copy .button + .select,
+.copy .select + .button {
+  margin-left: -1px;
+}
+.select {
+  position: relative;
+  display: inline-flex;
+}
+.select select {
+  appearance: none;
+  height: 100%;
+  padding: 0 30px 0 12px;
+  border: var(--hair) solid var(--line-strong);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-radius: 0;
+  cursor: pointer;
+}
+.select::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: var(--hair) solid var(--ink);
+  border-bottom: var(--hair) solid var(--ink);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+.select select:focus-visible {
+  outline: var(--hair) solid var(--ink);
+  outline-offset: 3px;
+}
 
 .entry-plot {
   margin: 26px 0 8px;
@@ -634,6 +712,109 @@ pre {
 .canvas .page {
   padding: 24px 32px;
 }
+.map-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 32px;
+  border-bottom: var(--hair) solid var(--line);
+}
+.seg {
+  display: inline-flex;
+  outline: var(--hair) solid var(--line-strong);
+}
+.seg button {
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.seg button + button {
+  border-left: var(--hair) solid var(--line);
+}
+.seg button.is-on {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--red);
+}
+.map-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.map-links {
+  width: 320px;
+  flex: none;
+  overflow: auto;
+  padding: 18px 20px;
+  border-left: var(--hair) solid var(--line);
+}
+.map-links h2 {
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: var(--hair) solid var(--line);
+}
+.map-links ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  border-top: var(--hair) solid var(--line);
+}
+.map-links label {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.map-links label.group {
+  font-family: var(--sans);
+  font-size: 13px;
+}
+.map-links input {
+  accent-color: var(--red);
+  margin: 0;
+  flex: none;
+  position: relative;
+  top: 1px;
+}
+.map-links .count {
+  margin-left: 6px;
+}
+
+/* The map on an entry page: names only, a fixed height, a way to the full one. */
+.diagram.embedded {
+  height: 300px;
+  margin-top: 26px;
+  outline: var(--hair) solid var(--line);
+}
+.embedded .diagram-head {
+  align-items: center;
+  padding: 10px 14px;
+}
+.embedded .diagram-head h2 {
+  color: var(--ink);
+}
+.embedded .diagram-head .label {
+  margin-left: auto;
+}
+.open-map {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.around-none {
+  margin-top: 26px;
+}
 
 /* Sizes here are the ones layout.ts counts with: 240 wide, a 34px head, 22px rows, 6px padding. */
 .node {
@@ -644,6 +825,9 @@ pre {
 }
 .node.is-focus {
   outline-width: 2px;
+}
+.node.is-bare .node-head {
+  border-bottom: 0;
 }
 .node-head {
   display: flex;
@@ -807,7 +991,24 @@ pre {
   .with-panel {
     grid-template-columns: minmax(0, 1fr);
   }
-  .diagram-head {
-    padding: 16px;
+  .diagram-head,
+  .map-controls {
+    padding: 12px 16px;
+  }
+  .map-controls {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .map-body {
+    flex-direction: column;
+  }
+  .map-links {
+    width: auto;
+    max-height: 40vh;
+    border-left: 0;
+    border-top: var(--hair) solid var(--line);
+  }
+  .copy {
+    flex-wrap: wrap;
   }
 }

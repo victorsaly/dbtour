@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { Model } from 'dbtour/model';
 import { catalogue } from './catalogue.ts';
+import { allTables } from './graph.ts';
 import { parseRoute } from './route.ts';
 import { buildIndex } from './search.ts';
 import { Sidebar } from './Sidebar.tsx';
@@ -45,6 +46,9 @@ export function App({ model }: { model: Model }) {
       break;
     case 'diagram':
       view = <DiagramView model={model} cat={cat} refs={route.refs} title={`${route.refs[0]} and around it`} />;
+      break;
+    case 'map':
+      view = <DiagramView model={model} cat={cat} refs={allTables(model)} title="The whole catalogue" description="Every table and every relation. Names keeps it readable; Keys and Columns add detail." defaultMode="names" />;
       break;
     case 'group': {
       const group = model.groups.find((g) => g.name === route.name);
