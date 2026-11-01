@@ -267,8 +267,10 @@ function literals(sql: string, where: string): string[] {
       i++;
       for (;;) {
         if (i >= sql.length) throw new Error(`${where} ends inside a string that starts: ${text.slice(0, 80)}`);
-        if (sql[i] === "'" && sql[i + 1] === "'") (text += "'"), (i += 2);
-        else if (sql[i] === "'") break;
+        if (sql[i] === "'" && sql[i + 1] === "'") {
+          text += "'";
+          i += 2;
+        } else if (sql[i] === "'") break;
         else text += sql[i++];
       }
       found.push(text);
