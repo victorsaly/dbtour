@@ -32,7 +32,11 @@ export function SqlPage({ model }: { model: Model }) {
           </label>
         )}
       </header>
-      <SqlEditor key={chosen?.name} model={model} database={chosen?.name} initial={initial} draft={`page:${chosen?.name ?? ''}`} />
+      {chosen ? (
+        <SqlEditor key={chosen.name} model={model} database={chosen.name} initial={initial} draft={`page:${chosen.name}`} />
+      ) : (
+        <p className="sql-hint">There is no database in the model to write a query against: extract one with <code>npx dbtour extract</code>.</p>
+      )}
     </article>
   );
 }

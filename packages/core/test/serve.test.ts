@@ -30,9 +30,9 @@ const ask = (url: string, init: RequestInit & { headers?: Record<string, string>
  * A POST with its headers exactly as written: fetch drops Host and Origin, as a browser would, so a request
  * from another site, or to a name rebound to this address, is built by hand.
  */
-function raw(url: string, headers: Record<string, string>, body: string): Promise<number> {
+function raw(url: string, headers: Record<string, string>, body: string, method = 'POST'): Promise<number> {
   return new Promise((done, fail) => {
-    const req = request(url, { method: 'POST', headers }, (res) => {
+    const req = request(url, { method, headers }, (res) => {
       res.resume();
       done(res.statusCode ?? 0);
     });
@@ -105,6 +105,27 @@ test('without a reader the server still serves the page, and says a query cannot
     const answer = await ask(`${url}/api/query`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-dbtour-token': token }, body: '{"sql":"SELECT 1"}' });
     assert.equal(answer.status, 422);
     assert.match(((await answer.json()) as { error: string }).error, /no source has a reader/);
+  } finally {
+    await close();
+  }
+});
+
+test('the review: a name rebound to this address gets nothing, not even the page, and a body too large is answered', async () => {
+  const { url, close, token } = await serve(async () => ({ columns: [], rows: [], truncated: false, limit: 100, source: 'Shop' }));
+  try {
+    const port = new URL(url).port;
+    // The page carries the token and the model; schema.json and the Markdown are the schema too.
+    assert.equal(await raw(`${url}/`, { host: `evil.example:${port}` }, '', 'GET'), 403, 'the page');
+    assert.equal(await raw(`${url}/README.md`, { host: `evil.example:${port}` }, '', 'GET'), 403, 'the Markdown');
+    assert.equal(await raw(`${url}/`, { host: `localhost:${port}` }, '', 'GET'), 200, 'opened as localhost');
+    // Refused with its reason, not a connection reset the page would take for a server that stopped.
+    const answer = await fetch(`${url}/api/query`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-dbtour-token': token },
+      body: JSON.stringify({ sql: `SELECT '${'x'.repeat(200 * 1024)}'` }),
+    });
+    assert.equal(answer.status, 413);
+    assert.match(((await answer.json()) as { error: string }).error, /more than a query/);
   } finally {
     await close();
   }

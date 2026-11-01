@@ -57,6 +57,11 @@ export async function startServer(options: Served): Promise<{ url: string; close
 }
 
 async function handle(request: IncomingMessage, response: ServerResponse, options: Served, hosts: Set<string>, origins: Set<string>): Promise<void> {
+  // Every route, not only the query: the page carries the token and the model, and the Markdown and
+  // schema.json are the schema, none of it for a site whose name was rebound to this address.
+  if (!hosts.has(request.headers.host ?? '')) {
+    return send(response, 403, { error: 'Open the page at the address dbtour serve printed: this server answers only to its own name.' });
+  }
   const path = decodeURIComponent(new URL(request.url ?? '/', 'http://local').pathname);
   if (path === '/api/query') return query(request, response, options, hosts, origins);
   if (request.method !== 'GET' && request.method !== 'HEAD') return send(response, 405, { error: 'Only the page and its files are here: GET them.' });
@@ -108,19 +113,19 @@ async function query(request: IncomingMessage, response: ServerResponse, options
   }
 }
 
-/** The request's body, or nothing when it is larger than any query. */
+/**
+ * The request's body, or nothing when it is larger than any query. Past the limit the rest is read and
+ * dropped, not kept, so the connection stays open for the 413 that says why.
+ */
 function body(request: IncomingMessage): Promise<string | undefined> {
   return new Promise((done, fail) => {
     const chunks: Buffer[] = [];
     let size = 0;
     request.on('data', (chunk: Buffer) => {
       size += chunk.length;
-      if (size > maxBodyBytes) {
-        done(undefined);
-        request.destroy();
-      } else chunks.push(chunk);
+      if (size <= maxBodyBytes) chunks.push(chunk);
     });
-    request.on('end', () => done(Buffer.concat(chunks).toString('utf8')));
+    request.on('end', () => done(size > maxBodyBytes ? undefined : Buffer.concat(chunks).toString('utf8')));
     request.on('error', fail);
   });
 }

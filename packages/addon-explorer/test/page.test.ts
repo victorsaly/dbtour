@@ -540,3 +540,27 @@ test('a result cell reads as text: NULL apart, a long value cut, one line', () =
   assert.equal(cellText('x'.repeat(500)).text.length, 301);
   assert.deepEqual(cellText({ a: 1 }), { text: '{"a":1}', isNull: false });
 });
+
+test('the review: a starter never selects what it left out, quotes every reserved name, and gives a legal alias', () => {
+  // Every column protected and nothing to join: a count, not every column after all.
+  const guarded = shop();
+  const customers = guarded.databases[0].schemas[0].tables.find((t) => t.name === 'Customers')!;
+  for (const c of customers.columns) c.masked = 'default()';
+  const counted = starterQuery(guarded, 'dbo.Customers');
+  assert.doesNotMatch(counted, /\.\*/);
+  assert.match(counted, /SELECT COUNT\(\*\) AS \[Rows\]\nFROM dbo\.Customers AS c;$/);
+  // Names the query check refuses unbracketed, and other reserved words, are bracketed.
+  for (const word of ['Transaction', 'Use', 'Go', 'Merge', 'Over', 'Pivot', 'Waitfor']) assert.equal(quoteName(word), `[${word}]`);
+  assert.equal(quoteName('Status'), 'Status');
+  // A table whose name starts with a digit gets an alias that starts with a letter.
+  const numbered = shop();
+  numbered.databases[0].schemas[0].tables.find((t) => t.name === 'Customers')!.name = '2026Orders';
+  assert.match(starterQuery(numbered, 'dbo.2026Orders'), /FROM dbo\.\[2026Orders\] AS t2o\nORDER BY t2o\.Id DESC;$/);
+});
+
+test('the review: aliases are found for a bare default-schema name, and never taken twice in another case', () => {
+  assert.deepEqual(queryAliases(shop(), 'SELECT 1 FROM Orders AS o', 'Shop'), { 'dbo.Orders': 'o' });
+  assert.match(joinCompletions(shop(), 'SELECT 1 FROM Orders AS o JOIN ', 'Shop').find((j) => j.label === 'dbo.Customers')!.apply, /= o\.CustomerId$/);
+  const upper = joinCompletions(shop(), 'SELECT 1 FROM dbo.Orders AS C JOIN ', 'Shop').find((j) => j.label === 'dbo.Customers')!;
+  assert.match(upper.apply, /^dbo\.Customers AS c2 ON c2\.Id = C\.CustomerId$/);
+});

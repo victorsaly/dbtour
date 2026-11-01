@@ -9,13 +9,23 @@ import { sqlTokens } from './sql.ts';
 /** The first hundred rows, as dbtour sql returns by default: enough to see what a table holds. */
 const starterRows = 100;
 
-// Words T-SQL reserves that a column or table is still sometimes named; such a name is written [bracketed].
+// The words T-SQL reserves, and GO, which the query check refuses as a statement too: a column or table so
+// named is written [bracketed], so a starter never trips the check or the parser.
 const reserved = new Set(
-  ('ADD ALL ALTER AND ANY AS ASC BACKUP BEGIN BETWEEN BY CASE CHECK CLOSE COLUMN COMMIT CREATE CROSS CURRENT DATABASE ' +
-    'DEFAULT DELETE DESC DISTINCT DROP ELSE END EXEC EXISTS FILE FOR FOREIGN FROM FULL FUNCTION GRANT GROUP HAVING ' +
-    'IDENTITY IN INDEX INNER INSERT INTO IS JOIN KEY LEFT LIKE NOT NULL OF ON OPEN OR ORDER OUTER PERCENT PLAN ' +
-    'PRIMARY PROCEDURE PUBLIC REFERENCES RIGHT RULE SCHEMA SELECT SET TABLE THEN TO TOP TRIGGER UNION UNIQUE UPDATE ' +
-    'USER VALUES VIEW WHEN WHERE WITH').split(' '),
+  ('ADD ALL ALTER AND ANY AS ASC AUTHORIZATION BACKUP BEGIN BETWEEN BREAK BROWSE BULK BY CASCADE CASE CHECK ' +
+    'CHECKPOINT CLOSE CLUSTERED COALESCE COLLATE COLUMN COMMIT COMPUTE CONSTRAINT CONTAINS CONTAINSTABLE CONTINUE ' +
+    'CONVERT CREATE CROSS CURRENT CURRENT_DATE CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR DATABASE DBCC ' +
+    'DEALLOCATE DECLARE DEFAULT DELETE DENY DESC DISK DISTINCT DISTRIBUTED DOUBLE DROP DUMP ELSE END ERRLVL ESCAPE ' +
+    'EXCEPT EXEC EXECUTE EXISTS EXIT EXTERNAL FETCH FILE FILLFACTOR FOR FOREIGN FREETEXT FREETEXTTABLE FROM FULL ' +
+    'FUNCTION GO GOTO GRANT GROUP HAVING HOLDLOCK IDENTITY IDENTITY_INSERT IDENTITYCOL IF IN INDEX INNER INSERT ' +
+    'INTERSECT INTO IS JOIN KEY KILL LEFT LIKE LINENO LOAD MERGE NATIONAL NOCHECK NONCLUSTERED NOT NULL NULLIF OF ' +
+    'OFF OFFSETS ON OPEN OPENDATASOURCE OPENQUERY OPENROWSET OPENXML OPTION OR ORDER OUTER OVER PERCENT PIVOT PLAN ' +
+    'PRECISION PRIMARY PRINT PROC PROCEDURE PUBLIC RAISERROR READ READTEXT RECONFIGURE REFERENCES REPLICATION ' +
+    'RESTORE RESTRICT RETURN REVERT REVOKE RIGHT ROLLBACK ROWCOUNT ROWGUIDCOL RULE SAVE SCHEMA SECURITYAUDIT SELECT ' +
+    'SEMANTICKEYPHRASETABLE SEMANTICSIMILARITYDETAILSTABLE SEMANTICSIMILARITYTABLE SESSION_USER SET SETUSER ' +
+    'SHUTDOWN SOME STATISTICS SYSTEM_USER TABLE TABLESAMPLE TEXTSIZE THEN TO TOP TRAN TRANSACTION TRIGGER TRUNCATE ' +
+    'TRY_CONVERT TSEQUAL UNION UNIQUE UNPIVOT UPDATE UPDATETEXT USE USER VALUES VARYING VIEW WAITFOR WHEN WHERE ' +
+    'WHILE WITH WITHIN WRITETEXT').split(' '),
 );
 
 /** A name as T-SQL needs it: as it is when plain, [bracketed] (with ] doubled) when not, or when reserved. */
@@ -34,10 +44,14 @@ function isProtected(column: Column): boolean {
   return Boolean(column.masked || column.encrypted || column.sensitivity);
 }
 
-/** An alias from a table's words: Orders o, OrderLines ol, vOrderTotals vot; a number when it is taken. */
+/**
+ * An alias from a table's words: Orders o, OrderLines ol, vOrderTotals vot; t before one that would start with a
+ * digit (2026Orders t2o); a number when it is taken. `taken` holds aliases in lower case, as T-SQL compares them.
+ */
 function aliasFor(table: string, taken: Set<string>): string {
   const words = table.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])/g) ?? [table];
-  const base = words.map((w) => w[0].toLowerCase()).join('') || 't';
+  const initials = words.map((w) => w[0].toLowerCase()).join('').replace(/[^a-z0-9]/g, '');
+  const base = /^[a-z]/.test(initials) ? initials : `t${initials}`;
   let alias = base;
   for (let n = 2; taken.has(alias) || reserved.has(alias.toUpperCase()); n++) alias = `${base}${n}`;
   taken.add(alias);
@@ -87,7 +101,12 @@ export function starterQuery(model: Model, ref: string): string {
   }
   const lines = [`-- ${localRef(model, found.ref)}${joins.length ? ' with what it references' : ''}.`];
   if (left.length) lines.push(`-- Masked, encrypted and labelled columns are left out: ${left.map((c) => c.name).join(', ')}. Add them if the question needs them.`);
-  lines.push(`SELECT TOP (${starterRows})`, ...(select.length ? select : [`${alias}.*`]).map((s, i, all) => `    ${s}${i < all.length - 1 ? ',' : ''}`));
+  // Every column protected: how many rows, rather than * selecting what the comment says was left out.
+  if (!select.length) {
+    lines.push('SELECT COUNT(*) AS [Rows]', `FROM ${quoteRef(localRef(model, found.ref))} AS ${alias};`);
+    return lines.join('\n');
+  }
+  lines.push(`SELECT TOP (${starterRows})`, ...select.map((s, i, all) => `    ${s}${i < all.length - 1 ? ',' : ''}`));
   lines.push(`FROM ${quoteRef(localRef(model, found.ref))} AS ${alias}`, ...joins);
   if (table.primaryKey?.length) lines.push(`ORDER BY ${table.primaryKey.map((k) => `${alias}.${quoteName(k)} DESC`).join(', ')}`);
   lines[lines.length - 1] += ';';
@@ -197,13 +216,21 @@ function codeOf(sql: string): string {
 // Words that can follow a table in FROM or JOIN without being its alias.
 const notAliases = new Set(['ON', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS', 'ORDER', 'GROUP', 'HAVING', 'UNION', 'WITH', 'AS', 'EXCEPT', 'INTERSECT', 'OPTION', 'FOR']);
 
-/** The alias the query gives each table it names after FROM or JOIN, by the model's ref. */
+/**
+ * The alias the query gives each table it names after FROM or JOIN, by the model's ref: named schema.table, or
+ * by the table alone when it is in the default schema, as queryTables finds it.
+ */
 export function queryAliases(model: Model, sql: string, databaseName: string | undefined): Record<string, string> {
   const code = codeOf(sql);
+  const { defaultSchema } = completionSchema(model, databaseName);
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const aliases: Record<string, string> = {};
   for (const ref of queryTables(model, sql, databaseName)) {
-    const local = localRef(model, ref).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const match = new RegExp(`\\b(?:FROM|JOIN)\\s+${local}\\s+(?:AS\\s+)?([A-Za-z_][\\w]*)`, 'i').exec(code);
+    const local = localRef(model, ref);
+    const dot = local.indexOf('.');
+    const [schema, table] = [local.slice(0, dot), local.slice(dot + 1)];
+    const name = schema === defaultSchema ? `(?:${escape(schema)}\\.)?${escape(table)}` : `${escape(schema)}\\.${escape(table)}`;
+    const match = new RegExp(`\\b(?:FROM|JOIN)\\s+${name}\\s+(?:AS\\s+)?([A-Za-z_][\\w]*)`, 'i').exec(code);
     if (match && !notAliases.has(match[1].toUpperCase())) aliases[ref] = match[1];
   }
   return aliases;
@@ -223,7 +250,7 @@ export interface JoinSuggestion extends Suggestion {
 export function joinCompletions(model: Model, sql: string, databaseName: string | undefined): JoinSuggestion[] {
   const present = queryTables(model, sql, databaseName);
   const aliases = queryAliases(model, sql, databaseName);
-  const taken = new Set(Object.values(aliases));
+  const taken = new Set(Object.values(aliases).map((a) => a.toLowerCase()));
   const offered = new Set<string>();
   const suggestions: JoinSuggestion[] = [];
   const nameOf = (ref: string) => aliases[ref] ?? quoteRef(localRef(model, ref));

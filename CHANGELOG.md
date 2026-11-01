@@ -15,7 +15,7 @@
 - `dbtour serve [--port 4321]` serves the rendered folder on 127.0.0.1, and with a source's `reader` the
   editor runs its query there, checked and rolled back as `dbtour sql` does. Only the page it served can
   ask: a token given to the page, and the Host and Origin it must come from, so another site, or a name
-  rebound to this address, cannot.
+  rebound to this address, cannot; such a name gets neither the page nor its files.
 - On a served page the editor's bar says whether it is connected and through which source, and its dot is
   the last run: grey before one and while it runs, green answered, red failed. Run, or ⌘/Ctrl+Enter, shows
   the rows under the query with how many, how long and through which reader; the run before stays, dimmed,

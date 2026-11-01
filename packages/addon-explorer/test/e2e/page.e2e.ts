@@ -397,6 +397,14 @@ test('served by dbtour serve: Run shows the rows, the dot says how the last run 
     assert.match((await page.locator('.query-section .sql-result-head').textContent()) ?? '', /2 rows · \d+ ms · Shop's reader/);
     assert.match((await status.getAttribute('class')) ?? '', /is-ok/, 'green: it answered');
 
+    // One query at a time, whichever way it is asked: a second ⌘/Ctrl+Enter while the first runs sends nothing.
+    const once = asked.length;
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+Enter');
+    await page.keyboard.press('ControlOrMeta+Enter');
+    await page.waitForFunction(`!document.querySelector('.query-section .sql-result').classList.contains('is-stale')`);
+    assert.equal(asked.length, once + 1, 'the second press, while the first ran, sent nothing');
+
     // A table that is not there: why, in red, and the rows before kept, dimmed.
     await editor.click();
     await page.keyboard.press('ControlOrMeta+a');

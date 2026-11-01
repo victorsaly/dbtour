@@ -161,7 +161,9 @@ export function SqlEditor({ model, database, initial, draft }: { model: Model; d
   const pause = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const send = useRef<(sql: string) => void>(() => undefined);
   send.current = (sql) => {
-    if (connection.state !== 'ready' || !served) return;
+    // One at a time whichever way it is asked, Run, ⌘/Ctrl+Enter or auto-run: an answer must not clear out
+    // while a later query is still running.
+    if (connection.state !== 'ready' || !served || out.current) return;
     const mine = ++latest.current;
     lastSent.current = sql;
     out.current = true;
@@ -211,7 +213,6 @@ export function SqlEditor({ model, database, initial, draft }: { model: Model; d
     if (on) tick.current();
     else setRan((r) => ({ ...r, waiting: undefined }));
   };
-  useEffect(() => () => clearTimeout(pause.current), []);
   useEffect(() => {
     if (!host.current) return;
     const { schema, defaultSchema } = completionSchema(model, database);
@@ -248,6 +249,8 @@ export function SqlEditor({ model, database, initial, draft }: { model: Model; d
             if (!update.docChanged) return;
             writeDraft(draft, update.state.doc.toString() === initial ? undefined : update.state.doc.toString());
             if (auto.current) {
+              // The latest pause decides: a retry queued during an earlier run must not send it mid-word.
+              again.current = false;
               clearTimeout(pause.current);
               pause.current = setTimeout(() => tick.current(), autoRunPauseMs);
             }
@@ -255,7 +258,13 @@ export function SqlEditor({ model, database, initial, draft }: { model: Model; d
         ],
       }),
     });
-    return () => view.current?.destroy();
+    return () => {
+      // Gone from the page: an answer still on its way finds no editor, so it cannot send the draft again.
+      clearTimeout(pause.current);
+      again.current = false;
+      view.current?.destroy();
+      view.current = null;
+    };
   }, [model, database, initial, draft]);
   const text = () => view.current?.state.doc.toString() ?? initial;
   const reset = () => {
