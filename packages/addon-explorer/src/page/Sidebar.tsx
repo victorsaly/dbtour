@@ -5,7 +5,7 @@ import { tableRef, type Model } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
 import { Mark, Wordmark } from './Logo.tsx';
 import { groupHash, mapHash, tableHash, type Route } from './route.ts';
-import { search, type Entry, type Hit } from './search.ts';
+import { search, type Entry, type Hit } from 'dbtour/search';
 
 /** Below this width the index folds; the same breakpoint as the stylesheet's. */
 const phoneQuery = '(max-width: 800px)';

@@ -1,5 +1,6 @@
-// Search over tables, columns and groups: built once from the model, queried on every keystroke.
-import { tableRef, type Model } from 'dbtour/model';
+// Search over tables, columns and groups: built once from the model, queried on every keystroke of the page
+// and by an agent through the MCP server.
+import { tableRef, type Model } from './model.ts';
 
 export interface Hit {
   kind: 'table' | 'view' | 'column' | 'group';

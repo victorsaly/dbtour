@@ -87,6 +87,7 @@ dbtour render               # schema.json + notes → index.html, README.md, one
 dbtour serve                # the page locally, reloading on change
 dbtour check                # CI: fails when the database and schema.json disagree
 dbtour find users           # search from the terminal, same index as the page
+dbtour mcp                  # the model to an agent over MCP: overview, search, table, path
 ```
 
 ## The page
@@ -123,6 +124,12 @@ A thin layer over the command: when to use it, the extract-render-show-commit fl
 queries from `schema.json`. The SQL generator is the agent reading the model; the add-on gives it the tables
 to cite and runs the result through the source with a read-only login and a row limit.
 
+## The MCP server
+
+`dbtour mcp` hands the model to an agent a piece at a time: an overview, search (the page's), one table's
+Markdown, and the joins between two tables. It is in core, with no dependency, because it only reads the
+model; it never connects to the database. Running queries is the SQL add-on's, behind its read-only login.
+
 ## Showing it
 
 Not before there is enough to show. Once milestones 5 to 8 are released (the skill installs with one
@@ -154,7 +161,8 @@ shop window, and nothing goes on the page before it is released.
 4. **All the catalogue says**: every extended property, the table's features, column labels and masking,
    index kinds and untrusted keys from the SQL Server source, and the page and the Markdown showing
    them.
-5. The skill and the SQL add-on, with the stats telling the agent where to look first. ← here
+5. The skill and the SQL add-on, with the stats telling the agent where to look first. `dbtour mcp` comes
+   first (0.5.0): the skill tells the agent to use it. ← here
 6. `source-openapi` and table-to-endpoint links.
 7. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
    and the comments its database keeps.
