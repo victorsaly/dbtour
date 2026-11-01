@@ -17,6 +17,11 @@
   is left as typed. It adds 23 KB, gzipped, to the page.
 - What the reader picks is counted in their browser and comes first among equal matches, never above a
   better one. The shortcuts are listed under the editor.
+- Tab takes the highlighted suggestion, as Enter does; with no list open it leaves the editor as before.
+  Ctrl+Enter runs the query on every system, as SQL Server's tools do, ⌘+Enter too on a Mac.
+- Tab writes no * that would lose a column (a subquery or a table the model does not know in FROM; `p.*`
+  still expands) or show a protected one (when all are, Ctrl+Space offers them, said so). A table that has its
+  alias already is written without another, and a [bracketed] table name is completed as before.
 
 ## 0.9.1 (unreleased)
 

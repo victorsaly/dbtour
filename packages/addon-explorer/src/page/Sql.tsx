@@ -3,7 +3,7 @@
 // (sql.ts), so a check reads the same in a cell as in a trigger. The editor is where a SQL generator will
 // later let the reader write; for now nothing can be typed into it.
 import { useEffect, useRef, useState } from 'react';
-import { autocompletion, completionKeymap, pickedCompletion, startCompletion } from '@codemirror/autocomplete';
+import { acceptCompletion, autocompletion, completionKeymap, pickedCompletion, startCompletion } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { foldGutter, syntaxHighlighting } from '@codemirror/language';
 import { MSSQL, sql } from '@codemirror/lang-sql';
@@ -94,25 +94,32 @@ function writeDraft(key: string, text: string | undefined): void {
   }
 }
 
-/** How often the reader picked each suggestion, in this browser: what they use comes first among equals. */
+/**
+ * How often the reader picked each suggestion, in this browser: what they use comes first among equals. Read
+ * from storage once, then kept here, as completion asks for every suggestion it lists.
+ */
 const usedKey = 'dbtour.sql.used';
+let usedCounts: Record<string, number> | undefined;
 
-function readUsed(): Record<string, number> {
-  try {
-    const used: unknown = JSON.parse(localStorage.getItem(usedKey) ?? '{}');
-    return used && typeof used === 'object' ? (used as Record<string, number>) : {};
-  } catch {
-    return {};
+function used(): Record<string, number> {
+  if (!usedCounts) {
+    try {
+      const stored: unknown = JSON.parse(localStorage.getItem(usedKey) ?? '{}');
+      usedCounts = stored && typeof stored === 'object' ? (stored as Record<string, number>) : {};
+    } catch {
+      usedCounts = {};
+    }
   }
+  return usedCounts;
 }
 
 function countUse(key: string): void {
+  const counts = used();
+  counts[key] = (counts[key] ?? 0) + 1;
   try {
-    const used = readUsed();
-    used[key] = (used[key] ?? 0) + 1;
-    localStorage.setItem(usedKey, JSON.stringify(used));
+    localStorage.setItem(usedKey, JSON.stringify(counts));
   } catch {
-    // A browser that refuses storage still completes; it just does not learn.
+    // A browser that refuses storage still completes; it learns only until the page closes.
   }
 }
 
@@ -252,15 +259,19 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
           drawSelection(),
           look,
           history(),
-          // Tab is the editor's only after * in the select list, where it writes the columns, and in a snippet's
-          // fields; anywhere else it leaves the editor, so the keyboard is never trapped in it.
-          // ⌘/Ctrl+Enter runs the query, ahead of the default keymap's own use of it. Shift+Alt+F formats, as in
-          // VS Code, and so does ⌘/Ctrl+K ⌘/Ctrl+Y, as in SQL Server Management Studio's add-ins.
+          // Tab is the editor's only while the suggestions are open, where it takes one as Enter does, after * in
+          // the select list, where it writes the columns, and in a snippet's fields; anywhere else it leaves the
+          // editor, so the keyboard is never trapped in it (Escape closes the list first).
+          // Ctrl+Enter runs the query, as in SQL Server's tools, and ⌘+Enter too on a Mac, ahead of the default
+          // keymap's own use of them. Shift+Alt+F formats, as in VS Code, and so does ⌘/Ctrl+K ⌘/Ctrl+Y, as in
+          // SQL Server Management Studio's add-ins.
           keymap.of([
             { key: 'Mod-Enter', run: () => (run.current(), true) },
+            { key: 'Ctrl-Enter', run: () => (run.current(), true) },
             {
               key: 'Tab',
               run: (v) => {
+                if (acceptCompletion(v)) return true;
                 const spec = expandStar(v.state);
                 if (spec) v.dispatch(spec);
                 return Boolean(spec);
@@ -273,7 +284,7 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
             ...historyKeymap,
           ]),
           // What belongs at the caret: columns in scope, conditions after ON, joins after JOIN (complete.ts).
-          sqlSupport(model, database, (key) => readUsed()[key] ?? 0),
+          sqlSupport(model, database, (key) => used()[key] ?? 0),
           // Words only, no icons: the catalogue draws no glyph it does not explain.
           autocompletion({ icons: false }),
           syntaxHighlighting(sqlHighlighter),
@@ -364,13 +375,13 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
       )}
       {ran.result && <Result result={ran.result} stale={Boolean(ran.running || ran.error)} />}
       <p className="sql-hint">
-        Ctrl+Space suggests what fits where the caret is. Tab after * writes the columns; ssf, st100, scf, cte and wex write
-        the start of a query; Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y formats it.
+        Ctrl+Space suggests what fits where the caret is, and Tab or Enter takes it. Tab after * writes the columns; ssf, st100,
+        scf, cte and wex write the start of a query; Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y formats it.
       </p>
       <p className="sql-hint">
         {connection.state === 'ready' && (
           <>
-            Runs through {connection.source}'s reader, a read-only login: checked first, rolled back after, at most {runRows} rows. ⌘/Ctrl+Enter runs it;
+            Runs through {connection.source}'s reader, a read-only login: checked first, rolled back after, at most {runRows} rows. Ctrl+Enter (or ⌘+Enter) runs it;
             with Auto-run, it runs each time you pause typing. The dot is the last run: grey none yet, green answered, red failed.
           </>
         )}

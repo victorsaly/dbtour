@@ -225,3 +225,29 @@ test('Format lays a query out in T-SQL, upper-case keywords and its comments kep
     'SELECT\n  o.Id,\n  c.[Name]\nFROM\n  dbo.Orders o\n  JOIN dbo.Customers c ON c.Id = o.CustomerId -- who\nWHERE\n  o.Total > 10');
   assert.equal(formatQuery('SELECT "unclosed'), null);
 });
+
+test('a bracketed table name is completed by CodeMirror\'s own schema completion, which quotes', async () => {
+  assert.ok((await applies('SELECT * FROM [Ord|')).includes('[Orders]'));
+});
+
+test('a table that has its alias already is written without another', async () => {
+  assert.equal((await applies('SELECT c.Id FROM Cust| AS c'))[0], 'dbo.Customers');
+  assert.equal((await applies('SELECT c.Id FROM dbo.Cust| c'))[0], 'Customers');
+});
+
+test('Tab writes no * that would lose or expose columns', () => {
+  const derived = 'FROM dbo.Products p CROSS JOIN (SELECT 1 AS Extra) x';
+  assert.equal(tab(`SELECT *| ${derived}`), null, 'Extra is not in the model: written out, it would be lost');
+  assert.equal(tab(`SELECT p.*| ${derived}`), `SELECT p.Id, p.Sku, p.Price ${derived}`, 'p.* covers Products alone');
+  const locked = describe(shop());
+  for (const c of locked.databases[0].schemas[0].tables.find((t) => t.name === 'Products')!.columns) c.masked = 'default()';
+  assert.equal(tab('SELECT *| FROM dbo.Products', locked), null, 'every column protected: Tab writes none of them');
+});
+
+test('Ctrl+Space after * when every column is protected offers every column, said so', async () => {
+  const locked = describe(shop());
+  for (const c of locked.databases[0].schemas[0].tables.find((t) => t.name === 'Products')!.columns) c.masked = 'default()';
+  const listed = await suggest('SELECT *| FROM dbo.Products', { explicit: true, model: locked });
+  assert.equal(listed[0].apply, 'Id, Sku, Price');
+  assert.match(listed[0].detail ?? '', /every column, masked/);
+});

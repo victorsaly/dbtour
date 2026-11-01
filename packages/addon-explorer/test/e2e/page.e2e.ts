@@ -366,7 +366,8 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     const sqlEditor = page.locator('.sql-page .cm-content');
     assert.match((await sqlEditor.textContent()) ?? '', /A query against Shop/);
 
-    // A snippet writes the start of a read and opens the tables; Tab after * writes the columns; Format lays it out.
+    // A snippet writes the start of a read and opens the tables, and Tab takes one; Tab after * writes the
+    // columns; Format lays it out.
     await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.press('Backspace');
     await page.keyboard.type('ssf');
@@ -377,8 +378,8 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await page.keyboard.type('Cust');
     await options.filter({ hasText: /^Customers/ }).first().waitFor();
     await page.waitForTimeout(completionSettleMs);
-    await page.keyboard.press('Enter');
-    assert.equal(await sqlEditor.textContent(), 'SELECT * FROM dbo.Customers AS c');
+    await page.keyboard.press('Tab');
+    assert.equal(await sqlEditor.textContent(), 'SELECT * FROM dbo.Customers AS c', 'Tab takes the suggestion, as Enter does');
     await page.keyboard.press('Home');
     for (let i = 0; i < 'SELECT *'.length; i++) await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Tab');
@@ -444,7 +445,8 @@ test('served by dbtour serve: Run shows the rows, the dot says how the last run 
     await editor.click();
     await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.type('SELECT * FROM dbo.Nope');
-    await page.keyboard.press('ControlOrMeta+Enter');
+    // Ctrl+Enter runs it on every system, as SQL Server's tools do, ⌘+Enter too on a Mac.
+    await page.keyboard.press('Control+Enter');
     await page.locator('.query-section .sql-error', { hasText: "Invalid object name 'dbo.Nope'" }).waitFor();
     assert.match((await status.getAttribute('class')) ?? '', /is-failed/, 'red: it failed');
     assert.equal(await status.textContent(), 'Connected · Shop · failed');

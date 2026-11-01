@@ -103,6 +103,10 @@ interface Reading {
   star?: { from: number; qualifier?: string };
   /** Every name the query gives a table, at every level, in lower case: a new alias must be none of them. */
   taken: Set<string>;
+  /** The table being written at the caret has its alias already, after it: `FROM Cust| AS c`. */
+  aliased: boolean;
+  /** The caret's own query reads a table the model does not know, or a subquery: * covers columns not known here. */
+  unknownOwn: boolean;
   /** Just after ON: the table being joined, and the ones before it it can join to. */
   on?: { joined: InScope; earlier: InScope[] };
   scope: InScope[];
@@ -125,7 +129,10 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
   const { schema, defaultSchema } = completionSchema(model, databaseName);
   const index = knownTables(model, databaseName);
   const ranked = (options: Keyed[]) =>
-    options.map((o) => (o.key && used(o.key) ? { ...o, boost: (o.boost ?? 0) + Math.min(used(o.key) * usedBoostPerPick, usedBoostMost) } : o));
+    options.map((o) => {
+      const picks = o.key ? used(o.key) : 0;
+      return picks ? { ...o, boost: (o.boost ?? 0) + Math.min(picks * usedBoostPerPick, usedBoostMost) } : o;
+    });
   const readings = new WeakMap<CompletionContext, Reading>();
   const read = (context: CompletionContext) => {
     let reading = readings.get(context);
@@ -136,8 +143,12 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
   const names = schemaCompletionSource({ dialect: tsql, schema: schema as unknown as SQLNamespace, defaultSchema });
   const sources: CompletionSource[] = [
     (context) => (read(context).afterDot || read(context).dotted || read(context).star ? null : keywords(context)),
-    // Where a table takes an alias, the tables come from here, written with one.
-    (context) => (read(context).quiet || read(context).dotted || read(context).star || (read(context).tableSpot && read(context).aliasable) ? null : names(context)),
+    // Where a table takes an alias, the tables come from here, written with one; in a [quoted name], from
+    // CodeMirror's own, which quotes what it offers.
+    (context) => {
+      const at = read(context);
+      return at.quiet || at.dotted || at.star || (at.tableSpot && at.aliasable && !at.quoted) ? null : names(context);
+    },
     (context) => withRanks(columns(context, read(context), model), ranked),
     (context) => withRanks(tables(context, read(context), model, index), ranked),
     (context) => withRanks(snippetsAt(context, read(context)), ranked),
@@ -252,12 +263,12 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
     schemas.add(schemaName);
     if (schema !== undefined && schemaName.toLowerCase() !== schema) continue;
     const table = known.suggestions.self;
-    const alias = aliasFor(table.label, new Set(reading.taken));
+    const name = schema === undefined ? quoteRef(local) : quoteName(table.label);
     options.push({
       ...table,
       key: `table:${known.ref}`,
       detail: `${schemaName} · ${table.detail}`,
-      apply: `${schema === undefined ? quoteRef(local) : quoteName(table.label)} AS ${alias}`,
+      apply: reading.aliased ? name : `${name} AS ${aliasFor(table.label, new Set(reading.taken))}`,
     });
   }
   // The schemas, to go on with a dot, after the tables and before the keywords.
@@ -285,11 +296,13 @@ function snippetsAt(context: CompletionContext, reading: Reading): CompletionRes
   return { from: word.from, options, validFor: /^\w*$/ };
 }
 
-/** A * expanded: the columns written out, how many, and what it left out. */
+/** A * expanded: the columns written out, how many, what it left out, and whether it has protected ones. */
 interface Expansion {
   text: string;
   count: number;
   detail: string;
+  /** Masked, encrypted or labelled columns are in it: offered on Ctrl+Space, never written by Tab. */
+  exposes: boolean;
 }
 
 /**
@@ -299,7 +312,8 @@ interface Expansion {
  */
 function expansions(reading: Reading, model: Model): Expansion[] {
   const star = reading.star;
-  if (!star) return [];
+  // A bare * over a subquery or a table the model does not know covers columns that cannot be written here.
+  if (!star || (!star.qualifier && reading.unknownOwn)) return [];
   const own = reading.scope.filter((s) => s.depth === 0);
   const covered = star.qualifier ? reading.scope.filter((s) => s.name.toLowerCase() === star.qualifier!.toLowerCase()).slice(0, 1) : own;
   const qualify = Boolean(star.qualifier) || covered.length > 1;
@@ -308,21 +322,22 @@ function expansions(reading: Reading, model: Model): Expansion[] {
   const write = (list: typeof columns) => list.map(({ column, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(column.name)).join(', ');
   const open = columns.filter(({ column }) => !isProtected(column));
   const left = columns.filter(({ column }) => isProtected(column)).map(({ column }) => column.name);
-  const all = { text: write(columns), count: columns.length, detail: 'every column' };
+  const all = { text: write(columns), count: columns.length, detail: 'every column', exposes: left.length > 0 };
   if (!left.length) return [all];
-  return open.length ? [{ text: write(open), count: open.length, detail: `leaves out ${left.join(', ')}: masked, encrypted or labelled` }, all] : [all];
+  if (!open.length) return [{ ...all, detail: 'every column, masked, encrypted or labelled' }];
+  return [{ text: write(open), count: open.length, detail: `leaves out ${left.join(', ')}: masked, encrypted or labelled`, exposes: false }, all];
 }
 
 /**
  * Tab after * in the select list: the change that writes its columns, without the protected ones. Null
- * anywhere else, so Tab leaves the editor as it always does.
+ * anywhere else, and where that would lose or expose a column, so Tab does what it does elsewhere.
  */
 export function expandStar(state: EditorState): TransactionSpec | null {
   const found = state.facet(setup);
   const pos = state.selection.main.head;
   if (!found || !state.selection.main.empty) return null;
   const reading = readAt(state, pos, found.index);
-  const first = expansions(reading, found.model)[0];
+  const first = expansions(reading, found.model).find((e) => !e.exposes);
   if (!first || !reading.star) return null;
   return { changes: { from: reading.star.from, to: pos, insert: first.text }, selection: { anchor: reading.star.from + first.text.length } };
 }
@@ -348,7 +363,17 @@ function knownTables(model: Model, databaseName: string | undefined): Map<string
 }
 
 function readAt(state: EditorState, pos: number, index: Map<string, Known>): Reading {
-  const reading: Reading = { quiet: false, quoted: false, afterDot: false, tableSpot: false, aliasable: false, taken: new Set(), scope: [] };
+  const reading: Reading = {
+    quiet: false,
+    quoted: false,
+    afterDot: false,
+    tableSpot: false,
+    aliasable: false,
+    taken: new Set(),
+    aliased: false,
+    unknownOwn: false,
+    scope: [],
+  };
   const tree = syntaxTree(state);
   const here = tree.resolveInner(pos, -1);
   if (/^(String|LineComment|BlockComment)$/.test(here.name) && here.from < pos) return { ...reading, quiet: true };
@@ -391,6 +416,8 @@ function readAt(state: EditorState, pos: number, index: Map<string, Known>): Rea
       reading.tableSpot = named || items.some((item) => item.ends.includes(prev?.to ?? -1));
       reading.aliasable = named && (aliasStarts.has(prevWord) || isComma(prev, text));
       reading.star = starAt(state, pos, segment, text);
+      reading.aliased = (items.find((item) => item.at === nameFrom)?.ends.length ?? 0) > 1;
+      reading.unknownOwn = items.some((item) => !item.known);
       if (prevWord === 'ON') {
         // The table this ON is for is the last one named; when the model does not know it, or it is a
         // subquery, there is no key to offer, and an earlier join's condition would leave it unconstrained.
