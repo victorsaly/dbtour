@@ -4,7 +4,7 @@ import type { Model } from 'dbtour/model';
 import { catalogue } from './catalogue.ts';
 import { allTables } from './graph.ts';
 import { parseRoute } from './route.ts';
-import { buildIndex } from './search.ts';
+import { buildIndex } from 'dbtour/search';
 import { Sidebar } from './Sidebar.tsx';
 import { Home } from './Home.tsx';
 import { TableView } from './TableView.tsx';

@@ -1,6 +1,22 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.5.0 (unreleased)
+
+- `dbtour mcp`: the model over the Model Context Protocol, so Claude, or any agent that speaks it, asks
+  about the database instead of being handed all of it. `claude mcp add dbtour -- npx dbtour mcp` in the
+  project, or `npx dbtour mcp <project>` for a client that starts elsewhere. Four read-only tools:
+  `overview` (the databases and their tables, largest first, all of them up to 100), `search`, `table`
+  (the table's Markdown, as the docs and "Copy for …" hold it; a bare name or any case finds it, and an
+  unknown one gets suggestions) and `path` (the shortest chain of relations between two tables as JOINs,
+  within one database, every name quoted as that database quotes it, a relation from the notes marked as
+  such). It reads `schema.json` and the notes again when either changes, writes only answers to stdout,
+  refuses a request that is not JSON-RPC 2.0, and speaks protocol versions 2024-11-05 to 2025-11-25
+  without a dependency: JSON-RPC on stdin and stdout, written in core.
+- Search moves from the page into core as `dbtour/search`, so the page and the agent find the same tables
+  in the same order.
+- The smoke test asks the installed `dbtour mcp` for a table.
+
+## 0.4.0 (1 November 2026)
 
 - All the catalogue says, the plan's fourth milestone. The SQL Server source reads everything the database
   keeps about its objects, still with `VIEW DEFINITION` alone: every extended property under any name on

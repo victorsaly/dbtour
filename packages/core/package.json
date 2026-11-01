@@ -1,6 +1,6 @@
 {
   "name": "dbtour",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Tour your database and its API: searchable docs, relations and diagrams, generated from the schema, kept in the repo.",
   "type": "module",
   "license": "MIT",
@@ -28,6 +28,10 @@
     "./markdown": {
       "types": "./dist/render/markdown.d.ts",
       "default": "./dist/render/markdown.js"
+    },
+    "./search": {
+      "types": "./dist/search.d.ts",
+      "default": "./dist/search.js"
     }
   },
   "files": [

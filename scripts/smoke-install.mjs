@@ -36,4 +36,13 @@ if (!html.includes('dbo.Orders')) throw new Error('the page does not hold the mo
 const tables = readdirSync(join(project, 'docs/tables'));
 if (tables.length !== 6) throw new Error(`expected 6 table pages, got ${tables.length}`);
 
-console.log(`Installed ${tarballs.length} tarballs into ${project}; dbtour --help and render work.`);
+// mcp answers an agent on stdin and stdout: ask it for a table, as Claude would.
+const request = (id, method, params) => JSON.stringify({ jsonrpc: '2.0', id, method, params });
+const answers = execFileSync('npx', ['dbtour', 'mcp'], {
+  cwd: project,
+  input: [request(1, 'initialize', { protocolVersion: '2025-11-25' }), request(2, 'tools/call', { name: 'table', arguments: { ref: 'dbo.Orders' } })].join('\n') + '\n',
+  stdio: ['pipe', 'pipe', 'inherit'],
+}).toString().trim().split('\n').map((line) => JSON.parse(line));
+if (!answers[1]?.result?.content?.[0]?.text?.includes('# dbo.Orders')) throw new Error(`dbtour mcp did not answer with the table:\n${JSON.stringify(answers, null, 2)}`);
+
+console.log(`Installed ${tarballs.length} tarballs into ${project}; dbtour --help, render and mcp work.`);

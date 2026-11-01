@@ -5,7 +5,7 @@
 
 **Tour your database and its API.**
 
-[![version](https://img.shields.io/badge/version-0.4.0-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.5.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -75,6 +75,29 @@ It holds the structure and never the rows.
   (system-versioned, partitioned, triggers and the rest), with when it was created and its properties; a
   **Protection** column shows a column's sensitivity label, mask and encryption; triggers and row-level
   security are sections of their own, like indexes and constraints.
+
+## Ask Claude
+
+`dbtour mcp` serves the model to an agent over the [Model Context Protocol](https://modelcontextprotocol.io),
+so Claude can find the table it needs, read it and join it, instead of being handed the whole schema:
+
+```bash
+claude mcp add dbtour -- npx dbtour mcp          # Claude Code, from the project's folder
+```
+
+For Claude Desktop or any other client, run `npx dbtour mcp /path/to/project`. It offers four read-only
+tools:
+
+- **overview**: the databases and their tables, largest first, with the groups from the notes.
+- **search**: tables, views, columns and groups by any part of their name, type or description, the same
+  search as the page.
+- **table**: one table as the Markdown in `docs/dbtour/tables/`: columns, keys, relations both ways,
+  indexes, constraints.
+- **path**: the shortest chain of relations between two tables, written as the JOINs that follow them.
+
+It reads `schema.json` and the notes, and reads them again when they change. Like the page, it holds the
+structure and never the rows, and it needs no connection string. What it answers goes to the model provider
+your agent uses, so a schema that must not leave your network wants a model that stays inside it.
 
 `dbtour.notes.yaml` adds what the database cannot say, and wins over it:
 

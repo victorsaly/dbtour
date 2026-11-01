@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync, cpSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, utimesSync } from 'node:fs';
+import { PassThrough } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../src/cli.ts';
@@ -124,4 +125,65 @@ test('render runs each add-on: enrich changes the model, render adds files, a mi
   const missingAddon = async () => { throw new Error('Add-on "explorer" is not installed: npm install dbtour-addon-explorer'); };
   assert.equal(await main(['render'], { cwd, loadAddon: missingAddon, ...b.io }), 2);
   assert.match(b.err.join('\n'), /npm install dbtour-addon-explorer/);
+});
+
+/** Runs dbtour mcp with these lines on stdin, and a function between them where something changes. */
+async function mcp(args: string[], cwd: string, lines: (string | (() => void))[]) {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const answers: Record<string, any>[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+  stdout.on('data', (chunk: Buffer) => answers.push(...chunk.toString().split('\n').filter((l) => l !== '').map((l) => JSON.parse(l))));
+  const a = io();
+  const done = main(['mcp', ...args], { cwd, stdin, stdout, ...a.io });
+  for (const line of lines) {
+    if (typeof line === 'function') {
+      line();
+      continue;
+    }
+    stdin.write(line + '\n');
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  stdin.end();
+  return { code: await done, answers, ...a };
+}
+
+test('mcp without a config or a model exits 2 and says what to run', async () => {
+  const none = await mcp([], project(), []);
+  assert.equal(none.code, 2);
+  assert.match(none.err.join('\n'), /dbtour init/);
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: mssql\n    name: Shop\n');
+  const empty = await mcp([], cwd, []);
+  assert.equal(empty.code, 2);
+  assert.match(empty.err.join('\n'), /dbtour extract/);
+});
+
+test('mcp answers on stdout, never logs there, reads the notes, and reads the model again when it changes', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'out: docs/db\nsources:\n  - type: mssql\n    name: Shop\n');
+  writeFileSync(join(cwd, 'dbtour.notes.yaml'), 'tables:\n  dbo.Orders:\n    description: From the notes.\n');
+  mkdirSync(join(cwd, 'docs/db'), { recursive: true });
+  const schema = join(cwd, 'docs/db/schema.json');
+  cpSync(fixture, schema);
+  const read = JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'table', arguments: { ref: 'dbo.Orders' } } });
+  const run = await mcp(['..'], join(cwd, 'docs'), [
+    JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+    read,
+    () => {
+      const model = JSON.parse(readFileSync(fixture, 'utf8'));
+      model.databases[0].schemas[0].tables[1].columns[0].description = 'Changed since.';
+      writeFileSync(schema, JSON.stringify(model));
+      const later = new Date(Date.now() + 60_000);
+      utimesSync(schema, later, later);
+    },
+    read,
+  ]);
+  assert.equal(run.code, 0);
+  assert.deepEqual(run.out, [], 'stdout is the protocol, so nothing is logged to it');
+  assert.deepEqual(run.answers.map((a) => a.id), [1, 2, 2]);
+  assert.equal(run.answers[0].result.serverInfo.name, 'dbtour');
+  assert.match(run.answers[0].result.serverInfo.version, /^\d+\.\d+\.\d+/);
+  assert.match(run.answers[1].result.content[0].text, /From the notes\./);
+  assert.match(run.answers[2].result.content[0].text, /Changed since\./);
 });
