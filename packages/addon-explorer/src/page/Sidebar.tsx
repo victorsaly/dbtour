@@ -7,6 +7,7 @@ import { Mark, Wordmark } from './Logo.tsx';
 import { groupHash, mapHash, sqlHash, tableHash, type Route } from './route.ts';
 import { servedPage } from './Sql.tsx';
 import { railStatus } from './served.ts';
+import { Switcher } from './Databases.tsx';
 import { search, type Entry, type Hit } from 'dbtour/search';
 
 /** Below this width the index folds; the same breakpoint as the stylesheet's. */
@@ -37,7 +38,8 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
   const hits = useMemo(() => search(index, query), [index, query]);
   useEffect(() => setCursor(0), [query]);
   const phone = usePhone();
-  const rail = railStatus(servedPage());
+  const served = servedPage();
+  const rail = railStatus(served);
   // The arrows move the cursor while focus stays in the input, so the cursor's row is kept in view.
   const list = useRef<HTMLUListElement>(null);
   useEffect(() => {
@@ -127,6 +129,7 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
         <Wordmark />
       </a>
       <div className="side-db label">{model.databases.map((d) => d.name).join(' · ')}</div>
+      {served?.databases && <Switcher served={served} />}
       <div className="search">
         <input
           ref={inputRef}

@@ -5,7 +5,7 @@
 
 **Schema docs for your database, kept in your repository, for people and agents.**
 
-[![version](https://img.shields.io/badge/version-0.9.5-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.10.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -165,6 +165,27 @@ many, how long it took and through which reader. The dot beside it is the last r
 answered, red failed, with why. Auto-run, off until you tick it, runs the query each time you pause typing,
 and never a half-written one. The server answers only its own page, which carries a token it is given when
 served, and only on this machine.
+
+## Your databases, without a project
+
+To look at databases on your own machine, one or several, without a `dbtour.yaml` in a repository, set them
+up in `~/.dbtour`. Passwords go to the system's keychain (macOS Keychain, Windows Credential Manager, the
+Secret Service on Linux), never to a file:
+
+```bash
+npm install -g dbtour dbtour-source-mssql dbtour-addon-explorer dbtour-keychain
+dbtour add Shop --server shop-sql.database.windows.net   # signs in with az; tested before it is saved
+dbtour reader Shop --create                              # shows what it would run; --confirm Shop runs it
+dbtour read Shop                                         # its model and its page
+dbtour serve                                             # every database set up, at http://127.0.0.1:4321
+```
+
+A login signs in with `--sign-in login --user <login> --password-stdin`: the password comes only on stdin, and
+`--password` is refused, as a command line ends up in shell history and an agent's log. `dbtour reader --create`
+makes `dbtour_reader` with `db_datareader` alone and a password nobody sees, once you confirm by naming the
+database again. With several databases set up, `sql`, `mcp` and `serve --database` must name one; dbtour never
+picks for you. `dbtour list` shows them, and `dbtour remove` forgets one and its passwords. The serve home
+lists each database with a green dot when it has a reader, and each database's page has the others in its rail.
 
 ## Develop
 

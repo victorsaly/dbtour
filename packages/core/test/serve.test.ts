@@ -130,3 +130,53 @@ test('the review: a name rebound to this address gets nothing, not even the page
     await close();
   }
 });
+
+test('several databases: the home lists them, each page is its own folder and asks only of its own database', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dbtour-home-'));
+  writeFileSync(join(home, 'databases.json'), '{"databases":[]}');
+  const root = join(home, 'databases');
+  for (const name of ['Shop', 'Logs']) {
+    mkdirSync(join(root, name), { recursive: true });
+    writeFileSync(join(root, name, 'index.html'), `<html><head><title>${name}</title></head></html>`);
+    writeFileSync(join(root, name, 'README.md'), `# ${name}\n`);
+  }
+  const databases = [
+    { name: 'Shop', driver: 'mssql', server: 'shop.example', database: 'Shop', reader: true, read: true, tables: 6 },
+    { name: 'Logs', driver: 'mssql', server: 'logs.example', database: 'Logs', reader: false, read: true },
+  ];
+  const asked: (string | undefined)[] = [];
+  const server = await startServer({
+    root,
+    port: 0,
+    token: 'tok',
+    sources: [],
+    home: { html: '<html><head><title>dbtour</title></head></html>', databases: () => databases },
+    run: async (sql, source, limit, database) => {
+      asked.push(database);
+      return { columns: ['ok'], rows: [[1]], truncated: false, limit: 1, source: database ?? '' };
+    },
+  });
+  const meta = (html: string) => JSON.parse(/<meta name="dbtour-serve" content="([^"]*)">/.exec(html)![1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+  try {
+    const front = await fetch(`${server.url}/`);
+    assert.deepEqual(meta(await front.text()), { token: 'tok', sources: [], databases });
+    const shop = meta(await (await fetch(`${server.url}/db/Shop/`)).text());
+    assert.deepEqual([shop.current, shop.sources], ['Shop', [{ name: 'Shop', reader: true }]]);
+    assert.equal(await (await fetch(`${server.url}/db/Logs/README.md`)).text(), '# Logs\n');
+    // Without the slash its relative links would leave the folder, so it is sent to the one with it.
+    const bare = await fetch(`${server.url}/db/Shop`, { redirect: 'manual' });
+    assert.deepEqual([bare.status, bare.headers.get('location')], [301, '/db/Shop/']);
+    // The settings, another folder, a database not set up: none of it.
+    assert.equal((await fetch(`${server.url}/databases.json`)).status, 404);
+    // Encoded slashes reach the server as ../../databases.json under Shop's folder: still not out of it.
+    assert.equal((await fetch(`${server.url}/db/Shop/..%2f..%2fdatabases.json`)).status, 404);
+    assert.equal((await fetch(`${server.url}/db/Billing/`)).status, 404);
+    // A query from Shop's page runs in Shop; there is no query door outside a database.
+    const post = (path: string) => fetch(`${server.url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-dbtour-token': 'tok' }, body: '{"sql":"SELECT 1"}' });
+    assert.equal((await post('/db/Shop/api/query')).status, 200);
+    assert.equal((await post('/api/query')).status, 404);
+    assert.deepEqual(asked, ['Shop']);
+  } finally {
+    await server.close();
+  }
+});

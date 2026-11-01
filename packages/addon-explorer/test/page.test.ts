@@ -14,7 +14,7 @@ import { profile, plotPath, tickTips, tickWidth, tickCentre } from '../src/page/
 import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/page/size.ts';
 import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
-import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, parseServed, railStatus, statusOf } from '../src/page/served.ts';
+import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, parseServed, railStatus, statusOf } from '../src/page/served.ts';
 import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { logoSvg, markSvg, markDataUri, markPulse, wordmarkDb, wordmarkTour } from '../src/mark.ts';
@@ -587,4 +587,18 @@ test('the rail says the page is served, green when a source can run queries, and
   const initial = 'SELECT TOP (100)\n    \n';
   assert.equal(caretAt(initial), initial.length - 1);
   assert.equal(caretAt('SELECT 1'), 8);
+});
+
+test('a served home: the databases set up, numbered, each with its facts, its link and whether it can run queries', () => {
+  const databases = [
+    { name: 'Shop', driver: 'mssql', server: 'shop.example', database: 'Shop', reader: true, read: true, tables: 35, bytes: 1288490188, readAt: '2026-11-01T18:54:00.000Z' },
+    { name: 'Logs', driver: 'mssql', server: 'logs.example', database: 'AppLogs', reader: false, read: false },
+  ];
+  const served = parseServed(JSON.stringify({ token: 't', sources: [], databases, current: 'Shop' }));
+  assert.deepEqual([served?.databases?.length, served?.current], [2, 'Shop']);
+  assert.equal(parseServed(JSON.stringify({ token: 't', sources: [], databases: [{ nope: 1 }] }))?.databases, undefined, 'only what reads as databases');
+  assert.deepEqual(databaseEntries(databases), [
+    { number: '001', name: 'Shop', href: '/db/Shop/', tone: 'live', status: 'reader', facts: ['SQL Server', 'Shop on shop.example', '35 tables', '1.2 GB', 'read 1 Nov 2026'] },
+    { number: '002', name: 'Logs', href: undefined, tone: 'idle', status: 'no reader', facts: ['SQL Server', 'AppLogs on logs.example', 'not read yet: dbtour read Logs'] },
+  ]);
 });

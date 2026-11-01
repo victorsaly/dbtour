@@ -3,7 +3,7 @@
 // Chromium binary; without either the test is skipped and says so. `npm run e2e:page` builds the page first.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -543,6 +543,51 @@ test('served by dbtour serve: Run shows the rows, the dot says how the last run 
     await page.reload();
     await editor.waitFor();
     assert.equal(await page.locator('.query-section .sql-auto input').isChecked(), true);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test('several databases through dbtour serve: the home lists them, and a database\'s rail switches between them', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+  const root = mkdtempSync(join(tmpdir(), 'dbtour-home-'));
+  for (const name of ['Shop', 'Billing']) {
+    mkdirSync(join(root, name));
+    writeFileSync(join(root, name, 'index.html'), render(model)['index.html']);
+  }
+  const databases = [
+    { name: 'Shop', driver: 'mssql', server: 'shop.example', database: 'Shop', reader: true, read: true, tables: 6 },
+    { name: 'Billing', driver: 'mssql', server: 'billing.example', database: 'Billing', reader: false, read: true, tables: 6 },
+    { name: 'Logs', driver: 'mssql', server: 'logs.example', database: 'AppLogs', reader: false, read: false },
+  ];
+  const html = render({ version: model.version, generatedAt: model.generatedAt, databases: [], apis: [], groups: [] } as unknown as Model)['index.html'];
+  const server = await startServer({ root, port: 0, token: 'e2e', sources: [], home: { html, databases: () => databases } });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${server.url}/`);
+    await page.locator('h1', { hasText: 'Databases' }).waitFor();
+    assert.deepEqual(await page.locator('.database-entry .name').allTextContents(), ['Shop', 'Billing', 'Logs']);
+    assert.match((await page.locator('.database-entry').nth(2).textContent()) ?? '', /not read yet: dbtour read Logs/);
+    assert.equal(await page.locator('.database-entry').nth(2).locator('a').count(), 0, 'nothing to open until it is read');
+    assert.match((await page.locator('.database-entry').first().locator('.status').getAttribute('class')) ?? '', /is-live/);
+
+    await page.locator('.database-entry a', { hasText: 'Shop' }).click();
+    await page.locator('.switcher').waitFor();
+    assert.equal(new URL(page.url()).pathname, '/db/Shop/');
+    assert.equal(await page.locator('.switcher a.is-current').textContent().then((t) => t?.startsWith('Shop')), true);
+    await page.locator('.switcher a', { hasText: 'Billing' }).click();
+    await page.waitForURL(/\/db\/Billing\/$/);
+    await page.locator('.switcher-home').click();
+    await page.locator('h1', { hasText: 'Databases' }).waitFor();
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

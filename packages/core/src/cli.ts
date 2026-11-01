@@ -12,7 +12,7 @@ import { emptyModel, scope, validate, type Api, type Database, type Model } from
 import { applyNotes, parseNotes } from './notes.ts';
 import { answerLine, type ToolResult } from './mcp.ts';
 import { checkQuery, clampLimit, defaultTimeoutMs, resultText, type QueryResult } from './sql.ts';
-import { startServer } from './serve.ts';
+import { startServer, type ServedDatabase } from './serve.ts';
 import { randomBytes } from 'node:crypto';
 import { loadAddon, loadSource, sourceModuleName, type Addon, type Importer, type Setup, type Source } from './plugins.ts';
 import {
@@ -115,8 +115,12 @@ export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: c
         const at = positionals[1] === undefined ? io : { ...io, cwd: resolve(io.cwd, positionals[1]) };
         return await mcp(await projectFor(at, text('database'), { reader: true }));
       }
-      case 'serve':
-        return await serve(await projectFor(io, text('database'), { reader: true }), typeof values.port === 'string' ? Number(values.port) : defaultPort);
+      case 'serve': {
+        const port = typeof values.port === 'string' ? Number(values.port) : defaultPort;
+        // No project here and databases set up: the home of them all, each a page of its own.
+        if (text('database') === undefined && !existsSync(join(io.cwd, configFile)) && readWorkspace(homeOf(io)).databases.length > 0) return await serveHome(io, port);
+        return await serve(await projectFor(io, text('database'), { reader: true }), port);
+      }
       case 'sql':
         return await sql(await projectFor(io, text('database'), { reader: true }), positionals[1], {
           source: text('source'),
@@ -612,5 +616,60 @@ async function remove(io: Io, name: string | undefined): Promise<number> {
   writeWorkspace(home, { databases: workspace.databases.filter((d) => d.name !== name) });
   io.log(`Removed ${name} and its passwords. Its folder, with any notes, stays at ${join(home, folderOf(name))}.`);
   if (entry.reader) io.log(`The reader is still in the database: to drop it, run DROP USER [${entry.reader.replace(/]/g, ']]')}]; in ${entry.database} on ${entry.server}.`);
+  return 0;
+}
+
+/** What the home says of a database, from its settings and the model its last read wrote: never a secret. */
+function servedDatabase(home: string, entry: WorkspaceDatabase): ServedDatabase {
+  const folder = join(home, folderOf(entry.name));
+  const served: ServedDatabase = { name: entry.name, driver: entry.type, server: entry.server, database: entry.database, reader: entry.reader !== undefined, read: existsSync(join(folder, 'index.html')) };
+  if (entry.readAt) served.readAt = entry.readAt;
+  try {
+    const model = JSON.parse(readFileSync(join(folder, modelFile), 'utf8')) as Model;
+    const tables = model.databases.flatMap((d) => d.schemas.flatMap((s) => s.tables));
+    served.tables = tables.length;
+    const sized = tables.filter((t) => t.stats);
+    if (sized.length) served.bytes = sized.reduce((n, t) => n + t.stats!.dataBytes + t.stats!.indexBytes, 0);
+  } catch {
+    // Not read yet, or a model this version cannot read: the home says it is not read.
+  }
+  return served;
+}
+
+/**
+ * Every database set up on this machine: the home at /, each one's page at /db/<name>/, and a query from a page
+ * run through that database's reader alone, read from the keychain when it is asked.
+ */
+async function serveHome(io: Io, port: number): Promise<number> {
+  const home = homeOf(io);
+  const explorer = await (io.loadAddon ?? ((a: AddonConfig) => loadAddon(a, importer(io.cwd))))({ type: 'explorer' }).catch((error: unknown) => {
+    throw missing(error instanceof Error ? error.message : String(error));
+  });
+  if (!explorer.render) throw missing('The explorer add-on writes no page: update dbtour-addon-explorer, then run it again');
+  // The home is the page with no model: the served databases are its content.
+  const html = (await explorer.render({ ...emptyModel(), generatedAt: new Date().toISOString() }))['index.html'];
+  const token = randomBytes(24).toString('base64url');
+  let server: { url: string; close: () => Promise<void> };
+  try {
+    server = await startServer({
+      root: join(home, 'databases'),
+      port,
+      token,
+      sources: [],
+      home: { html, databases: () => readWorkspace(home).databases.map((d) => servedDatabase(home, d)) },
+      run: async (text, source, limit, database) => {
+        const project = await projectFor(io, database, { reader: true, setUpOnly: true });
+        return { ...(await runQuery(project.io, project.config, text, source, limit)), source: project.config.sources[0].name };
+      },
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === 'EADDRINUSE') throw new Error(`Port ${port} is taken: run dbtour serve --port ${port + 1}`, { cause: error });
+    throw error;
+  }
+  const names = readWorkspace(home).databases.map((d) => d.name);
+  io.log(`Serving ${names.length === 1 ? names[0] : `${names.length} databases (${names.join(', ')})`} at ${server.url}`);
+  io.log('Each page runs queries through its own database\'s reader, read from the keychain when asked. Ctrl+C to stop.');
+  await (io.stop ?? new Promise<void>((done) => process.once('SIGINT', () => done())));
+  await server.close();
   return 0;
 }

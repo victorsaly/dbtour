@@ -1,6 +1,6 @@
 {
   "name": "dbtour-keychain",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "dbtour's passwords in the system's keychain: macOS Keychain, Windows Credential Manager, the Secret Service on Linux. Never a file.",
   "type": "module",
   "license": "MIT",
@@ -34,6 +34,6 @@
     "@napi-rs/keyring": "2.1.1"
   },
   "devDependencies": {
-    "dbtour": "0.9.0"
+    "dbtour": "0.10.0"
   }
 }
