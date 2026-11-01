@@ -100,8 +100,11 @@ Strategy: restrained. No gradient, no shadow, no radius.
   remembered agent (the query with the tables it reads, as the docs write them) and Reset; a draft is kept in
   the browser. Under it, one line says the page cannot reach the database and where the query runs.
   Beside "T-SQL" the status says whether the page is connected: a hollow dot not; connected, the dot is the
-  last run, grey before one and while it runs, green (`--ran`, the page's only green) when the database
-  answered, red when it did not, and the words say the same ("· ran", "· failed").
+  last run, grey before one and while it runs, green when the database answered, red when it did not, and
+  the words say the same ("· ran", "· failed"). Green (`--live`, the page's only green) means one thing,
+  the database answers: on the rail's "Connected through dbtour serve" it is green when a source has a
+  reader, grey when none has. On the SQL page the caret waits in the editor, on the line under SELECT; an
+  entry's Query section never takes focus.
 - **Facts**: four mono-caps labels with 20px mono values, in two columns, each over a hairline: columns,
   keys, references, referenced by. Every entry shows the same four in the same place.
 - **Map nodes**: 240px wide, a 34px head with block, number and name, 22px rows, 6px padding; sizes

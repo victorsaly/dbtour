@@ -14,7 +14,7 @@ import { profile, plotPath, tickTips, tickWidth, tickCentre } from '../src/page/
 import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/page/size.ts';
 import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
-import { autoRunPauseMs, autoRunPlan, cellText, connectionFor, parseServed, statusOf } from '../src/page/served.ts';
+import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, parseServed, railStatus, statusOf } from '../src/page/served.ts';
 import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
@@ -563,4 +563,14 @@ test('the review: aliases are found for a bare default-schema name, and never ta
   assert.match(joinCompletions(shop(), 'SELECT 1 FROM Orders AS o JOIN ', 'Shop').find((j) => j.label === 'dbo.Customers')!.apply, /= o\.CustomerId$/);
   const upper = joinCompletions(shop(), 'SELECT 1 FROM dbo.Orders AS C JOIN ', 'Shop').find((j) => j.label === 'dbo.Customers')!;
   assert.match(upper.apply, /^dbo\.Customers AS c2 ON c2\.Id = C\.CustomerId$/);
+});
+
+test('the rail says the page is served, green when a source can run queries, and where the caret starts', () => {
+  assert.equal(railStatus(undefined), undefined, 'opened from a file: nothing to say');
+  assert.deepEqual(railStatus({ token: 't', sources: [{ name: 'Shop', reader: true }] }), { tone: 'live', text: 'Connected through dbtour serve' });
+  assert.deepEqual(railStatus({ token: 't', sources: [{ name: 'Shop', reader: false }] }), { tone: 'idle', text: 'Connected through dbtour serve · no reader' });
+  // The SQL page's caret: on the empty line the starter leaves under SELECT, or at the end of a draft.
+  const initial = 'SELECT TOP (100)\n    \n';
+  assert.equal(caretAt(initial), initial.length - 1);
+  assert.equal(caretAt('SELECT 1'), 8);
 });

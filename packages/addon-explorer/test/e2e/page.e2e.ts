@@ -437,6 +437,16 @@ test('served by dbtour serve: Run shows the rows, the dot says how the last run 
     await page.waitForFunction(`!document.querySelector('.query-section .sql-result').classList.contains('is-stale')`);
     assert.equal(asked.at(-1), "SELECT Id, Name FROM dbo.Customers WHERE Name = 'Ann'");
 
+    // The rail says the page is served, green as a source has a reader.
+    assert.match((await page.locator('.side-status').getAttribute('class')) ?? '', /is-live/);
+    // The SQL page puts the caret in its editor, on the line under SELECT: typing goes straight in.
+    await page.locator('a', { hasText: 'Write SQL' }).click();
+    await page.locator('.sql-page .cm-content').waitFor();
+    await page.waitForFunction(`document.activeElement?.closest('.sql-page .cm-editor') !== null`);
+    await page.keyboard.type('Id FROM dbo.Orders');
+    assert.match((await page.locator('.sql-page .cm-content').textContent()) ?? '', /SELECT TOP \(100\) {4}Id FROM dbo\.Orders/);
+    await page.goBack();
+
     // Remembered in this browser.
     await page.reload();
     await editor.waitFor();

@@ -14,7 +14,7 @@ import { CopyButton } from './Copy.tsx';
 import { completionSchema, joinCompletions, sqlPrompt } from './query.ts';
 import { sqlHighlighter, sqlTokens } from './sql.ts';
 import { storedTool } from './tools.ts';
-import { autoRunPauseMs, autoRunPlan, cellText, connectionFor, parseServed, statusOf, type Served } from './served.ts';
+import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, parseServed, statusOf, type Served } from './served.ts';
 
 export function SqlBlock({ code, label = 'SQL definition' }: { code: string; label?: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -140,7 +140,7 @@ interface Ran {
   source: string;
 }
 
-export function SqlEditor({ model, database, initial, draft }: { model: Model; database: string | undefined; initial: string; draft: string }) {
+export function SqlEditor({ model, database, initial, draft, autoFocus = false }: { model: Model; database: string | undefined; initial: string; draft: string; autoFocus?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const tool = storedTool();
@@ -258,6 +258,13 @@ export function SqlEditor({ model, database, initial, draft }: { model: Model; d
         ],
       }),
     });
+    // On the SQL page the editor is the page: the caret waits on the line left to write on. An entry's Query
+    // section never takes focus, so opening a table still reads from the top.
+    if (autoFocus) {
+      const at = caretAt(view.current.state.doc.toString());
+      view.current.dispatch({ selection: { anchor: at }, scrollIntoView: true });
+      view.current.focus();
+    }
     return () => {
       // Gone from the page: an answer still on its way finds no editor, so it cannot send the draft again.
       clearTimeout(pause.current);
@@ -265,7 +272,7 @@ export function SqlEditor({ model, database, initial, draft }: { model: Model; d
       view.current?.destroy();
       view.current = null;
     };
-  }, [model, database, initial, draft]);
+  }, [model, database, initial, draft, autoFocus]);
   const text = () => view.current?.state.doc.toString() ?? initial;
   const reset = () => {
     writeDraft(draft, undefined);

@@ -35,7 +35,23 @@ export function connectionFor(served: Served | undefined, database: string | und
   return { state: 'no reader', source: database ?? served.sources[0]?.name ?? '' };
 }
 
-export type Tone = 'off' | 'idle' | 'ok' | 'failed';
+export type Tone = 'off' | 'idle' | 'ok' | 'failed' | 'live';
+
+/**
+ * The rail's line on a served page: green when a source has a reader, so the database can be reached and a
+ * query run; grey when none has, and the page only read. Nothing when opened from a file.
+ */
+export function railStatus(served: Served | undefined): { tone: Tone; text: string } | undefined {
+  if (!served) return undefined;
+  return served.sources.some((s) => s.reader)
+    ? { tone: 'live', text: 'Connected through dbtour serve' }
+    : { tone: 'idle', text: 'Connected through dbtour serve · no reader' };
+}
+
+/** Where the caret starts: the end of the text, before a trailing line break, so on the line left to write on. */
+export function caretAt(doc: string): number {
+  return doc.endsWith('\n') ? doc.length - 1 : doc.length;
+}
 
 /**
  * The editor's status: the words, and its dot's tone. Connected, the dot says how the last run went: grey before

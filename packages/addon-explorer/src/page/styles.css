@@ -29,8 +29,9 @@
   --rank-medium: #f5a623;
   --rank-high: #ff6a00;
   --rank-critical: #e2001a;
-  /* A query's last run answered: the one green on the page, on the editor's status dot alone. */
-  --ran: #3fb950;
+  /* The database answers: the one green on the page, on a status dot alone (the rail's, a reader there; the
+     editor's, its last run answered). */
+  --live: #3fb950;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
@@ -53,7 +54,7 @@
     --rank-low: #6b6b6b;
     --rank-medium: #c47f00;
     --rank-high: #d45500;
-    --ran: #1a7f37;
+    --live: #1a7f37;
     color-scheme: light;
   }
 }
@@ -1582,8 +1583,9 @@ table.columns tr.is-pointed td {
   color: var(--ink-2);
 }
 
-/* The editor's state, beside "T-SQL": hollow not connected; connected, the last run's tone, grey before one,
-   green answered, red failed. Words say it; the dot repeats. */
+/* A status, the editor's beside "T-SQL" or the rail's: hollow not connected; grey connected and nothing to
+   say yet; green the database answers (a reader in the rail, the last run in the editor); red it failed.
+   Words say it; the dot repeats. */
 .sql-state {
   display: flex;
   align-items: center;
@@ -1611,6 +1613,7 @@ table.columns tr.is-pointed td {
 .status.is-on,
 .status.is-idle,
 .status.is-ok,
+.status.is-live,
 .status.is-failed {
   color: var(--ink);
 }
@@ -1619,9 +1622,10 @@ table.columns tr.is-pointed td {
   background: var(--ink-2);
   outline-color: var(--ink-2);
 }
-.status.is-ok::before {
-  background: var(--ran);
-  outline-color: var(--ran);
+.status.is-ok::before,
+.status.is-live::before {
+  background: var(--live);
+  outline-color: var(--live);
 }
 .status.is-failed::before {
   background: var(--red);
