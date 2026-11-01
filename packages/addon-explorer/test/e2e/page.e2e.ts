@@ -335,10 +335,17 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await page.keyboard.press('Enter');
     assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines$/);
 
+    // In WHERE, the columns of the table the query reads come first, before keywords like QUOTENAME.
+    await page.keyboard.type(' ol WHERE Qu');
+    await options.first().waitFor();
+    assert.match((await options.first().textContent()) ?? '', /^Quantity/);
+    await page.keyboard.press('Enter');
+    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines ol WHERE Quantity$/);
+
     // The draft is kept in the browser, and Reset goes back to the starter.
     await page.reload();
     await editor.waitFor();
-    assert.match((await editor.textContent()) ?? '', /dbo\.OrderLines$/, 'kept across a reload');
+    assert.match((await editor.textContent()) ?? '', /dbo\.OrderLines ol WHERE Quantity$/, 'kept across a reload');
     await page.locator('.query-section button', { hasText: 'Copy query for' }).click();
     const copied = await page.evaluate('navigator.clipboard.readText()') as string;
     assert.match(copied, /^The query below runs on the Shop database \(SQL Server\)\./);

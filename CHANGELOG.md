@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.9.0 (unreleased)
+## 0.9.1 (unreleased)
+
+- Autocomplete reads the query as the editor parses it, to offer what belongs at the caret. In the select
+  list, WHERE, ON, GROUP BY and SET, the columns of the tables in scope come before keywords, in the table's
+  order, written with their table's alias when more than one is in scope; a subquery sees its own tables
+  first, then its outer query's, and statements are scoped apart with or without a semicolon. After an alias
+  and a dot, that table's columns alone, inside a subquery too, and no keywords. After ON, the condition the
+  keys give between the joined table and those before it, as a join writes it. The joins after JOIN keep
+  their order (what a table points at first) rather than the alphabet's. `test/complete.test.ts` holds it
+  to cases, run as the editor runs them.
+
+## 0.9.0 (1 November 2026)
 
 - The page's SQL editor, the last of the plan's fifth milestone. Every entry has a Query section after its
   columns: an editable CodeMirror editor that starts from the table and a LEFT JOIN to each table it
