@@ -7,11 +7,13 @@ import { acceptCompletion, autocompletion, completionKeymap, pickedCompletion, s
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { foldGutter, syntaxHighlighting } from '@codemirror/language';
 import { MSSQL, sql } from '@codemirror/lang-sql';
+import { linter } from '@codemirror/lint';
 import { EditorState } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
 import type { Model } from 'dbtour/model';
 import { CopyButton } from './Copy.tsx';
-import { expandStar, pickOf, sqlSupport } from './complete.ts';
+import { unknownNames } from './check.ts';
+import { expandStar, infoPlacement, pickOf, sqlSupport } from './complete.ts';
 import { formatQuery } from './format.ts';
 import { sqlPrompt } from './query.ts';
 import { sqlHighlighter, sqlTokens } from './sql.ts';
@@ -122,6 +124,12 @@ function countUse(key: string): void {
     // A browser that refuses storage still completes; it learns only until the page closes.
   }
 }
+
+/**
+ * How long typing pauses before names are checked against the model: soon enough to see as one stops, not
+ * so soon that a name half typed is underlined.
+ */
+const checkPauseMs = 400;
 
 /** The query laid out, in place, undoable; one Format cannot read is left as it is. */
 function format(view: EditorView): boolean {
@@ -286,7 +294,10 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
           // What belongs at the caret: columns in scope, conditions after ON, joins after JOIN (complete.ts).
           sqlSupport(model, database, (key) => used()[key] ?? 0),
           // Words only, no icons: the catalogue draws no glyph it does not explain.
-          autocompletion({ icons: false }),
+          // A description beside the list, or under it on a phone, never over the suggestions (complete.ts).
+          autocompletion({ icons: false, positionInfo: (_view, list, option, info, space) => infoPlacement(list, option, info, space) }),
+          // A name the model does not have, underlined as it is typed, with the nearest it has (check.ts).
+          linter((v) => unknownNames(v.state), { delay: checkPauseMs }),
           syntaxHighlighting(sqlHighlighter),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ 'aria-label': 'SQL query' }),
@@ -376,7 +387,8 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
       {ran.result && <Result result={ran.result} stale={Boolean(ran.running || ran.error)} />}
       <p className="sql-hint">
         Ctrl+Space suggests what fits where the caret is, and Tab or Enter takes it. Tab after * writes the columns; ssf, st100,
-        scf, cte and wex write the start of a query; Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y formats it.
+        scf, cte and wex write the start of a query; Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y formats it. A red wavy line marks a name
+        the model does not have; point at it for the nearest it has.
       </p>
       <p className="sql-hint">
         {connection.state === 'ready' && (

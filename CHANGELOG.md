@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.3 (unreleased)
+
+- The SQL editor checks names against the model as you type, as SQL Server's completion add-ins do. A table
+  after FROM or JOIN the model does not have, or a column a table it has does not (after its alias or name
+  and a dot), gets a red wavy line. Pointed at, it says what dbtour knows and what to do ("If it is new, run
+  dbtour extract again"), and offers the nearest name the model has as a fix: `dbo.Ordrs` → `dbo.Orders`,
+  `o.Totl` → `Total`. A warning, not an error, as the model can be older than the database. A CTE, a
+  temporary table, a variable, a function, a subquery, another database or a schema the model has not read
+  (sys, say) is left alone.
+- On a phone, a suggestion's description goes under or over the list, never over the suggestions after the
+  chosen one; CodeMirror put it just under the chosen one. The description and the check's box are drawn
+  like the list, in a hairline box.
+
 ## 0.9.2 (unreleased)
 
 - The SQL editor does more of what SQL Server's completion add-ins do, written for dbtour (SQL Prompt is
