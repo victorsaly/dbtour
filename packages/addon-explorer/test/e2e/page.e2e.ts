@@ -13,6 +13,8 @@ import { render } from '../../src/index.ts';
 
 /** Evaluated in the page, where the DOM is; written as text because this file is typed for Node. */
 const nodeCount = (n: number): string => `document.querySelectorAll('.react-flow__node').length === ${n}`;
+/** Edges are drawn a frame after the nodes are measured, so they are waited for, never counted at once. */
+const edgeCount = (n: number): string => `document.querySelectorAll('.react-flow__edge').length === ${n}`;
 
 async function launch(): Promise<Browser | undefined> {
   const executablePath = process.env.DBTOUR_E2E_BROWSER;
@@ -59,12 +61,12 @@ test('the page searches, opens a table, draws its neighbourhood, expands it and 
     await page.getByRole('link', { name: 'Diagram' }).click();
     await page.locator('.react-flow__node').first().waitFor();
     assert.equal(new URL(page.url()).hash, '#diagram/dbo.Customers,dbo.Orders');
-    assert.equal(await page.locator('.react-flow__node').count(), 2);
-    assert.equal(await page.locator('.react-flow__edge').count(), 1);
+    await page.waitForFunction(nodeCount(2));
+    await page.waitForFunction(edgeCount(1));
 
     await page.locator('.react-flow__node', { hasText: 'Orders' }).locator('.node-expand').click();
     await page.waitForFunction(nodeCount(4));
-    assert.equal(await page.locator('.react-flow__edge').count(), 3);
+    await page.waitForFunction(edgeCount(3));
     assert.equal(await page.locator('.react-flow__node', { hasText: 'Customers' }).locator('.node-expand').count(), 0, 'nothing left to add around Customers');
 
     await page.goto(`${url}#group/Billing`);
