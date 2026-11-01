@@ -14,6 +14,12 @@ import { startServer } from '../../../core/src/serve.ts';
 import { describe } from '../../../core/test/fixtures/described.ts';
 import { twoDatabases } from '../../../core/test/fixtures/two.ts';
 
+/**
+ * CodeMirror ignores Enter for 75 ms after the completion list changes (its interactionDelay), so a key pressed
+ * at once types a new line; a reader is never that quick, a test is.
+ */
+const completionSettleMs = 100;
+
 /** Evaluated in the page, where the DOM is; written as text because this file is typed for Node. */
 const nodeCount = (n: number): string => `document.querySelectorAll('.react-flow__node').length === ${n}`;
 /** Edges are drawn a frame after the nodes are measured, so they are waited for, never counted at once. */
@@ -325,7 +331,7 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     assert.match((await editor.textContent()) ?? '', /LEFT JOIN dbo\.Customers AS c ON c\.Id = o\.CustomerId/);
     assert.equal(await editor.getAttribute('contenteditable'), 'true', 'it can be written in');
 
-    // Autocomplete offers the model's tables as a name is typed, and Enter takes one.
+    // Autocomplete offers the model's tables as a name is typed, and Enter takes one, with an alias.
     await editor.click();
     await page.keyboard.press('ControlOrMeta+End');
     await page.keyboard.type('\nSELECT * FROM dbo.OrderL');
@@ -333,19 +339,19 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await options.first().waitFor();
     assert.match((await options.allTextContents()).join(' '), /OrderLines/);
     await page.keyboard.press('Enter');
-    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines$/);
+    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines AS ol$/);
 
     // In WHERE, the columns of the table the query reads come first, before keywords like QUOTENAME.
-    await page.keyboard.type(' ol WHERE Qu');
+    await page.keyboard.type(' WHERE Qu');
     await options.first().waitFor();
     assert.match((await options.first().textContent()) ?? '', /^Quantity/);
     await page.keyboard.press('Enter');
-    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines ol WHERE Quantity$/);
+    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines AS ol WHERE Quantity$/);
 
     // The draft is kept in the browser, and Reset goes back to the starter.
     await page.reload();
     await editor.waitFor();
-    assert.match((await editor.textContent()) ?? '', /dbo\.OrderLines ol WHERE Quantity$/, 'kept across a reload');
+    assert.match((await editor.textContent()) ?? '', /dbo\.OrderLines AS ol WHERE Quantity$/, 'kept across a reload');
     await page.locator('.query-section button', { hasText: 'Copy query for' }).click();
     const copied = await page.evaluate('navigator.clipboard.readText()') as string;
     assert.match(copied, /^The query below runs on the Shop database \(SQL Server\)\./);
@@ -357,7 +363,30 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await page.locator('a', { hasText: 'Write SQL' }).click();
     await page.locator('h1', { hasText: 'SQL' }).waitFor();
     assert.equal(new URL(page.url()).hash, '#sql');
-    assert.match((await page.locator('.sql-page .cm-content').textContent()) ?? '', /A query against Shop/);
+    const sqlEditor = page.locator('.sql-page .cm-content');
+    assert.match((await sqlEditor.textContent()) ?? '', /A query against Shop/);
+
+    // A snippet writes the start of a read and opens the tables, and Tab takes one; Tab after * writes the
+    // columns; Format lays it out.
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.type('ssf');
+    await options.first().waitFor();
+    assert.match((await options.first().textContent()) ?? '', /^ssf/);
+    await page.keyboard.press('Enter');
+    await options.first().waitFor();
+    await page.keyboard.type('Cust');
+    await options.filter({ hasText: /^Customers/ }).first().waitFor();
+    await page.waitForTimeout(completionSettleMs);
+    await page.keyboard.press('Tab');
+    assert.equal(await sqlEditor.textContent(), 'SELECT * FROM dbo.Customers AS c', 'Tab takes the suggestion, as Enter does');
+    await page.keyboard.press('Home');
+    for (let i = 0; i < 'SELECT *'.length; i++) await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Tab');
+    assert.equal(await sqlEditor.textContent(), 'SELECT Id, Email, Name FROM dbo.Customers AS c');
+    assert.ok(await page.evaluate("document.activeElement?.classList.contains('cm-content')"), 'Tab stayed in the editor to write them');
+    await page.locator('.sql-page button', { hasText: 'Format' }).click();
+    assert.deepEqual(await page.locator('.sql-page .cm-line').allTextContents(), ['SELECT', '  Id,', '  Email,', '  Name', 'FROM', '  dbo.Customers AS c']);
 
     assert.deepEqual(errors, []);
   } finally {
@@ -416,7 +445,8 @@ test('served by dbtour serve: Run shows the rows, the dot says how the last run 
     await editor.click();
     await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.type('SELECT * FROM dbo.Nope');
-    await page.keyboard.press('ControlOrMeta+Enter');
+    // Ctrl+Enter runs it on every system, as SQL Server's tools do, ⌘+Enter too on a Mac.
+    await page.keyboard.press('Control+Enter');
     await page.locator('.query-section .sql-error', { hasText: "Invalid object name 'dbo.Nope'" }).waitFor();
     assert.match((await status.getAttribute('class')) ?? '', /is-failed/, 'red: it failed');
     assert.equal(await status.textContent(), 'Connected · Shop · failed');

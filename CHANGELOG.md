@@ -1,6 +1,29 @@
 # Changelog
 
-## 0.9.1 (unreleased)
+## 0.9.2 (unreleased)
+
+- The SQL editor does more of what SQL Server's completion add-ins do, written for dbtour (SQL Prompt is
+  closed source, so nothing is taken from it). Tab after * in the select list writes the columns of the
+  tables it covers, with their alias when there are several, leaving out masked, encrypted and labelled
+  columns as a starter does; anywhere else Tab still leaves the editor. Ctrl+Space there offers both, without
+  them and every column.
+- A table picked after FROM, JOIN, APPLY or a comma in FROM is written with an alias the query has not taken:
+  `dbo.Orders AS o`. The schemas follow the tables in that list.
+- Snippets write the start of a read, as dbtour sql runs only reads: `ssf`, `st100` (a hundred rows, as
+  `dbtour sql` returns), `scf`, `cte` and `wex`. They lead only once their whole name is typed, and those
+  that end where a table goes open the table list again.
+- Format, in the editor's bar and on Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y, lays the query out with
+  sql-formatter's T-SQL dialect, keywords and functions in upper case, comments kept; a query it cannot read
+  is left as typed. It adds 23 KB, gzipped, to the page.
+- What the reader picks is counted in their browser and comes first among equal matches, never above a
+  better one. The shortcuts are listed under the editor.
+- Tab takes the highlighted suggestion, as Enter does; with no list open it leaves the editor as before.
+  Ctrl+Enter runs the query on every system, as SQL Server's tools do, ⌘+Enter too on a Mac.
+- Tab writes no * that would lose a column (a subquery or a table the model does not know in FROM; `p.*`
+  still expands) or show a protected one (when all are, Ctrl+Space offers them, said so). A table that has its
+  alias already is written without another, and a [bracketed] table name is completed as before.
+
+## 0.9.1 (1 November 2026)
 
 - Autocomplete reads the query as the editor parses it, to offer what belongs at the caret. In the select
   list, WHERE, ON, GROUP BY and SET, the columns of the tables in scope come before keywords, in the table's

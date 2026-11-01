@@ -34,13 +34,13 @@ export function quoteName(name: string): string {
 }
 
 /** schema.table, each part quoted as needed. */
-function quoteRef(ref: string): string {
+export function quoteRef(ref: string): string {
   const dot = ref.indexOf('.');
   return `${quoteName(ref.slice(0, dot))}.${quoteName(ref.slice(dot + 1))}`;
 }
 
 /** Masked, encrypted or labelled: someone protected it, so a starter leaves it out and says so. */
-function isProtected(column: Column): boolean {
+export function isProtected(column: Column): boolean {
   return Boolean(column.masked || column.encrypted || column.sensitivity);
 }
 
@@ -48,7 +48,7 @@ function isProtected(column: Column): boolean {
  * An alias from a table's words: Orders o, OrderLines ol, vOrderTotals vot; t before one that would start with a
  * digit (2026Orders t2o); a number when it is taken. `taken` holds aliases in lower case, as T-SQL compares them.
  */
-function aliasFor(table: string, taken: Set<string>): string {
+export function aliasFor(table: string, taken: Set<string>): string {
   const words = table.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])/g) ?? [table];
   const initials = words.map((w) => w[0].toLowerCase()).join('').replace(/[^a-z0-9]/g, '');
   const base = /^[a-z]/.test(initials) ? initials : `t${initials}`;
