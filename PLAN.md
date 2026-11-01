@@ -97,17 +97,16 @@ table or the canvas in the centre, relations and notes on the right.
 - `/` searches tables, columns and endpoints. Enter opens. Every view has a URL (`#dbo.Users`).
 - A table shows columns (type, nullable, default, key, description), relations in and out as links, and
   indexes and constraints collapsed below.
-- What the catalogue says beyond that, when the model has it: the table's features (temporal, partitioned,
-  triggers) as a line under its name, its properties as a list, and a column's label, masking and
-  properties beside its type.
+- What the catalogue says beyond that, when the model has it: an About block on the entry with each of the
+  table's features (temporal, partitioned, triggers) in a plain sentence and its properties as a list, and
+  a Protection column for a column's label, masking and encryption.
 - The diagram is on demand: the selected table and its neighbours at distance one, "expand" on any node.
   Never the whole schema. React Flow for the canvas, elkjs for layout. Groups from the notes are named views.
 - Endpoints grouped by tag, each with parameters and responses and "touches" links to tables. A table shows
   the endpoints that touch it.
 - "Copy for …" copies the selected tables and endpoints as a prompt for whichever agent the reader uses.
-- Size, when the model has it: an entry says its rows and bytes beside its columns, the index can be ordered
-  by them, the home's lines carry weight by rows so the fat tables stand out, and the map can scale a node
-  by size. Usage, when an add-on wrote it, is a panel on the entry: unused and suggested indexes, reads
+- Size, when the model has it: a bar of bytes beside each line of the index, the index ordered by rows or
+  size, and a Size block on the entry that defines each figure; later the map can scale a node by size. Usage, when an add-on wrote it, is a panel on the entry: unused and suggested indexes, reads
   against writes.
 - Dark mode follows the system. Works opened from a file, with no network.
 
@@ -154,8 +153,8 @@ shop window, and nothing goes on the page before it is released.
    showing it: rows and bytes on the entry, the index ordered by them, lines weighted by rows.
 4. **All the catalogue says**: every extended property, the table's features, column labels and masking,
    index kinds and untrusted keys from the SQL Server source, and the page and the Markdown showing
-   them. ← here
-5. The skill and the SQL add-on, with the stats telling the agent where to look first.
+   them.
+5. The skill and the SQL add-on, with the stats telling the agent where to look first. ← here
 6. `source-openapi` and table-to-endpoint links.
 7. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
    and the comments its database keeps.

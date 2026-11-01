@@ -1,6 +1,44 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.4.0 (unreleased)
+
+- All the catalogue says, the plan's fourth milestone. The SQL Server source reads everything the database
+  keeps about its objects, still with `VIEW DEFINITION` alone: every extended property under any name on
+  the database, schemas, tables, columns, indexes and constraints (`properties`); when a table was created
+  and altered, whether it is system-versioned (with its history table and period columns), memory-optimised,
+  a ledger table, partitioned or compressed (read from every partition, a mix said as a list), its triggers, change tracking, change data capture and
+  row-level security; a column's collation where it differs from the database's, its identity seed and
+  increment, sparse, masking function and Always Encrypted; index kinds, filters and disabled indexes; keys
+  and checks disabled or no longer trusted. Sensitivity labels are read when the login holds `VIEW ANY
+  SENSITIVITY CLASSIFICATION`; without it the model says so in `unread` and `extract` prints it. What an
+  older server lacks (temporal before 2016, labels before 2019, ledger before 2022) is read through text the
+  batch assembles after asking, so it is absent there rather than failing the query. The query returns
+  thirteen result sets.
+- The Markdown: a table page gains Features, Properties, Triggers and Row-level security sections, an
+  index Kind column, keys "not trusted", and a column's collation, identity seed, masking, encryption and
+  label; the index says the collation, the database and schema properties, and what was not read. A model
+  without any of it renders as before.
+- The page: an entry's About block puts each feature in a plain sentence, with the dates and the table's
+  properties; a Protection column shows labels, masks and encryption; triggers and row-level security are
+  sections of their own; the home says the collation, what was not read, and the database and schema
+  properties.
+- SQL is coloured in VS Code's Dark+ and Light+ colours: a view's or a trigger's definition sits in a
+  read-only CodeMirror 6 editor (MSSQL dialect, line numbers, folding) with a Copy button, the editor a SQL
+  generator will write in later; a check, filter, predicate, default or computed expression in a table cell
+  is coloured by the same parser, built-in functions apart from names. Monaco was measured and left for the SQL add-on, since it would
+  more than double every page (2.3 MB against CodeMirror's 431 KB).
+- Colour where it means something: a sensitivity rank is a round dot from grey to red, its words beside it;
+  a disabled or untrusted key, check, index, trigger or policy carries a red warning triangle; each About
+  term leads with its schema's block. Square, dot and triangle keep the three kinds of mark apart.
+- The entry's plot is interactive: a tick's tooltip, in the page's own style rather than the browser's,
+  says the column, its type, what its peak means (a foreign key with its target), its description, null,
+  default, identity, protection and properties; ← and → walk the ticks from the keyboard; and the plot and
+  the columns table point at the same column, a tick lighting its row and a row lifting its tick.
+- The shop example carries some of it: Orders partitioned, compressed, change-tracked, with an audit
+  trigger; Customers.Email masked and labelled; Invoices an append-only ledger table.
+- The plan moves on to the skill and the SQL add-on, and its page section describes sizes as they are drawn.
+
+## 0.3.0 (1 November 2026)
 
 - Size and shape, the plan's third milestone. The SQL Server source reads each table's rows and its bytes
   of data and of indexes from `sys.partitions` and `sys.allocation_units`, catalogue views, so a login

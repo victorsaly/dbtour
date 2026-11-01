@@ -24,6 +24,9 @@ CREATE TABLE dbtour_e2e.Orders (
   CONSTRAINT CK_e2e_Orders_Status CHECK (Status <= 9)
 );
 CREATE INDEX IX_e2e_Orders_CustomerId ON dbtour_e2e.Orders (CustomerId) INCLUDE (Status);
+CREATE INDEX IX_e2e_Orders_Open ON dbtour_e2e.Orders (CustomerId) WHERE Status < 9;
+-- Checked no more: disabled, and no longer trusted.
+ALTER TABLE dbtour_e2e.Orders NOCHECK CONSTRAINT CK_e2e_Orders_Status;
 CREATE TABLE dbtour_e2e.OrderLines (
   OrderId int NOT NULL CONSTRAINT FK_e2e_OrderLines_Orders REFERENCES dbtour_e2e.Orders (Id) ON DELETE CASCADE,
   LineNo smallint NOT NULL,
@@ -39,11 +42,14 @@ CREATE TABLE dbtour_e2e.Shipments (
 -- A clustered columnstore: rows this few stay in its delta store, which sys.partitions does not list.
 CREATE TABLE dbtour_e2e.PageViews (Id int NOT NULL, At datetime2 NOT NULL, INDEX CCI_e2e_PageViews CLUSTERED COLUMNSTORE);
 GO
+CREATE TRIGGER dbtour_e2e.trOrdersTouch ON dbtour_e2e.Orders AFTER INSERT, UPDATE AS SET NOCOUNT ON;
+GO
 CREATE VIEW dbtour_e2e.vOrderTotals AS SELECT OrderId, SUM(Quantity) AS Total FROM dbtour_e2e.OrderLines GROUP BY OrderId;
 GO
 INSERT INTO dbtour_e2e.Customers (Email) VALUES ('a@example.com'), ('b@example.com'), ('c@example.com');
 INSERT INTO dbtour_e2e.PageViews (Id, At) VALUES (1, SYSUTCDATETIME()), (2, SYSUTCDATETIME());
 EXEC sys.sp_addextendedproperty @name = 'MS_Description', @value = 'One row per account.', @level0type = 'SCHEMA', @level0name = 'dbtour_e2e', @level1type = 'TABLE', @level1name = 'Customers';
+EXEC sys.sp_addextendedproperty @name = 'Owner', @value = 'Data team', @level0type = 'SCHEMA', @level0name = 'dbtour_e2e', @level1type = 'TABLE', @level1name = 'Customers';
 EXEC sys.sp_addextendedproperty @name = 'MS_Description', @value = 'Login address.', @level0type = 'SCHEMA', @level0name = 'dbtour_e2e', @level1type = 'TABLE', @level1name = 'Customers', @level2type = 'COLUMN', @level2name = 'Email';
 `;
 
@@ -80,7 +86,19 @@ test('extract reads a real SQL Server', { skip: connection ? false : 'DBTOUR_E2E
     const orders = schema.tables[2];
     assert.equal(orders.columns.find((c) => c.name === 'Total')!.computed, '([Net]*(1.2))');
     assert.equal(orders.columns.find((c) => c.name === 'Status')!.default, '((0))');
-    assert.deepEqual(orders.indexes, [{ name: 'IX_e2e_Orders_CustomerId', columns: ['CustomerId'], unique: false, included: ['Status'] }]);
+    assert.deepEqual(orders.indexes, [
+      { name: 'IX_e2e_Orders_CustomerId', columns: ['CustomerId'], unique: false, included: ['Status'], type: 'nonclustered' },
+      { name: 'IX_e2e_Orders_Open', columns: ['CustomerId'], unique: false, type: 'nonclustered', filter: '([Status]<(9))' },
+    ]);
+    // What the catalogue says beyond the structure.
+    assert.deepEqual(customers.properties, { Owner: 'Data team' });
+    assert.equal(customers.columns[0].identitySeed, '1');
+    assert.ok(database.collation, 'the database collation');
+    const check = orders.constraints.find((c) => c.name === 'CK_e2e_Orders_Status')!;
+    assert.deepEqual([check.disabled, check.untrusted], [true, true]);
+    assert.deepEqual(orders.triggers?.map((t) => [t.name, t.timing, t.events.sort().join(','), t.enabled]), [['trOrdersTouch', 'after', 'insert,update', true]]);
+    assert.match(orders.created!, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(database.unread, undefined, 'sa may read the sensitivity labels');
     assert.deepEqual(schema.tables[1].primaryKey, ['OrderId', 'LineNo']);
     const shipments = database.relations.find((r) => r.name === 'FK_e2e_Shipments_OrderLines')!;
     assert.deepEqual(shipments.from.columns, ['OrderId', 'LineNo']);

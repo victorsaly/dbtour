@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import type { Model } from 'dbtour/model';
+import { relationsOf, type Model } from 'dbtour/model';
 import { pageHtml, render } from '../src/index.ts';
 import { parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, type Route } from '../src/page/route.ts';
 import { allTables, mergeParallel, relationId } from '../src/page/graph.ts';
@@ -11,8 +11,11 @@ import { neighbours, withNeighbours, expand, subgraph } from '../src/page/graph.
 import { layout, nodeHeight, nodeWidth } from '../src/page/layout.ts';
 import { prompt } from '../src/page/prompt.ts';
 import { catalogue, neighboursOf, ordered, orders, rememberOrder, sized, storedOrder } from '../src/page/catalogue.ts';
-import { profile, plotPath, tickWidth, tickCentre } from '../src/page/plot.ts';
+import { profile, plotPath, tickTips, tickWidth, tickCentre } from '../src/page/plot.ts';
 import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/page/size.ts';
+import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
+import { sqlTokens } from '../src/page/sql.ts';
+import { describe } from '../../core/test/fixtures/described.ts';
 import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
 
 const shop = (): Model => JSON.parse(readFileSync(new URL('../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
@@ -312,4 +315,107 @@ test('only a view says it has no rows of its own; a table without stats says not
   assert.equal(sizeCaption({ rows: 1204377, dataBytes: 81920000, indexBytes: 25165824 }, 'table'), '1,204,377 rows · 102 MB');
   assert.equal(sizeCaption(undefined, 'view'), 'no rows of its own');
   assert.equal(sizeCaption(undefined, 'table'), '', 'stats missing is not an empty table');
+});
+
+test('the About block says each feature in a plain sentence, the dates apart, the properties as they are', () => {
+  const model = describe(shop());
+  const orders = model.databases[0].schemas[0].tables[1];
+  const about = aboutOf(orders);
+  assert.deepEqual(about.terms.map((t) => t.term), ['System-versioned', 'Memory-optimised', 'Ledger', 'Partitioned', 'Compressed', 'Change tracking', 'Change data capture', 'Triggers', 'Row-level security']);
+  const said = Object.fromEntries(about.terms.map((t) => [t.term, t.sentence]));
+  assert.equal(said['System-versioned'], 'Every change is kept in dbo.OrdersHistory; each row is valid from ValidFrom to ValidTo.');
+  assert.equal(said['Memory-optimised'], 'Held in memory, and both the schema and the rows survive a restart.');
+  assert.equal(said.Ledger, 'Every change is recorded so it can be verified against tampering.');
+  assert.equal(said.Partitioned, 'Split on CreatedAt into 12 partitions, by psByYear (function pfByYear).');
+  assert.equal(said.Compressed, 'Page compression.');
+  assert.equal(said['Change tracking'], 'The database records which rows changed, for keeping copies in step.');
+  assert.equal(said['Change data capture'], 'The database copies each change into a change table.');
+  assert.equal(said.Triggers, 'trOrdersAudit runs after insert and update: see Triggers below.');
+  assert.equal(said['Row-level security'], 'rls.Tenants filters the rows a login sees: see Row-level security below.');
+  assert.equal(about.terms[0].ref, 'dbo.OrdersHistory');
+  assert.equal(about.dates, 'Created 2024-01-02 · altered 2026-10-30');
+  assert.deepEqual(about.properties, [['Retention', '7 years']]);
+  assert.equal(aboutOf(shop().databases[0].schemas[0].tables[0]).empty, true, 'nothing to say, no block');
+});
+
+test('the About sentences cover the other cases: schema only, append-only, history, several triggers, a block predicate', () => {
+  const table = shop().databases[0].schemas[0].tables[0];
+  const said = (patch: object) => Object.fromEntries(aboutOf({ ...table, ...patch }).terms.map((t) => [t.term, t.sentence]));
+  assert.equal(said({ memoryOptimised: 'schema only' })['Memory-optimised'], 'Held in memory; the schema survives a restart, the rows do not.');
+  assert.equal(said({ ledger: 'append-only' }).Ledger, 'Only takes inserts: no row can be updated or deleted, and each is verifiable.');
+  assert.equal(said({ ledger: 'history' }).Ledger, 'The history of a ledger table.');
+  assert.equal(said({ historyOf: 'dbo.Orders' }).History, 'Keeps the past versions of the rows of dbo.Orders.');
+  const trigger = { timing: 'instead of', events: ['delete'], enabled: false };
+  assert.equal(said({ triggers: [{ name: 'a', ...trigger }, { name: 'b', ...trigger }] }).Triggers, '2 triggers: see Triggers below.');
+  assert.equal(said({ triggers: [{ name: 'a', ...trigger }] }).Triggers, 'a runs instead of delete, and is disabled: see Triggers below.');
+  const block = { policy: 'rls.P', kind: 'block', operation: 'after insert', predicate: 'x', enabled: true };
+  assert.equal(said({ security: [block] })['Row-level security'], 'rls.P blocks writes that break its predicate: see Row-level security below.');
+  assert.equal(aboutOf({ ...table, created: '2024-01-02T00:00:00', altered: '2024-01-02T10:00:00' }).dates, 'Created 2024-01-02', 'altered the day it was made says nothing more');
+});
+
+test('a column\'s protection reads as tags in words: label, masking, encryption', () => {
+  const orders = describe(shop()).databases[0].schemas[0].tables[1];
+  assert.deepEqual(protection(orders.columns[3]), [
+    { text: 'Confidential · Financial · rank medium', rank: 'medium' },
+    { text: 'Encrypted, deterministic' },
+  ]);
+  assert.deepEqual(protection(orders.columns[2]), [{ text: 'Masked default()' }]);
+  const ranked = (rank: string) => protection({ name: 'x', type: 'int', nullable: false, sensitivity: { label: 'L', rank } })[0].rank;
+  assert.deepEqual(['low', 'medium', 'high', 'critical', 'none', 'odd'].map(ranked), ['low', 'medium', 'high', 'critical', undefined, undefined], 'a rank the page does not know has no colour, only its words');
+  assert.deepEqual(protection(orders.columns[1]), []);
+  assert.equal(anyProtected(orders), true);
+  assert.equal(anyProtected(shop().databases[0].schemas[0].tables[1]), false, 'no column has any, so no Protection column');
+});
+
+test('SQL splits into classed tokens with CodeMirror\'s MSSQL parser, every character kept', () => {
+  const code = "CREATE TRIGGER dbo.trAudit ON dbo.Orders AFTER INSERT AS\nSELECT N'x', 42 FROM inserted -- a note";
+  const tokens = sqlTokens(code);
+  assert.equal(tokens.map((t) => t.text).join(''), code, 'nothing lost, nothing added');
+  const kind = (text: string) => tokens.find((t) => t.text === text)?.kind;
+  assert.equal(kind('CREATE'), 'keyword');
+  assert.equal(kind('SELECT'), 'keyword');
+  assert.equal(kind("N'x'"), 'string');
+  assert.equal(kind('42'), 'number');
+  assert.equal(kind('-- a note'), 'comment');
+  assert.equal(kind('Orders'), 'name');
+  const calls = sqlTokens('SELECT CAST(Id AS int), SYSUTCDATETIME()');
+  assert.equal(calls.find((t) => t.text === 'SYSUTCDATETIME')?.kind, 'builtin', 'a built-in function is not a name');
+  assert.equal(calls.find((t) => t.text === 'CAST')?.kind, 'builtin');
+  assert.equal(calls.find((t) => t.text === 'int')?.kind, 'type');
+  assert.deepEqual(sqlTokens(''), []);
+  assert.equal(sqlTokens('([Status]<=(9))').map((t) => t.text).join(''), '([Status]<=(9))');
+});
+
+test('a tick\'s tooltip says the column, its type, what its peak means, and what else it is', () => {
+  const model = describe(shop());
+  const orders = model.databases[0].schemas[0].tables[1];
+  const tips = tickTips(orders, relationsOf(model, 'dbo.Orders').out);
+  assert.equal(tips.length, orders.columns.length);
+  assert.deepEqual(tips[0], { column: 'Id', type: 'int', peak: 'Primary key', facts: ['not null', 'identity(1,1)'], protection: [], properties: [['Source', 'checkout']] });
+  assert.deepEqual(tips[1], { column: 'CustomerId', type: 'int', peak: 'Foreign key', target: 'dbo.Customers', targetColumn: 'Id', facts: ['not null', 'not trusted'], protection: [], properties: [] });
+  assert.deepEqual(tips[2], { column: 'Status', type: 'tinyint', peak: 'Column', facts: ['not null', 'default ((0))', 'sparse', 'collation Latin1_General_BIN2'], protection: [{ text: 'Masked default()' }], properties: [] });
+  assert.equal(tips[3].protection[0].text, 'Confidential · Financial · rank medium');
+  assert.equal(tips[4].description, undefined);
+  assert.deepEqual(tips[4].facts, ['nullable', 'computed ([Net]+[Tax])']);
+  const customers = model.databases[0].schemas[0].tables[0];
+  const email = tickTips(customers, [])[1];
+  assert.equal(email.peak, 'Unique');
+  assert.equal(email.description, 'Login address.');
+});
+
+test('the review: a switched-off policy says so, and a label with only a rank still shows', () => {
+  const table = shop().databases[0].schemas[0].tables[0];
+  const said = (security: object[]) => Object.fromEntries(aboutOf({ ...table, security } as typeof table).terms.map((t) => [t.term, t.sentence]))['Row-level security'];
+  const off = { policy: 'rls.P', kind: 'filter', predicate: 'x', enabled: false };
+  assert.equal(said([off]), 'rls.P is switched off: it filters and blocks nothing. See Row-level security below.');
+  const on = { policy: 'rls.Q', kind: 'block', operation: 'after insert', predicate: 'y', enabled: true };
+  assert.equal(said([off, on]), 'rls.Q blocks writes that break its predicate; rls.P is switched off. See Row-level security below.');
+  assert.deepEqual(protection({ name: 'x', type: 'int', nullable: false, sensitivity: { rank: 'high' } }), [{ text: 'rank high', rank: 'high' }]);
+  assert.equal(anyProtected({ ...table, columns: [{ name: 'x', type: 'int', nullable: false, sensitivity: { rank: 'high' } }] }), true);
+});
+
+test('the review: compression that differs by partition says so', () => {
+  const table = shop().databases[0].schemas[0].tables[0];
+  const said = Object.fromEntries(aboutOf({ ...table, compression: 'none, page' }).terms.map((t) => [t.term, t.sentence]));
+  assert.equal(said.Compressed, 'Compression differs by partition: none, page.');
 });

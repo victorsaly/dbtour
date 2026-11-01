@@ -54,6 +54,14 @@ export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
                 </span>
                 {' · '}
                 <span>{database.relations.length} relations</span>
+                {database.collation && (
+                  <>
+                    {' · '}
+                    <span>
+                      collation <span className="ident">{database.collation}</span>
+                    </span>
+                  </>
+                )}
                 {counted.length > 0 && (
                   <>
                     {' · '}
@@ -65,6 +73,11 @@ export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
                 )}
               </p>
               {database.description && <p className="description">{database.description}</p>}
+              {database.unread?.map((reason) => (
+                <p key={reason} className="unread">
+                  Not read: {reason}.
+                </p>
+              ))}
             </header>
           );
         })}
@@ -121,6 +134,25 @@ export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
       </article>
 
       <aside className="panel">
+        {model.databases.some((d) => d.properties || d.schemas.some((s) => s.properties)) && (
+          <section>
+            <h2>Properties</h2>
+            <dl className="about-terms panel-props">
+              {model.databases.flatMap((d) =>
+                [{ on: d.name, properties: d.properties }, ...d.schemas.map((s) => ({ on: s.name, properties: s.properties }))].flatMap(({ on, properties }) =>
+                  Object.entries(properties ?? {}).map(([name, value]) => (
+                    <div key={`${on}.${name}`}>
+                      <dt className="prop-name">
+                        {on} · {name}
+                      </dt>
+                      <dd>{value}</dd>
+                    </div>
+                  )),
+                ),
+              )}
+            </dl>
+          </section>
+        )}
         <section>
           <h2>Schemas</h2>
           <ul className="legend">

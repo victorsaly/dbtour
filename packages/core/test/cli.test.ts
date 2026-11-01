@@ -95,6 +95,16 @@ test('extract runs each source, writes schema.json and exits 1 when a source fai
   assert.match(c.err.join('\n'), /DBTOUR_FAKE/);
 });
 
+test('extract says what a source could not read, and why, after its count', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: fake\n    name: Shop\n    connection: ${DBTOUR_FAKE}\n');
+  const database = { ...JSON.parse(readFileSync(fixture, 'utf8')).databases[0], unread: ['sensitivity labels: the login lacks VIEW ANY SENSITIVITY CLASSIFICATION'] };
+  const load = async () => ({ extract: async () => database });
+  const a = io();
+  assert.equal(await main(['extract'], { cwd, env: { DBTOUR_FAKE: 'Server=x' }, load, ...a.io }), 0);
+  assert.match(a.out.join('\n'), /Shop: 6 tables.*\nShop: not read: sensitivity labels: the login lacks VIEW ANY SENSITIVITY CLASSIFICATION\. Grant it to read them, or leave them out\./);
+});
+
 test('render runs each add-on: enrich changes the model, render adds files, a missing add-on exits 2', async () => {
   const cwd = project();
   writeFileSync(join(cwd, 'dbtour.yaml'), 'out: docs\nsources:\n  - type: mssql\n    name: Shop\naddons:\n  - explorer\n');

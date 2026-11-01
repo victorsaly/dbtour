@@ -13,6 +13,21 @@
   --sans: 'Archivo', system-ui, sans-serif;
   --mono: 'Red Hat Mono', ui-monospace, Menlo, monospace;
   --hair: 1px;
+  /* SQL in VS Code's Dark+ and Light+ colours, the ones developers already read it in, kept apart from the
+     schema strip: keywords blue, built-ins yellow, types teal, names pale blue, strings salmon, numbers pale
+     green, comments green. */
+  --sql-keyword: #569cd6;
+  --sql-builtin: #dcdcaa;
+  --sql-type: #4ec9b0;
+  --sql-name: #9cdcfe;
+  --sql-string: #ce9178;
+  --sql-number: #b5cea8;
+  --sql-comment: #6a9955;
+  /* A sensitivity rank's dot, grey to red; its words are always beside it. */
+  --rank-low: #8c8c8c;
+  --rank-medium: #f5a623;
+  --rank-high: #ff6a00;
+  --rank-critical: #e2001a;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
@@ -24,6 +39,16 @@
     --line-strong: #0b0b0b;
     --fill: rgba(11, 11, 11, 0.05);
     --grid: #e2e2dd;
+    --sql-keyword: #0000ff;
+    --sql-builtin: #795e26;
+    --sql-type: #267f99;
+    --sql-name: #001080;
+    --sql-string: #a31515;
+    --sql-number: #098658;
+    --sql-comment: #008000;
+    --rank-low: #6b6b6b;
+    --rank-medium: #c47f00;
+    --rank-high: #d45500;
     color-scheme: light;
   }
 }
@@ -1172,4 +1197,314 @@ pre {
   .copy {
     flex-wrap: wrap;
   }
+}
+
+/* The entry's About block: each feature a term in mono caps beside its sentence, then the properties. */
+.about-block {
+  margin-top: 28px;
+}
+.about-terms {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+.about-terms > div {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+}
+.about-terms dt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  padding-top: 2px;
+}
+.about-terms dd {
+  margin: 0;
+}
+/* A property's name is the team's own word, so it keeps its case. */
+.about-terms dt.prop-name,
+.prop-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-2);
+}
+.about-sub {
+  margin-top: 20px;
+  padding-bottom: 6px;
+  border-bottom: var(--hair) solid var(--line);
+}
+.panel-props > div {
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+@media (max-width: 800px) {
+  .about-terms > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+/* A second line in a cell, for what qualifies the first: a collation, a filter, a property. */
+.cell-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.cell-props {
+  display: block;
+}
+/* A column's protection, said in words; the outline is the tag's, the words carry the meaning. A label is the
+   team's name and a mask is a function, so neither is upper-cased. */
+.tag.protect {
+  display: inline-block;
+  margin: 0 6px 4px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: none;
+}
+/* A label's parts break between, never inside: Confidential / Contact Info / rank medium. */
+.tag.protect .part {
+  white-space: nowrap;
+}
+/* An identifier inside a caps line (a collation in the meta line) keeps its own case. */
+.meta .ident {
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* A key, an identity with its seed, stays on one line; the keys of a column wrap between them. */
+.key {
+  white-space: nowrap;
+}
+.trigger + .trigger {
+  margin-top: 16px;
+}
+.unread {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+/* SQL, in a cell and in the editor: the same classes, the same colours. */
+.sql-keyword {
+  color: var(--sql-keyword);
+}
+.sql-name {
+  color: var(--sql-name);
+}
+.sql-string {
+  color: var(--sql-string);
+}
+.sql-number {
+  color: var(--sql-number);
+}
+.sql-type {
+  color: var(--sql-type);
+}
+.sql-builtin {
+  color: var(--sql-builtin);
+}
+.sql-comment {
+  color: var(--sql-comment);
+  font-style: italic;
+}
+.sql-operator {
+  color: var(--ink-2);
+}
+code.sql {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+/* The read-only editor: a hairline frame with a bar across its top (what it is, and Copy), the gutter in
+   ink-2, no focus ring of its own, the page's mono. */
+.sql-frame {
+  margin: 10px 0 0;
+  outline: var(--hair) solid var(--line);
+}
+.sql-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 4px 12px;
+  border-bottom: var(--hair) solid var(--line);
+}
+.sql-copy {
+  padding: 4px 10px;
+  border: 0;
+  outline: var(--hair) solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.sql-copy:hover,
+.sql-copy:focus-visible {
+  outline-color: var(--line-strong);
+}
+.sql-block .cm-editor {
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.sql-block .cm-scroller {
+  font-family: var(--mono);
+  line-height: 1.6;
+}
+.sql-block .cm-gutters {
+  background: transparent;
+  border-right: var(--hair) solid var(--line);
+  color: var(--ink-2);
+}
+.sql-block .cm-editor.cm-focused {
+  outline: none;
+}
+.sql-block .cm-content {
+  padding: 8px 0;
+}
+.sql-block .cm-foldGutter span {
+  color: var(--ink-2);
+}
+
+/* A rank's dot inside a protection tag: round, so it is never taken for a schema's square block. */
+.rank-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 0;
+}
+.rank-low {
+  background: var(--rank-low);
+}
+.rank-medium {
+  background: var(--rank-medium);
+}
+.rank-high {
+  background: var(--rank-high);
+}
+.rank-critical {
+  background: var(--rank-critical);
+}
+/* A warning tag (disabled, not trusted, off) leads with a small red triangle. The shape says the kind of
+   mark: a square is a schema, a round dot a rank, a triangle a warning; the colour only says how much. */
+.tag.warn {
+  color: var(--ink);
+}
+.tag.warn::before {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 5px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 7px solid var(--red);
+  vertical-align: 0;
+}
+.about-terms dt .block {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  vertical-align: 0;
+}
+
+/* The entry's plot and its tooltip. A lifted tick (pointed at here or in the table) is drawn in ink at 2px;
+   the tooltip hangs under the baseline, a hairline box on the field, anchored to an end near the edges. */
+.plot-box {
+  position: relative;
+}
+.plot .plot-hover {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+.plot-tick:focus {
+  outline: none;
+}
+.plot-tick:focus-visible rect {
+  fill: var(--fill);
+  outline: var(--hair) solid var(--ink);
+}
+.plot-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 20;
+  width: max-content;
+  max-width: 300px;
+  padding: 10px 12px;
+  background: var(--bg);
+  outline: var(--hair) solid var(--line-strong);
+  font-size: 12px;
+  pointer-events: none;
+}
+.plot-tip.is-middle {
+  transform: translateX(-50%);
+}
+.plot-tip.is-start {
+  transform: translateX(-12px);
+}
+.plot-tip.is-end {
+  transform: translateX(calc(-100% + 12px));
+}
+.plot-tip p {
+  margin: 6px 0 0;
+}
+.tip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.tip-name {
+  font-family: var(--mono);
+  color: var(--ink);
+}
+.tip-type {
+  font-family: var(--mono);
+  color: var(--ink-2);
+}
+.tip-peak {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.tip-peak .tip-name {
+  letter-spacing: 0;
+  text-transform: none;
+}
+.tip-mark path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+.tip-facts,
+.tip-hint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.tip-hint {
+  padding-top: 6px;
+  border-top: var(--hair) solid var(--line);
+}
+/* The row of the column pointed at in the plot: the same fill the highlighted row has, without its rule. */
+table.columns tr.is-pointed td {
+  background: var(--fill);
 }

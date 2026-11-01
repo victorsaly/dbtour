@@ -95,6 +95,8 @@ async function extract(io: Io): Promise<number> {
       model.databases.push(result);
       const tables = result.schemas.reduce((n, s) => n + s.tables.length, 0);
       io.log(`${result.name}: ${tables} tables, ${result.relations.length} relations`);
+      // Not a failure: the rest was read, and an absence the model records is not taken for a no.
+      for (const reason of result.unread ?? []) io.log(`${result.name}: not read: ${reason}. Grant it to read them, or leave them out.`);
     } else {
       model.apis.push(result);
       io.log(`${result.name}: ${result.endpoints.length} endpoints`);
