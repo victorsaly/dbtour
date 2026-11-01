@@ -10,20 +10,28 @@
     "packages/*"
   ],
   "scripts": {
+    "build": "node packages/addon-explorer/build.mjs",
+    "pretest": "npm run build",
     "test": "node --test 'packages/*/test/**/*.test.ts'",
+    "pretest:coverage": "npm run build",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include='packages/*/src/**/*.ts' --test-coverage-exclude='packages/*/src/cli.ts' --test-coverage-lines=90 --test-coverage-branches=80 'packages/*/test/**/*.test.ts'",
+    "pretest:e2e": "npm run build",
     "test:e2e": "node --test 'packages/*/test/e2e/*.e2e.ts'",
     "lint": "eslint .",
-    "typecheck": "tsc -p .",
+    "typecheck": "tsc -p . && tsc -p packages/addon-explorer",
     "check": "npm run lint && npm run typecheck && npm run test:coverage",
+    "preexample": "npm run build",
     "example": "cd examples/shop && node ../../packages/core/bin/dbtour.mjs render",
-    "e2e:mssql": "node scripts/e2e-mssql.mjs"
+    "e2e:mssql": "node scripts/e2e-mssql.mjs",
+    "e2e:page": "npm run build && node --test packages/addon-explorer/test/e2e/page.e2e.ts",
+    "brand": "node scripts/brand.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.5",
     "eslint": "^10.13.0",
     "globals": "^17.13.0",
+    "playwright-core": "^1.64.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.0"
   }

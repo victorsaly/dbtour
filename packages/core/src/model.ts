@@ -149,6 +149,15 @@ export function findTable(model: Model, ref: string): Found | undefined {
   return undefined;
 }
 
+/** Unique on its own, by a constraint or an index, and not the primary key, which says so already. */
+export function isUniqueColumn(table: Table, column: string): boolean {
+  if (table.primaryKey?.includes(column)) return false;
+  return (
+    table.constraints.some((c) => c.kind === 'unique' && c.columns.length === 1 && c.columns[0] === column) ||
+    table.indexes.some((i) => i.unique && i.columns.length === 1 && i.columns[0] === column)
+  );
+}
+
 export function relationsOf(model: Model, ref: string): { out: Relation[]; in: Relation[] } {
   const out: Relation[] = [];
   const inward: Relation[] = [];

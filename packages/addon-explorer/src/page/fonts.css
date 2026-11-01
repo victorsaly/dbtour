@@ -1,0 +1,14 @@
+/* Both faces are variable fonts under the SIL Open Font License (see ../../fonts/) and are inlined by the
+   build, so the page has no font host to reach. Archivo for text, Red Hat Mono for identifiers and labels. */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 100 900;
+  src: url('../../fonts/archivo-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Red Hat Mono';
+  font-style: normal;
+  font-weight: 300 700;
+  src: url('../../fonts/red-hat-mono-latin.woff2') format('woff2');
+}

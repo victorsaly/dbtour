@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync, cpSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../src/cli.ts';
+import type { Model } from '../src/model.ts';
 
 const fixture = new URL('./fixtures/shop.json', import.meta.url);
 
@@ -92,4 +93,25 @@ test('extract runs each source, writes schema.json and exits 1 when a source fai
   const c = io();
   assert.equal(await main(['extract'], { cwd, env: {}, load, ...c.io }), 2);
   assert.match(c.err.join('\n'), /DBTOUR_FAKE/);
+});
+
+test('render runs each add-on: enrich changes the model, render adds files, a missing add-on exits 2', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'out: docs\nsources:\n  - type: mssql\n    name: Shop\naddons:\n  - explorer\n');
+  mkdirSync(join(cwd, 'docs'), { recursive: true });
+  cpSync(fixture, join(cwd, 'docs/schema.json'));
+  const loadAddon = async () => ({
+    enrich: (model: Model) => ({ ...model, groups: [...model.groups, { name: 'Enriched', tables: ['dbo.Orders'] }] }),
+    render: (model: Model) => ({ 'index.html': `<html>${model.groups.map((g) => g.name).join(',')}</html>` }),
+  });
+  const a = io();
+  assert.equal(await main(['render'], { cwd, loadAddon, ...a.io }), 0);
+  assert.equal(readFileSync(join(cwd, 'docs/index.html'), 'utf8'), '<html>Enriched</html>');
+  assert.match(readFileSync(join(cwd, 'docs/README.md'), 'utf8'), /## Enriched/);
+  assert.match(a.out.join('\n'), /8 files/);
+
+  const b = io();
+  const missingAddon = async () => { throw new Error('Add-on "explorer" is not installed: npm install dbtour-addon-explorer'); };
+  assert.equal(await main(['render'], { cwd, loadAddon: missingAddon, ...b.io }), 2);
+  assert.match(b.err.join('\n'), /npm install dbtour-addon-explorer/);
 });

@@ -32,3 +32,12 @@ test('resolveConnection reads the named environment variable and refuses a liter
   assert.throws(() => resolveConnection('Server=x;Password=y', { DBTOUR_MSSQL: 'Server=x' }), /environment variable/);
   assert.equal(resolveConnection(undefined, {}), undefined);
 });
+
+test('addons are a list of names or maps, default to none, and the default config asks for the explorer', () => {
+  assert.deepEqual(parseConfig('sources:\n  - type: mssql\n    name: Shop\n').addons, []);
+  const config = parseConfig('sources:\n  - type: mssql\n    name: Shop\naddons:\n  - explorer\n  - type: lint\n    module: ./lint.ts\n');
+  assert.deepEqual(config.addons, [{ type: 'explorer' }, { type: 'lint', module: './lint.ts' }]);
+  assert.throws(() => parseConfig('sources:\n  - type: mssql\n    name: Shop\naddons: explorer\n'), /addons must be a list/);
+  assert.throws(() => parseConfig('sources:\n  - type: mssql\n    name: Shop\naddons:\n  - module: x\n'), /addons\[0\]\.type/);
+  assert.deepEqual(parseConfig(defaultConfigText('mssql')).addons, [{ type: 'explorer' }]);
+});

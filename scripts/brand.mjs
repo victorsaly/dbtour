@@ -1,0 +1,73 @@
+// Writes the brand files from the mark's one geometry: brand/mark.svg and mark-light.svg, brand/logo.svg and
+// logo-light.svg (mark and wordmark), and brand/social.png (1200 by 630, for link previews) drawn in Google
+// Chrome through Playwright. Run after changing packages/addon-explorer/src/mark.ts; the files are committed.
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { markCylinderBody, markCylinderTop, markPulse, markSvg } from '../packages/addon-explorer/src/mark.ts';
+
+const repo = fileURLToPath(new URL('..', import.meta.url));
+const out = `${repo}brand`;
+mkdirSync(out, { recursive: true });
+
+const ink = '#0b0b0b';
+const paper = '#f5f5f5';
+const muted = { dark: '#5c5c5c', light: '#a3a3a3' };
+writeFileSync(`${out}/mark.svg`, markSvg(96, ink, 1.5) + '\n');
+writeFileSync(`${out}/mark-light.svg`, markSvg(96, paper, 1.5) + '\n');
+
+// The wordmark is set from the page's own font files, so the logo needs nothing installed.
+const fonts = `${repo}packages/addon-explorer/fonts/`;
+const archivo = readFileSync(`${fonts}archivo-latin.woff2`).toString('base64');
+const mono = readFileSync(`${fonts}red-hat-mono-latin.woff2`).toString('base64');
+const fontFaces =
+  `@font-face{font-family:Archivo;font-weight:100 900;src:url(data:font/woff2;base64,${archivo}) format('woff2')}` +
+  `@font-face{font-family:'Red Hat Mono';font-weight:300 700;src:url(data:font/woff2;base64,${mono}) format('woff2')}`;
+
+/** The mark and the wordmark: "db" in the mono face, muted, "tour" in the sans at full ink. */
+function logo(inkColour, mutedColour) {
+  const { cx, cy, rx, ry } = markCylinderTop;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="220" height="48" viewBox="0 0 220 48" fill="none">` +
+    `<style>${fontFaces}</style>` +
+    `<g transform="translate(4 4) scale(1.6667)" stroke="${inkColour}" stroke-width="1.5" stroke-linejoin="miter" stroke-linecap="butt">` +
+    `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"/><path d="${markCylinderBody}"/><polyline points="${markPulse}"/></g>` +
+    `<text x="56" y="34" font-size="30"><tspan fill="${mutedColour}" font-family="'Red Hat Mono', ui-monospace, monospace" font-weight="500">db</tspan>` +
+    `<tspan fill="${inkColour}" font-family="Archivo, system-ui, sans-serif" font-weight="600" letter-spacing="-0.6">tour</tspan></text>` +
+    `</svg>`
+  );
+}
+writeFileSync(`${out}/logo.svg`, logo(ink, muted.dark) + '\n');
+writeFileSync(`${out}/logo-light.svg`, logo(paper, muted.light) + '\n');
+
+// The social image: the black sleeve, the mark, the wordmark, one line, and the plot of a table.
+const social = `<!doctype html><html><head><meta charset="utf-8"><style>${fontFaces}
+html,body{margin:0;background:#0b0b0b;color:#f5f5f5;font-family:Archivo,system-ui,sans-serif}
+.sheet{position:relative;width:1200px;height:630px;padding:72px 80px;box-sizing:border-box}
+.head{display:flex;align-items:center;gap:22px}
+.word{font-size:56px;letter-spacing:-1.5px}
+.db{font-family:'Red Hat Mono',ui-monospace,monospace;font-weight:500;color:#a3a3a3;letter-spacing:0;font-size:52px}
+.tour{font-weight:600}
+.line{margin-top:28px;font-size:30px;max-width:760px;line-height:1.3;color:#f5f5f5}
+.sub{margin-top:14px;font-size:20px;color:#a3a3a3}
+.plot{position:absolute;left:80px;right:80px;bottom:92px;height:120px}
+.plot path{fill:none;stroke:#f5f5f5;stroke-width:2}
+.cat{position:absolute;right:80px;bottom:56px;font-family:'Red Hat Mono',ui-monospace,monospace;font-size:16px;letter-spacing:.14em;color:#a3a3a3}
+</style></head><body><div class="sheet">
+<div class="head">${markSvg(72, '#f5f5f5', 1.5)}<span class="word"><span class="db">db</span><span class="tour">tour</span></span></div>
+<div class="line">Tour your database. Every table an entry, every relation a line, in one file that opens anywhere.</div>
+<div class="sub">Schema docs from the catalogue your database already is. SQL Server first.</div>
+<svg class="plot" viewBox="0 0 1040 120" preserveAspectRatio="none"><path vector-effect="non-scaling-stroke" d="M0,118 L40,118 L60,4 L80,118 L130,118 L150,52 L170,118 L220,118 L240,100 L260,118 L310,118 L330,100 L350,118 L400,118 L420,66 L440,118 L490,118 L510,100 L530,118 L580,118 L600,4 L620,118 L670,118 L690,100 L710,118 L760,118 L780,52 L800,118 L850,118 L870,100 L890,118 L940,118 L960,100 L980,118 L1040,118"/></svg>
+<div class="cat">github.com/victorsaly/dbtour</div>
+</div></body></html>`;
+const page = `${out}/social.html`;
+writeFileSync(page, social);
+const { chromium } = createRequire(`${repo}package.json`)('playwright-core');
+const browser = await chromium.launch({ channel: 'chrome' });
+const tab = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 2 });
+await tab.goto(pathToFileURL(page).href);
+await tab.waitForTimeout(300);
+await tab.screenshot({ path: `${out}/social.png` });
+await browser.close();
+unlinkSync(page);
+console.log('Wrote brand/mark.svg, mark-light.svg, logo.svg, logo-light.svg, social.png');

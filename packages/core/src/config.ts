@@ -11,10 +11,18 @@ export interface SourceConfig {
   [option: string]: unknown;
 }
 
+export interface AddonConfig {
+  type: string;
+  /** A module to import instead of dbtour-addon-<type>. */
+  module?: string;
+  [option: string]: unknown;
+}
+
 export interface Config {
   out: string;
   notes: string;
   sources: SourceConfig[];
+  addons: AddonConfig[];
 }
 
 export const configFile = 'dbtour.yaml';
@@ -36,7 +44,21 @@ export function parseConfig(text: string): Config {
     out: typeof doc.out === 'string' ? doc.out : 'docs/dbtour',
     notes: typeof doc.notes === 'string' ? doc.notes : 'dbtour.notes.yaml',
     sources,
+    addons: parseAddons(doc.addons),
   };
+}
+
+/** `addons: [explorer]` or `addons: [{ type: explorer, module: ./page.ts }]`; none when absent. */
+function parseAddons(value: unknown): AddonConfig[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error('addons must be a list of add-on names, like [explorer]');
+  return value.map((entry, i): AddonConfig => {
+    if (typeof entry === 'string' && entry !== '') return { type: entry };
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) throw new Error(`addons[${i}] must be a name or a map with type`);
+    const map = entry as Record<string, unknown>;
+    if (typeof map.type !== 'string' || map.type === '') throw new Error(`addons[${i}].type is required: explorer, for instance`);
+    return { ...map, type: map.type };
+  });
 }
 
 export function defaultConfigText(type: string): string {
@@ -50,6 +72,9 @@ sources:
     connection: \${${variable}}
 # Descriptions, relations and groups the database cannot say. Optional.
 notes: dbtour.notes.yaml
+# What else render writes. explorer is the page: npm install --save-dev dbtour-addon-explorer
+addons:
+  - explorer
 `;
 }
 

@@ -52,7 +52,7 @@ table or the canvas in the centre, relations and notes on the right.
   Never the whole schema. React Flow for the canvas, elkjs for layout. Groups from the notes are named views.
 - Endpoints grouped by tag, each with parameters and responses and "touches" links to tables. A table shows
   the endpoints that touch it.
-- "Ask Claude" copies the selected tables and endpoints as a prompt.
+- "Copy for …" copies the selected tables and endpoints as a prompt for whichever agent the reader uses.
 - Dark mode follows the system. Works opened from a file, with no network.
 
 ## Local and deployed
@@ -71,9 +71,9 @@ to cite and runs the result through the source with a read-only login and a row 
 ## Order of work
 
 1. **Core, `source-mssql`, Markdown with Mermaid.** Replaces dbschema-markdown, keeping descriptions and
-   computed columns, fixing composite keys. ← here
-2. The page: search, table view, neighbourhood diagram.
-3. The skill and the SQL add-on.
+   computed columns, fixing composite keys.
+2. **The page**: search, table view, neighbourhood diagram.
+3. The skill and the SQL add-on. ← here
 4. `source-openapi` and table-to-endpoint links.
 5. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`.
 6. Deploy workflow, `check`, `addon-lint`.
