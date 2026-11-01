@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.2.2 (unreleased)
+## 0.2.3 (unreleased)
+
+- `npm run release -- --publish` publishes a version the workflow has already tagged, from a checkout of
+  that tag, which is how a version gets to npm until npm trusts the workflow, or after its publish failed.
+  It used to refuse because the tag existed, and after a successful publish it crashed. It asks npm first
+  and publishes only the packages npm does not have at that version, so a publish that stopped part way can
+  simply be run again; if npm cannot be asked, it stops before publishing anything. A version's release
+  notes no longer take the section of a longer version it is the start of (0.2.2 and 0.2.20). The release
+  script has tests, run by `npm test`.
+- The plan gains its seventh milestone, showing it: a page on skills.victorsaly.com with a film and the live
+  example, recorded from `examples/shop`, once milestones 3 to 6 are released.
+
+## 0.2.2 (1 November 2026)
 
 - Releases are automatic. Merging to main with a new version tags it, creates the GitHub release from
   that version's changelog section, and publishes the packages to npm with provenance through trusted

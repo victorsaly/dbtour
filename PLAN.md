@@ -68,6 +68,27 @@ A thin layer over the command: when to use it, the extract-render-show-commit fl
 queries from `schema.json`. The SQL generator is the agent reading the model; the add-on gives it the tables
 to cite and runs the result through the source with a read-only login and a row limit.
 
+## Showing it
+
+Not before there is enough to show. Once milestones 3 to 6 are released (the skill installs with one
+command, a second database works, and a project can deploy its page and check it in CI), dbtour gets a card
+on [skills.victorsaly.com](https://skills.victorsaly.com/) and a page of its own at `/dbtour`, built the way
+[SideShot's](https://skills.victorsaly.com/sideshot) is:
+
+- The pitch in one line, the install command with a copy button, the agents it works with.
+- A film under a minute long, with sound, hosted on the site: an agent asked to document a database runs
+  `extract` and `render`, opens the page, searches, follows a relation, grows the diagram and copies a table
+  for itself.
+- The page itself, live. The rendered example is one HTML file, so the site carries it as it is and the
+  reader explores a real catalogue rather than pictures of one.
+- A section for each thing it does (notes over a database you cannot alter, the map, copy for any agent,
+  deploy and check), each with a still, then what it needs and the other ways to install it.
+
+The page lives in the skills site's repository. This repository keeps what the page is made from:
+`examples/shop` and a script that records the film and the stills from it, so they are made again on each
+release rather than going stale. dbtour.dev, once registered, points there. Until then the README is the only
+shop window, and nothing goes on the page before it is released.
+
 ## Order of work
 
 1. **Core, `source-mssql`, Markdown with Mermaid.** Replaces dbschema-markdown, keeping descriptions and
@@ -77,6 +98,8 @@ to cite and runs the result through the source with a read-only login and a row 
 4. `source-openapi` and table-to-endpoint links.
 5. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`.
 6. Deploy workflow, `check`, `addon-lint`.
+7. **Showing it**: the page on skills.victorsaly.com with its film and the live example, the script that
+   records them, once 3 to 6 are released.
 
 ## Borrowed from
 
