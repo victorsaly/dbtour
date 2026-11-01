@@ -187,7 +187,8 @@ function readConfig(io: Io): Config {
   return parseConfig(readFileSync(path, 'utf8'));
 }
 
-async function extract({ io, config }: Project): Promise<number> {
+/** `next` is what the last line tells to do: render, unless the caller renders straight after (read). */
+async function extract({ io, config }: Project, next = ' Run dbtour render to write the docs.'): Promise<number> {
   const env = io.env ?? process.env;
   const load = io.load ?? ((source: SourceConfig) => loadSource(source, importer(io.cwd)));
   const model: Model = { ...emptyModel(), generatedAt: new Date().toISOString() };
@@ -220,7 +221,7 @@ async function extract({ io, config }: Project): Promise<number> {
   const path = join(io.cwd, config.out, modelFile);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(model, null, 2) + '\n');
-  io.log(`Wrote ${join(config.out, modelFile)}. Run dbtour render to write the docs.`);
+  io.log(`Wrote ${join(config.out, modelFile)}.${next}`);
   return 0;
 }
 
@@ -583,7 +584,7 @@ async function reader(io: Io, name: string | undefined, options: ReaderOptions):
 
 async function read(io: Io, name: string | undefined): Promise<number> {
   const project = await projectFor(io, name, { catalogue: true, setUpOnly: true });
-  const extracted = await extract(project);
+  const extracted = await extract(project, '');
   if (extracted !== 0) return extracted;
   const rendered = await render(project);
   const home = homeOf(io);
