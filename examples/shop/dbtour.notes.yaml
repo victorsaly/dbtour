@@ -1,0 +1,15 @@
+tables:
+  dbo.Orders:
+    description: One row per checkout. The lines are in dbo.OrderLines.
+    columns:
+      Status: 0 draft, 1 paid, 2 shipped, 9 cancelled
+  dbo.Products:
+    description: What can be ordered. Sku is what the warehouse calls it.
+relations:
+  # vOrderTotals is a view, so the database declares nothing; the notes say where its rows come from.
+  - from: dbo.vOrderTotals.OrderId
+    to: dbo.Orders.Id
+groups:
+  - name: Billing
+    description: Money in.
+    tables: [dbo.Orders, dbo.OrderLines, billing.Invoices]

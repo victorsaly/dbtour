@@ -1,0 +1,20 @@
+{
+  // Type checks the TypeScript as Node runs it: no build, nothing emitted. Node 22.18+ strips the types
+  // itself, so the code may only use syntax that strips cleanly (erasableSyntaxOnly) and must import
+  // files by their real .ts name.
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true
+  },
+  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "packages/*/bin/*.mjs", "eslint.config.mjs"]
+}

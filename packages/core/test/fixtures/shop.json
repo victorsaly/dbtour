@@ -1,0 +1,122 @@
+{
+  "dbtour": 1,
+  "databases": [
+    {
+      "name": "Shop",
+      "driver": "mssql",
+      "version": "16.0.1000",
+      "description": "The web shop.",
+      "schemas": [
+        {
+          "name": "dbo",
+          "tables": [
+            {
+              "name": "Customers",
+              "kind": "table",
+              "description": "One row per account.",
+              "columns": [
+                { "name": "Id", "type": "int", "nullable": false, "identity": true },
+                { "name": "Email", "type": "nvarchar(320)", "nullable": false, "description": "Login address." },
+                { "name": "Name", "type": "nvarchar(100)", "nullable": true }
+              ],
+              "primaryKey": ["Id"],
+              "indexes": [
+                { "name": "UX_Customers_Email", "columns": ["Email"], "unique": true }
+              ],
+              "constraints": [
+                { "name": "PK_Customers", "kind": "primary", "columns": ["Id"] },
+                { "name": "UX_Customers_Email", "kind": "unique", "columns": ["Email"] }
+              ]
+            },
+            {
+              "name": "Orders",
+              "kind": "table",
+              "columns": [
+                { "name": "Id", "type": "int", "nullable": false, "identity": true },
+                { "name": "CustomerId", "type": "int", "nullable": false },
+                { "name": "Status", "type": "tinyint", "nullable": false, "default": "((0))" },
+                { "name": "CreatedAt", "type": "datetime2(7)", "nullable": false, "default": "(sysutcdatetime())" },
+                { "name": "Total", "type": "decimal(18,2)", "nullable": true, "computed": "([Net]+[Tax])" }
+              ],
+              "primaryKey": ["Id"],
+              "indexes": [
+                { "name": "IX_Orders_CustomerId", "columns": ["CustomerId"], "unique": false }
+              ],
+              "constraints": [
+                { "name": "PK_Orders", "kind": "primary", "columns": ["Id"] },
+                { "name": "CK_Orders_Status", "kind": "check", "columns": ["Status"], "definition": "([Status]<=(9))" }
+              ]
+            },
+            {
+              "name": "OrderLines",
+              "kind": "table",
+              "columns": [
+                { "name": "OrderId", "type": "int", "nullable": false },
+                { "name": "ProductId", "type": "int", "nullable": false },
+                { "name": "Quantity", "type": "int", "nullable": false }
+              ],
+              "primaryKey": ["OrderId", "ProductId"],
+              "indexes": [],
+              "constraints": [
+                { "name": "PK_OrderLines", "kind": "primary", "columns": ["OrderId", "ProductId"] }
+              ]
+            },
+            {
+              "name": "Products",
+              "kind": "table",
+              "columns": [
+                { "name": "Id", "type": "int", "nullable": false, "identity": true },
+                { "name": "Sku", "type": "varchar(32)", "nullable": false },
+                { "name": "Price", "type": "money", "nullable": false }
+              ],
+              "primaryKey": ["Id"],
+              "indexes": [],
+              "constraints": [
+                { "name": "PK_Products", "kind": "primary", "columns": ["Id"] }
+              ]
+            },
+            {
+              "name": "vOrderTotals",
+              "kind": "view",
+              "columns": [
+                { "name": "OrderId", "type": "int", "nullable": false },
+                { "name": "Total", "type": "decimal(38,2)", "nullable": true }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW dbo.vOrderTotals AS SELECT OrderId, SUM(Quantity) AS Total FROM dbo.OrderLines GROUP BY OrderId"
+            }
+          ]
+        },
+        {
+          "name": "billing",
+          "tables": [
+            {
+              "name": "Invoices",
+              "kind": "table",
+              "columns": [
+                { "name": "Id", "type": "int", "nullable": false, "identity": true },
+                { "name": "OrderId", "type": "int", "nullable": false },
+                { "name": "IssuedAt", "type": "date", "nullable": false }
+              ],
+              "primaryKey": ["Id"],
+              "indexes": [],
+              "constraints": [
+                { "name": "PK_Invoices", "kind": "primary", "columns": ["Id"] }
+              ]
+            }
+          ]
+        }
+      ],
+      "relations": [
+        { "name": "FK_Orders_Customers", "from": { "table": "dbo.Orders", "columns": ["CustomerId"] }, "to": { "table": "dbo.Customers", "columns": ["Id"] } },
+        { "name": "FK_OrderLines_Orders", "from": { "table": "dbo.OrderLines", "columns": ["OrderId"] }, "to": { "table": "dbo.Orders", "columns": ["Id"] } },
+        { "name": "FK_OrderLines_Products", "from": { "table": "dbo.OrderLines", "columns": ["ProductId"] }, "to": { "table": "dbo.Products", "columns": ["Id"] } },
+        { "name": "FK_Invoices_Orders", "from": { "table": "billing.Invoices", "columns": ["OrderId"] }, "to": { "table": "dbo.Orders", "columns": ["Id"] } }
+      ]
+    }
+  ],
+  "apis": [],
+  "links": [],
+  "groups": []
+}

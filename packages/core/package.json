@@ -1,0 +1,38 @@
+{
+  "name": "dbtour",
+  "version": "0.1.0",
+  "description": "Tour your database and its API: searchable docs, relations and diagrams, generated from the schema, kept in the repo.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Victor Saly",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victorsaly/dbtour.git",
+    "directory": "packages/core"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "dbtour": "bin/dbtour.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "keywords": [
+    "database",
+    "documentation",
+    "schema",
+    "erd",
+    "mssql",
+    "markdown",
+    "mermaid"
+  ],
+  "dependencies": {
+    "yaml": "^2.8.1"
+  }
+}

@@ -1,0 +1,7 @@
+# The example: a model already extracted (docs/schema.json), so `npm run example` renders without a server.
+out: docs
+sources:
+  - type: mssql
+    name: Shop
+    connection: ${DBTOUR_MSSQL}
+notes: dbtour.notes.yaml

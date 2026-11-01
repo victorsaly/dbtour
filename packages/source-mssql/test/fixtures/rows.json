@@ -1,0 +1,62 @@
+{
+  "info": [{ "name": "Shop", "version": "16.0.4135.4", "description": "The web shop." }],
+  "tables": [
+    { "schema": "billing", "name": "Invoices", "kind": "table", "description": null, "definition": null },
+    { "schema": "dbo", "name": "Customers", "kind": "table", "description": "One row per account.", "definition": null },
+    { "schema": "dbo", "name": "OrderLines", "kind": "table", "description": null, "definition": null },
+    { "schema": "dbo", "name": "Orders", "kind": "table", "description": null, "definition": null },
+    { "schema": "dbo", "name": "Shipments", "kind": "table", "description": null, "definition": null },
+    { "schema": "dbo", "name": "sysdiagrams_old", "kind": "table", "description": null, "definition": null },
+    { "schema": "dbo", "name": "vOrderTotals", "kind": "view", "description": null, "definition": "CREATE VIEW dbo.vOrderTotals AS SELECT OrderId, SUM(Quantity) AS Total FROM dbo.OrderLines GROUP BY OrderId" }
+  ],
+  "columns": [
+    { "schema": "billing", "table": "Invoices", "name": "Id", "position": 1, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": true, "default": null, "computed": null, "description": null },
+    { "schema": "billing", "table": "Invoices", "name": "OrderId", "position": 2, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "Customers", "name": "Id", "position": 1, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": true, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "Customers", "name": "Email", "position": 2, "type": "nvarchar", "maxLength": 640, "precision": 0, "scale": 0, "nullable": false, "identity": false, "default": null, "computed": null, "description": "Login address." },
+    { "schema": "dbo", "table": "Customers", "name": "Notes", "position": 3, "type": "varchar", "maxLength": -1, "precision": 0, "scale": 0, "nullable": true, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "OrderLines", "name": "OrderId", "position": 1, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "OrderLines", "name": "LineNo", "position": 2, "type": "smallint", "maxLength": 2, "precision": 5, "scale": 0, "nullable": false, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "OrderLines", "name": "Quantity", "position": 3, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": false, "default": "((1))", "computed": null, "description": null },
+    { "schema": "dbo", "table": "Orders", "name": "Id", "position": 1, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": true, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "Orders", "name": "CustomerId", "position": 2, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "Orders", "name": "Status", "position": 3, "type": "tinyint", "maxLength": 1, "precision": 3, "scale": 0, "nullable": false, "identity": false, "default": "((0))", "computed": null, "description": null },
+    { "schema": "dbo", "table": "Orders", "name": "CreatedAt", "position": 4, "type": "datetime2", "maxLength": 8, "precision": 27, "scale": 7, "nullable": false, "identity": false, "default": "(sysutcdatetime())", "computed": null, "description": null },
+    { "schema": "dbo", "table": "Orders", "name": "Net", "position": 5, "type": "decimal", "maxLength": 9, "precision": 18, "scale": 2, "nullable": false, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "Orders", "name": "Total", "position": 6, "type": "decimal", "maxLength": 9, "precision": 19, "scale": 2, "nullable": true, "identity": false, "default": null, "computed": "([Net]*(1.2))", "description": null },
+    { "schema": "dbo", "table": "Shipments", "name": "Id", "position": 1, "type": "uniqueidentifier", "maxLength": 16, "precision": 0, "scale": 0, "nullable": false, "identity": false, "default": "(newid())", "computed": null, "description": null },
+    { "schema": "dbo", "table": "Shipments", "name": "OrderId", "position": 2, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "Shipments", "name": "LineNo", "position": 3, "type": "smallint", "maxLength": 2, "precision": 5, "scale": 0, "nullable": false, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "sysdiagrams_old", "name": "Id", "position": 1, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "vOrderTotals", "name": "OrderId", "position": 1, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": false, "identity": false, "default": null, "computed": null, "description": null },
+    { "schema": "dbo", "table": "vOrderTotals", "name": "Total", "position": 2, "type": "int", "maxLength": 4, "precision": 10, "scale": 0, "nullable": true, "identity": false, "default": null, "computed": null, "description": null }
+  ],
+  "keys": [
+    { "schema": "billing", "table": "Invoices", "name": "PK_Invoices", "kind": "PK", "column": "Id", "ordinal": 1 },
+    { "schema": "dbo", "table": "Customers", "name": "PK_Customers", "kind": "PK", "column": "Id", "ordinal": 1 },
+    { "schema": "dbo", "table": "Customers", "name": "UQ_Customers_Email", "kind": "UQ", "column": "Email", "ordinal": 1 },
+    { "schema": "dbo", "table": "OrderLines", "name": "PK_OrderLines", "kind": "PK", "column": "LineNo", "ordinal": 2 },
+    { "schema": "dbo", "table": "OrderLines", "name": "PK_OrderLines", "kind": "PK", "column": "OrderId", "ordinal": 1 },
+    { "schema": "dbo", "table": "Orders", "name": "PK_Orders", "kind": "PK", "column": "Id", "ordinal": 1 },
+    { "schema": "dbo", "table": "Shipments", "name": "PK_Shipments", "kind": "PK", "column": "Id", "ordinal": 1 }
+  ],
+  "foreignKeys": [
+    { "name": "FK_Invoices_Orders", "schema": "billing", "table": "Invoices", "column": "OrderId", "toSchema": "dbo", "toTable": "Orders", "toColumn": "Id", "ordinal": 1, "onDelete": "NO_ACTION", "onUpdate": "NO_ACTION" },
+    { "name": "FK_OrderLines_Orders", "schema": "dbo", "table": "OrderLines", "column": "OrderId", "toSchema": "dbo", "toTable": "Orders", "toColumn": "Id", "ordinal": 1, "onDelete": "CASCADE", "onUpdate": "NO_ACTION" },
+    { "name": "FK_Orders_Customers", "schema": "dbo", "table": "Orders", "column": "CustomerId", "toSchema": "dbo", "toTable": "Customers", "toColumn": "Id", "ordinal": 1, "onDelete": "NO_ACTION", "onUpdate": "NO_ACTION" },
+    { "name": "FK_Shipments_OrderLines", "schema": "dbo", "table": "Shipments", "column": "LineNo", "toSchema": "dbo", "toTable": "OrderLines", "toColumn": "LineNo", "ordinal": 2, "onDelete": "NO_ACTION", "onUpdate": "NO_ACTION" },
+    { "name": "FK_Shipments_OrderLines", "schema": "dbo", "table": "Shipments", "column": "OrderId", "toSchema": "dbo", "toTable": "OrderLines", "toColumn": "OrderId", "ordinal": 1, "onDelete": "NO_ACTION", "onUpdate": "NO_ACTION" }
+  ],
+  "indexes": [
+    { "schema": "dbo", "table": "Customers", "name": "PK_Customers", "unique": true, "primary": true, "column": "Id", "ordinal": 1, "included": false },
+    { "schema": "dbo", "table": "Customers", "name": "UQ_Customers_Email", "unique": true, "primary": false, "column": "Email", "ordinal": 1, "included": false },
+    { "schema": "dbo", "table": "Orders", "name": "IX_Orders_CustomerId", "unique": false, "primary": false, "column": "CustomerId", "ordinal": 1, "included": false },
+    { "schema": "dbo", "table": "Orders", "name": "IX_Orders_CustomerId", "unique": false, "primary": false, "column": "Status", "ordinal": 0, "included": true },
+    { "schema": "dbo", "table": "Orders", "name": "IX_Orders_CustomerId", "unique": false, "primary": false, "column": "CreatedAt", "ordinal": 0, "included": true },
+    { "schema": "dbo", "table": "Orders", "name": "PK_Orders", "unique": true, "primary": true, "column": "Id", "ordinal": 1, "included": false }
+  ],
+  "checks": [
+    { "schema": "dbo", "table": "OrderLines", "name": "CK_OrderLines_Quantity", "definition": "([Quantity]>(0))", "column": "Quantity" },
+    { "schema": "dbo", "table": "Orders", "name": "CK_Orders_Status", "definition": "([Status]<=(9))", "column": "Status" }
+  ]
+}

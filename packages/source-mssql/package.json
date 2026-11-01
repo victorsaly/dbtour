@@ -1,0 +1,35 @@
+{
+  "name": "dbtour-source-mssql",
+  "version": "0.1.0",
+  "description": "SQL Server source for dbtour: tables, views, columns, keys, relations, indexes, descriptions.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Victor Saly",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victorsaly/dbtour.git",
+    "directory": "packages/source-mssql"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "dbtour",
+    "mssql",
+    "sql-server",
+    "schema"
+  ],
+  "dependencies": {
+    "mssql": "^12.7.13"
+  },
+  "devDependencies": {
+    "@types/mssql": "^9.1.8",
+    "dbtour": "0.1.0"
+  }
+}

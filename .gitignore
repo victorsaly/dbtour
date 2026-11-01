@@ -1,0 +1,5 @@
+node_modules
+.DS_Store
+# What `npm run example` renders; the example's schema.json is kept.
+examples/*/docs/README.md
+examples/*/docs/tables/
