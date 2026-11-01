@@ -15,7 +15,11 @@
   relation in the notes between two databases is refused, since relations stay inside one.
 - `validate()` wants each database named apart, without a dot, a colon or a slash, once there are several:
   `extract` stops on two sources with the same `name` and says to rename one.
-- The SQL `path` writes keeps the database out of its names, since it runs in that database.
+- The SQL `path` writes keeps the database out of its names, since it runs in that database; with one
+  database a colon in a name is part of it and stays.
+- The Markdown's links are URLs: a space, a `#` or a colon in a database, schema or table name is encoded,
+  so the link reaches its page. The files keep their names.
+- The skill says how to read and write a name with its database.
 
 ## 0.6.0 (1 November 2026)
 

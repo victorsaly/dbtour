@@ -34,7 +34,6 @@ test('several databases name each table Database:schema.table, in its relations,
   assert.deepEqual(model.links[0].tables, ['Billing:dbo.Payments']);
   assert.equal(model.databases[0].schemas[0].tables[1].temporal?.history, 'Sales:dbo.InvoicesHistory', 'a history table is named in its own database');
   assert.equal(model.databases[0].schemas[0].tables[2].historyOf, 'Sales:dbo.Invoices');
-  assert.deepEqual(scope(model), model, 'scoping twice is scoping once');
   assert.equal(validate(model).ok, true, 'a scoped model is still a model');
 });
 
@@ -123,4 +122,43 @@ test('the MCP tools name tables with their database, and the SQL they write leav
   assert.match(call(model, 'path', { from: 'invoices', to: 'payments' }).text, /Sales:dbo\.Invoices is in Sales and Billing:dbo\.Payments in Billing/);
   assert.match(call(model, 'overview', {}).text, /\| Sales:dbo\.Invoices \|/);
   assert.match(call(model, 'search', { query: 'payments' }).text, /- table Billing:dbo\.Payments/);
+});
+
+test('a schema the source itself named Sales:dbo stays apart from dbo, in its folder and its links', () => {
+  const raw = twoDatabases();
+  raw.databases[0].schemas.push({ name: 'Sales:dbo', tables: [{ name: 'Customers', kind: 'table', columns: [], indexes: [], constraints: [] }] });
+  const model = scope(raw);
+  assert.deepEqual(model.databases[0].schemas.map((s) => s.name), ['Sales:dbo', 'Sales:Sales:dbo']);
+  assert.equal(findTable(model, 'Sales:dbo.Customers')?.schema.name, 'Sales:dbo');
+  assert.equal(findTable(model, 'Sales:Sales:dbo.Customers')?.schema.name, 'Sales:Sales:dbo');
+  const files = Object.keys(renderMarkdown(model));
+  assert.ok(files.includes('tables/Sales/dbo.Customers.md') && files.includes('tables/Sales/Sales:dbo.Customers.md'), files.join('\n'));
+});
+
+test('a link to a table page is a URL: a space, a hash or a colon in a name is encoded, the file keeps its name', () => {
+  const raw = twoDatabases();
+  raw.databases[0].name = 'Sales EU';
+  raw.databases[1].name = 'Billing#2';
+  raw.groups.push({ name: 'Money', tables: ['Sales EU:dbo.Invoices'] });
+  const files = renderMarkdown(scope(raw));
+  assert.ok('tables/Sales EU/dbo.Invoices.md' in files);
+  assert.match(files['README.md'], /\[Sales EU:dbo\.Invoices\]\(tables\/Sales%20EU\/dbo\.Invoices\.md\)/);
+  assert.match(files['README.md'], /\[Billing#2:dbo\.Payments\]\(tables\/Billing%232\/dbo\.Payments\.md\)/);
+  assert.match(files['README.md'], /- \[Sales EU:dbo\.Invoices\]\(tables\/Sales%20EU\/dbo\.Invoices\.md\)/, 'a group lists its tables with links that work');
+  const one = shop();
+  one.databases[0].schemas[0].tables[2].name = 'Order Lines';
+  for (const r of one.databases[0].relations) for (const end of [r.from, r.to]) if (end.table === 'dbo.OrderLines') end.table = 'dbo.Order Lines';
+  const shopFiles = renderMarkdown(one);
+  assert.match(shopFiles['README.md'], /\(tables\/dbo\.Order%20Lines\.md\)/);
+  assert.match(shopFiles['tables/dbo.Orders.md'], /\[dbo\.Order Lines\]\(dbo\.Order%20Lines\.md\)\.OrderId/);
+});
+
+test('one database keeps a colon that is part of a name: path quotes Sales:dbo whole', () => {
+  const model = shop();
+  const [dbo] = model.databases[0].schemas;
+  dbo.name = 'Sales:dbo';
+  for (const r of model.databases[0].relations) for (const end of [r.from, r.to]) end.table = end.table.replace(/^dbo\./, 'Sales:dbo.');
+  const text = call(model, 'path', { from: 'Sales:dbo.OrderLines', to: 'Sales:dbo.Customers' }).text;
+  assert.ok(text.includes('FROM [Sales:dbo].[OrderLines]\nJOIN [Sales:dbo].[Orders] ON [Sales:dbo].[Orders].[Id] = [Sales:dbo].[OrderLines].[OrderId]'), text);
+  assert.equal(call(model, 'table', { ref: 'dbo.Orders' }).isError, true, 'with one database, a colon is not a database to leave out');
 });

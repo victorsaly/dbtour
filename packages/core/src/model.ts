@@ -236,7 +236,8 @@ export const databaseSeparator = ':';
  * share one name; with several databases, each schema is named `Database:schema` and every relation, group
  * and link, and every history table, names its tables that way. Whatever builds a ref from a schema and a table then builds a name
  * that is unique, and one database keeps the names it has always had. A group or link naming a table in
- * both databases is left for the notes to report. Scoping a scoped model changes nothing.
+ * both databases is left for the notes to report. It runs once, as the model is read: a schema a source
+ * itself named Sales:dbo becomes Sales:Sales:dbo, apart from its dbo, so nothing is taken as scoped already.
  */
 export function scope(model: Model): Model {
   if (model.databases.length < 2) return model;
@@ -244,20 +245,28 @@ export function scope(model: Model): Model {
   for (const database of scoped.databases) {
     const prefix = database.name + databaseSeparator;
     for (const schema of database.schemas) {
-      if (!schema.name.startsWith(prefix)) schema.name = prefix + schema.name;
+      schema.name = prefix + schema.name;
       for (const table of schema.tables) {
-        if (table.temporal && !table.temporal.history.startsWith(prefix)) table.temporal.history = prefix + table.temporal.history;
-        if (table.historyOf && !table.historyOf.startsWith(prefix)) table.historyOf = prefix + table.historyOf;
+        if (table.temporal) table.temporal.history = prefix + table.temporal.history;
+        if (table.historyOf) table.historyOf = prefix + table.historyOf;
       }
     }
-    for (const relation of database.relations) {
-      for (const end of [relation.from, relation.to]) if (!end.table.startsWith(prefix)) end.table = prefix + end.table;
-    }
+    for (const relation of database.relations) for (const end of [relation.from, relation.to]) end.table = prefix + end.table;
   }
   const qualify = (ref: string) => findTable(scoped, ref)?.ref ?? ref;
   for (const group of scoped.groups) group.tables = group.tables.map(qualify);
   for (const link of scoped.links) link.tables = link.tables.map(qualify);
   return scoped;
+}
+
+/**
+ * A ref as its own database names it, for SQL that runs there: Sales:dbo.Orders is dbo.Orders. Only a
+ * scoped model's database is taken off, so with one database a colon in a name stays part of it.
+ */
+export function localRef(model: Model, ref: string): string {
+  if (model.databases.length < 2) return ref;
+  const database = model.databases.find((d) => ref.startsWith(d.name + databaseSeparator));
+  return database ? ref.slice(database.name.length + databaseSeparator.length) : ref;
 }
 
 export interface Found {

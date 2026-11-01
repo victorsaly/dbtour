@@ -2,7 +2,7 @@
 // table, read it, join two) instead of being handed all of it. JSON-RPC, one message per line; written here
 // rather than taken from the SDK, since four methods are all it needs and core keeps its one dependency.
 // Read-only and structure only, like the model: there are no rows to give.
-import { databaseSeparator, findTables, tableRef, type Database, type Model, type Relation } from './model.ts';
+import { findTables, localRef, tableRef, type Database, type Model, type Relation } from './model.ts';
 import { driverName, formatCount, renderTableMarkdown } from './render/markdown.ts';
 import { buildIndex, search, type Hit } from './search.ts';
 
@@ -240,11 +240,6 @@ function searchText(model: Model, query: string, limit: number): string {
   return hits.map((h) => `- ${h.kind} ${h.title}: ${h.detail}`).join('\n');
 }
 
-/** A ref without its database: what an agent writes when it does not know there are several. */
-function withoutDatabase(ref: string): string {
-  return ref.slice(ref.indexOf(databaseSeparator) + 1);
-}
-
 /**
  * What an agent wrote, as the table it means: exact, then ignoring case, as the whole name, the name without
  * its database, or a bare table name. A name several tables answer to is a problem that lists them.
@@ -261,7 +256,11 @@ function resolve(model: Model, written: string): { ref: string } | { problem: st
   }
   const all = [...new Set(model.databases.flatMap((d) => d.schemas.flatMap((s) => s.tables.map((t) => tableRef(s.name, t.name)))))];
   const lower = wanted.toLowerCase();
-  const forms = (ref: string) => [ref, withoutDatabase(ref), withoutDatabase(ref).slice(withoutDatabase(ref).indexOf('.') + 1)];
+  // The whole name, the name an agent writes when it does not know there are several databases, the table's.
+  const forms = (ref: string) => {
+    const local = localRef(model, ref);
+    return [ref, local, local.slice(local.indexOf('.') + 1)];
+  };
   const matches = all.filter((ref) => forms(ref).some((form) => form.toLowerCase() === lower));
   if (matches.length === 1) return { ref: matches[0] };
   if (matches.length > 1) return several(matches);
@@ -292,9 +291,9 @@ function quote(driver: string, name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
-/** schema.table, quoted, without the database: the SQL runs in the database the path was found in. */
-function quoteRef(driver: string, ref: string, column?: string): string {
-  const local = withoutDatabase(ref);
+/** schema.table as its database names it, quoted: the SQL runs in the database the path was found in. */
+function quoteRef(model: Model, driver: string, ref: string, column?: string): string {
+  const local = localRef(model, ref);
   const dot = local.indexOf('.');
   const names = [local.slice(0, dot), local.slice(dot + 1), ...(column === undefined ? [] : [column])];
   return names.map((name) => quote(driver, name)).join('.');
@@ -318,13 +317,13 @@ function pathText(model: Model, from: string, to: string): string {
     return `No relation connects ${from} and ${to}, declared or in the notes. If they are related all the same, add the relation to dbtour.notes.yaml so the docs and this path know it.`;
   }
   const { driver } = best.database;
-  const lines = [`FROM ${quoteRef(driver, from)}`];
+  const lines = [`FROM ${quoteRef(model, driver, from)}`];
   let at = from;
   for (const step of best.steps) {
     const mine = step.forward ? step.relation.to.columns : step.relation.from.columns;
     const theirs = step.forward ? step.relation.from.columns : step.relation.to.columns;
-    const on = mine.map((column, i) => `${quoteRef(driver, step.table, column)} = ${quoteRef(driver, at, theirs[i] ?? theirs[0])}`).join(' AND ');
-    lines.push(`JOIN ${quoteRef(driver, step.table)} ON ${on}${step.relation.virtual ? ' -- from the notes, not a declared key' : ''}`);
+    const on = mine.map((column, i) => `${quoteRef(model, driver, step.table, column)} = ${quoteRef(model, driver, at, theirs[i] ?? theirs[0])}`).join(' AND ');
+    lines.push(`JOIN ${quoteRef(model, driver, step.table)} ON ${on}${step.relation.virtual ? ' -- from the notes, not a declared key' : ''}`);
     at = step.table;
   }
   const where = model.databases.length > 1 ? `In ${best.database.name}, ` : '';

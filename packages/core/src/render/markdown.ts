@@ -36,7 +36,7 @@ function renderIndex(model: Model): string {
       for (const table of schema.tables) {
         const ref = tableRef(schema.name, table.name);
         const size = !sized ? '' : table.stats ? ` ${formatCount(table.stats.rows)} | ${formatBytes(table.stats.dataBytes + table.stats.indexBytes)} |` : '  |  |';
-        parts.push(`| [${ref}](tables/${tableFile(ref)}) | ${table.kind} | ${table.columns.length} |${size} ${cell(table.description)} |`);
+        parts.push(`| [${ref}](${href(`tables/${tableFile(ref)}`)}) | ${table.kind} | ${table.columns.length} |${size} ${cell(table.description)} |`);
       }
     }
     parts.push('');
@@ -47,7 +47,7 @@ function renderIndex(model: Model): string {
   for (const group of model.groups) {
     parts.push(`## ${group.name}\n`);
     if (group.description) parts.push(`${group.description}\n`);
-    parts.push(group.tables.map((ref) => `- [${ref}](tables/${tableFile(ref)})`).join('\n') + '\n');
+    parts.push(group.tables.map((ref) => `- [${ref}](${href(`tables/${tableFile(ref)}`)})`).join('\n') + '\n');
     parts.push(mermaid(erDiagram(model, group.tables)));
   }
   const refs = model.databases.flatMap((d) => d.schemas.flatMap((s) => s.tables.map((t) => tableRef(s.name, t.name))));
@@ -180,8 +180,13 @@ export function tableFile(ref: string): string {
 function pageLink(from: string, to: string): string {
   const folder = (ref: string) => (ref.includes(databaseSeparator) ? ref.slice(0, ref.indexOf(databaseSeparator)) : '');
   const file = tableFile(to);
-  if (folder(from) === folder(to)) return file.slice(file.indexOf('/') + 1);
-  return (folder(from) ? '../' : '') + file;
+  if (folder(from) === folder(to)) return href(file.slice(file.indexOf('/') + 1));
+  return href((folder(from) ? '../' : '') + file);
+}
+
+/** A path as a link's destination: each part encoded, so a space or a # in a name still reaches its file. */
+function href(path: string): string {
+  return path.split('/').map((part) => (part === '..' ? part : encodeURIComponent(part))).join('/');
 }
 
 /** One table's page on its own: what the page hands to an agent. */
