@@ -13,3 +13,6 @@ packages/*/dist/
 .impeccable/build/
 .impeccable/mocks/
 .impeccable/questions/
+
+# What claude plugin eval writes; the cases themselves are committed.
+evals/results/

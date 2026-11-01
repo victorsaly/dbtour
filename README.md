@@ -5,7 +5,7 @@
 
 **Tour your database and its API.**
 
-[![version](https://img.shields.io/badge/version-0.5.0-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.6.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -77,6 +77,16 @@ It holds the structure and never the rows.
   security are sections of their own, like indexes and constraints.
 
 ## Ask Claude
+
+The dbtour skill teaches an agent when to reach for dbtour and how: set it up with the connection string kept
+in an environment variable, find a table a piece at a time, and write SQL only from the names the model has.
+
+```bash
+npx skills add victorsaly/dbtour                 # Claude Code, Codex, Cursor and other agents that read Agent Skills
+```
+
+In Claude Code the plugin brings the skill and connects the MCP server below in one go:
+`/plugin marketplace add victorsaly/dbtour`, then `/plugin install dbtour@dbtour`.
 
 `dbtour mcp` serves the model to an agent over the [Model Context Protocol](https://modelcontextprotocol.io),
 so Claude can find the table it needs, read it and join it, instead of being handed the whole schema:

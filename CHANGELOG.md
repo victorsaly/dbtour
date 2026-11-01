@@ -1,6 +1,23 @@
 # Changelog
 
-## 0.5.0 (unreleased)
+## 0.6.0 (unreleased)
+
+- The dbtour agent skill, the first half of the plan's fifth milestone. `npx skills add victorsaly/dbtour`
+  installs it in any agent that reads Agent Skills. It tells the agent when to reach for dbtour (documenting a
+  database, finding where data lives, explaining a schema, writing SQL against the project's database), how
+  to set it up with the connection string in an environment variable the person sets and never in a file or
+  the conversation, to ask the MCP server a piece at a time (overview, search, table, path), and to write SQL
+  only from names it has read: joins from the model's relations, `TOP` on large tables, protected columns
+  left out unless asked for. `reference.md` has the config, the notes and the MCP setup per client.
+- The repository is a Claude Code plugin: `/plugin marketplace add victorsaly/dbtour`, then
+  `/plugin install dbtour@dbtour`, brings the skill and starts `dbtour mcp` for the project. Its icon is
+  `brand/mark.png`, which `npm run brand` now draws.
+- Tests hold the skill to the code (every MCP tool and command it names exists, its version is the packages'),
+  and `evals/` has four cases for what an agent does with it, run with `claude plugin eval .`.
+- The plan records how the SQL add-on will run queries: through a read-only login of its own, never the
+  extract's connection.
+
+## 0.5.0 (1 November 2026)
 
 - `dbtour mcp`: the model over the Model Context Protocol, so Claude, or any agent that speaks it, asks
   about the database instead of being handed all of it. `claude mcp add dbtour -- npx dbtour mcp` in the

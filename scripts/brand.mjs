@@ -1,6 +1,6 @@
 // Writes the brand files from the mark's one geometry: brand/mark.svg and mark-light.svg, brand/logo.svg and
-// logo-light.svg (mark and wordmark), and brand/social.png (1200 by 630, for link previews) drawn in Google
-// Chrome through Playwright. Run after changing packages/addon-explorer/src/mark.ts; the files are committed.
+// logo-light.svg (mark and wordmark), brand/social.png (1200 by 630, for link previews) and brand/mark.png (256
+// square, the plugin's icon) drawn in Google Chrome through Playwright. Run after changing packages/addon-explorer/src/mark.ts; the files are committed.
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -68,6 +68,13 @@ const tab = await browser.newPage({ viewport: { width: 1200, height: 630 }, devi
 await tab.goto(pathToFileURL(page).href);
 await tab.waitForTimeout(300);
 await tab.screenshot({ path: `${out}/social.png` });
+// The plugin's icon: the mark in paper on the black sleeve, with room around it as a launcher crops it.
+const icon = `${out}/mark.html`;
+writeFileSync(icon, `<!doctype html><html><body style="margin:0;width:256px;height:256px;display:grid;place-items:center;background:${ink}">${markSvg(168, paper, 1.5)}</body></html>`);
+const square = await browser.newPage({ viewport: { width: 256, height: 256 } });
+await square.goto(pathToFileURL(icon).href);
+await square.screenshot({ path: `${out}/mark.png` });
 await browser.close();
 unlinkSync(page);
-console.log('Wrote brand/mark.svg, mark-light.svg, logo.svg, logo-light.svg, social.png');
+unlinkSync(icon);
+console.log('Wrote brand/mark.svg, mark-light.svg, logo.svg, logo-light.svg, social.png, mark.png');
