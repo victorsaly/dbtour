@@ -11,7 +11,7 @@ const repo = fileURLToPath(new URL('..', import.meta.url));
 const tsc = `${repo}node_modules/.bin/tsc`;
 
 // Core first: the others import it by name, which resolves to its dist/.
-for (const pkg of ['core', 'source-mssql', 'addon-explorer']) {
+for (const pkg of ['core', 'keychain', 'source-mssql', 'addon-explorer']) {
   execFileSync(tsc, ['-p', `${repo}packages/${pkg}/tsconfig.build.json`], { stdio: 'inherit' });
 }
 mkdirSync(`${repo}packages/source-mssql/dist`, { recursive: true });

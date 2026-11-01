@@ -31,3 +31,12 @@ test('loadAddon returns enrich and render when exported, and says what to instal
   await assert.rejects(loadAddon({ type: 'explorer' }, async () => { throw new Error('nope'); }), /npm install dbtour-addon-explorer/);
   await assert.rejects(loadAddon({ type: 'odd' }, async () => ({})), /enrich\(model\) or render\(model\)/);
 });
+
+test('a source that can be set up from dbtour offers all four setup functions, or none is used', async () => {
+  const extract = async () => ({ name: 'x', driver: 'mssql', schemas: [], relations: [] });
+  const fn = () => '';
+  const full = await loadSource({ type: 'fake', name: 'x' }, async () => ({ extract, connectionString: fn, readerState: fn, readerStatements: fn, createReader: fn }));
+  assert.deepEqual(Object.keys(full.setup ?? {}), ['connectionString', 'readerState', 'readerStatements', 'createReader']);
+  const partial = await loadSource({ type: 'fake', name: 'x' }, async () => ({ extract, connectionString: fn }));
+  assert.equal(partial.setup, undefined, 'half a setup is none');
+});
