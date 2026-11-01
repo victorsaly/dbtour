@@ -12,7 +12,7 @@
 // the workflow could not: it tags before it publishes, and skips the publish until npm trusts it, so a
 // tagged version that is not on npm yet is the usual case. A tag that exists is never moved: a new version
 // means a new patch. Through npm, pass the flag after `--` (`npm run release -- --publish`), or npm keeps it.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,11 +27,13 @@ const fail = (message, code = 1) => {
   process.exit(code);
 };
 
-const version = JSON.parse(readFileSync(join(repo, 'packages/core/package.json'), 'utf8')).version;
+// Core first: the others depend on its exact version.
+const workspaces = ['packages/core', 'packages/source-mssql', 'packages/addon-explorer'];
+const manifests = workspaces.map((workspace) => ({ workspace, ...JSON.parse(readFileSync(join(repo, workspace, 'package.json'), 'utf8')) }));
+const version = manifests[0].version;
 const tag = `v${version}`;
-for (const pkg of ['source-mssql', 'addon-explorer']) {
-  const other = JSON.parse(readFileSync(join(repo, `packages/${pkg}/package.json`), 'utf8')).version;
-  if (other !== version) fail(`packages/${pkg} is ${other} but core is ${version}: every package carries the same version. Bump them together, then run it again.`);
+for (const { workspace, version: other } of manifests) {
+  if (other !== version) fail(`${workspace} is ${other} but core is ${version}: every package carries the same version. Bump them together, then run it again.`);
 }
 
 /** The changelog section for this version, without its heading. */
@@ -54,7 +56,23 @@ if (args.has('--check')) {
   process.exit(0);
 }
 
-const publish = ['publish', '--workspace', 'packages/core', '--workspace', 'packages/source-mssql', '--workspace', 'packages/addon-explorer', '--access', 'public'];
+/**
+ * Publishes each package npm does not have at this version yet and returns how many that was. A publish
+ * that stopped part way leaves some on npm, which refuses them a second time, so asking first is what
+ * lets it be run again. Anything but npm's E404 is not an answer, and stops it before publishing.
+ */
+function publishMissing() {
+  const missing = [];
+  for (const { workspace, name } of manifests) {
+    const spec = `${name}@${version}`;
+    const view = spawnSync('npm', ['view', spec, 'version'], { cwd: repo, encoding: 'utf8' });
+    if (view.status === 0 && view.stdout.trim() === version) console.log(`${spec} is on npm already: skipped.`);
+    else if (view.status === 0 || /\bE404\b/.test(view.stderr)) missing.push(workspace);
+    else fail(`Could not ask npm whether ${spec} is published (${view.stderr.trim().split('\n')[0] || `exit ${view.status}`}). Check the network and npm login, then run it again.`);
+  }
+  for (const workspace of missing) run('npm', ['publish', '--workspace', workspace, '--access', 'public'], { stdio: 'inherit' });
+  return missing.length;
+}
 
 if (released && !args.has('--publish')) {
   fail(`${tag} is already on origin. A released tag is never moved: bump the version and release that. To publish ${tag} to npm, run npm run release -- --publish from a checkout of it.`, 3);
@@ -67,7 +85,7 @@ if (released) {
   if (run('git', ['rev-parse', 'HEAD']) !== run('git', ['rev-parse', `${tag}^{commit}`])) {
     fail(`The checkout is not ${tag}. Run git checkout ${tag}, then run it again.`);
   }
-  run('npm', publish, { stdio: 'inherit' });
+  if (!publishMissing()) fail(`Every package of ${tag} is on npm already: nothing to publish.`, 3);
   process.exit(0);
 }
 
@@ -83,7 +101,7 @@ writeFileSync(notesPath, text);
 console.log(run('gh', ['release', 'create', tag, '--title', version, '--notes-file', notesPath]));
 
 if (args.has('--publish')) {
-  run('npm', publish, { stdio: 'inherit' });
+  publishMissing();
 } else {
-  console.log(`Released ${tag}. To publish the packages by hand:\n  npm ${publish.join(' ')}`);
+  console.log(`Released ${tag}. To publish the packages by hand, from a checkout of it:\n  npm run release -- --publish`);
 }
