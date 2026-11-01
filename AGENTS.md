@@ -18,6 +18,10 @@ For coding agents changing this repository. The design is in [PLAN.md](PLAN.md);
   Chrome, skipped when there is none. `fonts/` holds the two OFL fonts the build inlines; `src/mark.ts` is the
   logo's geometry, which `npm run brand` draws into `brand/`. The look is recorded in `DESIGN.md`.
 - `examples/shop`: a small model, its notes and config; `npm run example` renders it.
+- `skills/dbtour`: the agent skill (`SKILL.md`, `reference.md`); `.claude-plugin/` makes the repository a
+  Claude Code plugin that brings the skill and starts `dbtour mcp`. `scripts/test/skill.test.ts` holds both
+  to the code: the MCP tools and commands they name, and their version. `evals/` checks what an agent does
+  with the skill (`claude plugin eval .`, run by hand, not in CI).
 
 ## How the code is written
 
@@ -44,7 +48,8 @@ npm run smoke   # the packed packages installed and run as a user would
 ## Rules
 
 - Write the failing test first, then the fix.
-- One pull request is one release: bump every package's version, the README badge and a changelog entry
+- One pull request is one release: bump every package's version, the skill's (`metadata.version` in
+  `skills/dbtour/SKILL.md`) and the plugin's (`.claude-plugin/plugin.json`), the README badge and a changelog entry
   marked `(unreleased)` in the same pull request. Find the number from what is released (`gh release list`).
   Merging to main does the rest: `release.yml` tags the version, creates the GitHub release from the
   changelog section and publishes to npm. `npm run release` is the same by hand, for when it could not, and

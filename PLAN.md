@@ -120,9 +120,16 @@ private database still belongs behind the host's access control.
 
 ## The agent skill
 
-A thin layer over the command: when to use it, the extract-render-show-commit flow, and how to write
-queries from `schema.json`. The SQL generator is the agent reading the model; the add-on gives it the tables
-to cite and runs the result through the source with a read-only login and a row limit.
+A thin layer over the command, in `skills/dbtour` (0.6.0): when to use it, the extract-render-show-commit
+flow, the MCP server a piece at a time, and how to write queries from the model's real names. The SQL
+generator is the agent reading the model; the add-on gives it the tables to cite and runs the result.
+
+How the SQL add-on runs a query, as decided with the owner: only through a connection of its own, from its
+own environment variable, meant for a login with `db_datareader` alone; it refuses the extract's connection.
+A single `SELECT` or `WITH`, inside a transaction that is always rolled back, with a row limit (100 by
+default) and a timeout. Rows are shown, never written into the model. The page's SQL editor writes,
+autocompletes the model's tables and columns, and copies, with "Copy for agent"; running stays in the
+terminal and over MCP, since the page is a static file.
 
 ## The MCP server
 
@@ -161,8 +168,8 @@ shop window, and nothing goes on the page before it is released.
 4. **All the catalogue says**: every extended property, the table's features, column labels and masking,
    index kinds and untrusted keys from the SQL Server source, and the page and the Markdown showing
    them.
-5. The skill and the SQL add-on, with the stats telling the agent where to look first. `dbtour mcp` comes
-   first (0.5.0): the skill tells the agent to use it. ← here
+5. The skill and the SQL add-on, with the stats telling the agent where to look first. `dbtour mcp` came
+   first (0.5.0), then the skill (0.6.0); the SQL add-on is next. ← here
 6. `source-openapi` and table-to-endpoint links.
 7. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
    and the comments its database keeps.
