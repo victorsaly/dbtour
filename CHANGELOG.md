@@ -8,7 +8,10 @@
   dbtour extract again"), and offers the nearest name the model has as a fix: `dbo.Ordrs` → `dbo.Orders`,
   `o.Totl` → `Total`. A warning, not an error, as the model can be older than the database. A CTE, a
   temporary table, a variable, a function, a subquery, another database or a schema the model has not read
-  (sys, say) is left alone.
+  (sys, say) is left alone, quoted or not (`[#t]`). A CTE or subquery named like a model table is the CTE,
+  for the check and for completion; a table hint in parentheses (`dbo.Orders (NOLOCK)`) is not taken for a
+  function; a fix quotes every part that needs it (`[Order Data].Invoices`), and a column written with a
+  doubled quote (`"a""b"`) is read as T-SQL reads it.
 - Suggestions follow the shape of the statement. Where a table goes (after FROM, JOIN, APPLY or a comma in
   FROM) the list opens as the space is typed, with only tables, their schemas and the query's CTEs, no
   keyword or function; the tables that have the columns the select list names come first (`SELECT Email

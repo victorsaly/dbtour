@@ -13,8 +13,8 @@ import { unknownNames } from '../src/page/check.ts';
 const shop = (): Model => JSON.parse(readFileSync(new URL('../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
 
 /** Each name the check marks: the text it underlines, what it says, and the fixes it offers. */
-function check(doc: string) {
-  const state = EditorState.create({ doc, extensions: [sqlSupport(shop(), 'Shop')] });
+function check(doc: string, model = shop()) {
+  const state = EditorState.create({ doc, extensions: [sqlSupport(model, 'Shop')] });
   ensureSyntaxTree(state, doc.length, 5000);
   return unknownNames(state).map((d) => ({ text: doc.slice(d.from, d.to), message: d.message, severity: d.severity, fixes: (d.actions ?? []).map((a) => a.name), diagnostic: d }));
 }
@@ -64,6 +64,12 @@ test('nothing is marked that the model has, or that is not the model\'s to know'
     "SELECT 'dbo.Nope' FROM dbo.Orders -- dbo.Nope",
     'SELECT * FROM Shop.dbo.Orders',
     'SELECT * FROM billing.Invoices i WHERE i.OrderId = 1',
+    'SELECT * FROM [#t]',
+    'SELECT * FROM [##g]',
+    'WITH Orders AS (SELECT 1 AS Extra) SELECT o.Extra FROM Orders o',
+    'SELECT Orders.Extra FROM (SELECT 1 AS Extra) Orders',
+    'SELECT o.Total FROM dbo.Orders (NOLOCK) o',
+    'SELECT o.Total FROM dbo.Orders o WITH (NOLOCK)',
   ];
   for (const sql of clean) assert.deepEqual(check(sql).map((c) => c.text), [], sql);
 });
@@ -86,4 +92,18 @@ test('a suggestion\'s description goes beside the list when there is room, else 
   assert.deepEqual(under, { style: 'top: 160px; max-width: 320px', class: 'cm-completionInfo-under' }, 'under the whole list, as wide as it');
   const low = box(60, 700, 380, 830);
   assert.deepEqual(infoPlacement(low, box(60, 720, 380, 740), box(0, 0, 300, 40), phone), { style: 'bottom: 130px; max-width: 320px', class: 'cm-completionInfo-under' }, 'over it when there is no room below');
+});
+
+test('a table hint in parentheses is not a function: the table is still checked', () => {
+  assert.deepEqual(check('SELECT * FROM dbo.Ordrs (NOLOCK)').map((c) => c.text), ['dbo.Ordrs']);
+  assert.deepEqual(check('SELECT o.Totl FROM dbo.Orders (NOLOCK) o').map((c) => c.text), ['Totl']);
+});
+
+test('a fix quotes every part that needs it, and a "quoted" name is read with its doubled quotes as one', () => {
+  const model = shop();
+  const column = (name: string) => ({ name, type: 'int', nullable: false });
+  model.databases[0].schemas.push({ name: 'Order Data', tables: [{ name: 'Invoices', kind: 'table', columns: [column('Id')], primaryKey: ['Id'], indexes: [], constraints: [] }] });
+  assert.deepEqual(check('SELECT * FROM [Order Data].[Invoces]', model)[0].fixes, ['[Order Data].Invoices']);
+  model.databases[0].schemas[0].tables.find((t) => t.name === 'Orders')!.columns.push(column('a"b'));
+  assert.deepEqual(check('SELECT o."a""b" FROM dbo.Orders o', model), []);
 });

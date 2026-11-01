@@ -443,11 +443,19 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
   let anchor = wordFrom;
   // Names a query nearer the caret binds: an outer table of the same name is hidden by it, as in SQL.
   const bound = new Set<string>();
+  // Names bound to a CTE, a subquery or a table the model does not know: a dot after one names no model table.
+  const boundElsewhere = new Set<string>();
+  const ctes = cteNames(state);
   levels.forEach((level, depth) => {
     const tokens = tokensOf(level);
     const segment = segmentAround(tokens, anchor, text);
-    const items = fromItems(segment, text, index);
-    for (const item of items) if (item.known && !bound.has(item.name.toLowerCase())) reading.scope.push({ name: item.name, known: item.known, depth });
+    const items = fromItems(segment, text, index, ctes);
+    for (const item of items) {
+      const name = item.name.toLowerCase();
+      if (bound.has(name)) continue;
+      if (item.known) reading.scope.push({ name: item.name, known: item.known, depth });
+      else boundElsewhere.add(name);
+    }
     for (const item of items) bound.add(item.name.toLowerCase());
     for (const item of items) if (item.name) reading.taken.add(item.name.toLowerCase());
     if (depth === 0) {
@@ -484,7 +492,8 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
     const parts = (qualified[1].match(/\[(?:[^\]]|\]\])*\]|"[^"]*"|\w+/g) ?? []).map(unquote);
     reading.qualifier = parts;
     const named = parts.length === 1 ? reading.scope.find((s) => s.name.toLowerCase() === parts[0].toLowerCase())?.known : undefined;
-    const known = named ?? index.get(parts.join('.').toLowerCase());
+    const elsewhere = parts.length === 1 && boundElsewhere.has(parts[0].toLowerCase());
+    const known = named ?? (elsewhere ? undefined : index.get(parts.join('.').toLowerCase()));
     if (known) reading.dotted = { known, from: wordFrom };
   }
   return reading;
@@ -520,14 +529,26 @@ function tokensOf(level: Node): Node[] {
 export function namesInQuery(state: EditorState, index: Map<string, Known>): { items: FromItem[]; ctes: Map<string, string> } {
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
   const items: FromItem[] = [];
-  // In lower case, to compare, each to the name as the query writes it.
+  const ctes = cteNames(state);
+  syntaxTree(state).iterate({
+    enter: (ref) => {
+      if (ref.name === 'Statement' || ref.name === 'Parens') items.push(...fromItems(tokensOf(ref.node), text, index, ctes));
+    },
+  });
+  return { items, ctes };
+}
+
+/**
+ * The names the query's WITH gives, in lower case, each to the name as written: WITH name AS (…), name (a, b)
+ * AS (…). A table so named is the CTE, not the model's table of the same name.
+ */
+function cteNames(state: EditorState): Map<string, string> {
+  const text = (n: Node) => state.sliceDoc(n.from, n.to);
   const ctes = new Map<string, string>();
   syntaxTree(state).iterate({
     enter: (ref) => {
       if (ref.name !== 'Statement' && ref.name !== 'Parens') return;
       const tokens = tokensOf(ref.node);
-      items.push(...fromItems(tokens, text, index));
-      // WITH name AS (…), name (a, b) AS (…): a name the query defines, not one the model lacks.
       tokens.forEach((t, i) => {
         const before = tokens[i - 1];
         if (!(t.name === 'Identifier' || t.name === 'QuotedIdentifier') || !before) return;
@@ -537,7 +558,7 @@ export function namesInQuery(state: EditorState, index: Map<string, Known>): { i
       });
     },
   });
-  return { items, ctes };
+  return ctes;
 }
 
 /** A box on the screen, as CodeMirror measures the list, the option, its description and the room there is. */
@@ -650,7 +671,20 @@ export interface FromItem {
   ends: number[];
 }
 
-function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string, Known>): FromItem[] {
+// SQL Server's table hints: in parentheses after a table, they are not a function's arguments.
+const tableHints = new Set(
+  ('NOLOCK READUNCOMMITTED UPDLOCK HOLDLOCK ROWLOCK TABLOCK TABLOCKX PAGLOCK NOWAIT READPAST XLOCK SERIALIZABLE ' +
+    'REPEATABLEREAD READCOMMITTED READCOMMITTEDLOCK SNAPSHOT INDEX FORCESEEK FORCESCAN NOEXPAND KEEPIDENTITY ' +
+    'KEEPDEFAULTS IGNORE_CONSTRAINTS IGNORE_TRIGGERS SPATIAL_WINDOW_MAX_CELLS').split(' '),
+);
+
+/** Parentheses that hold table hints: (NOLOCK), (INDEX(ix), UPDLOCK). */
+function isHint(parens: Node, text: (n: Node) => string): boolean {
+  const first = children(parens).find((t) => t.name !== '(');
+  return Boolean(first && tableHints.has(text(first).toUpperCase()));
+}
+
+function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string, Known>, ctes: Map<string, string> = new Map()): FromItem[] {
   const items: FromItem[] = [];
   let expect = false;
   let inFrom = false;
@@ -673,17 +707,21 @@ function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string,
     }
     expect = false;
     const parts = t.name === 'Parens' ? [''] : pathOf(t, text);
-    const call = t.name !== 'Parens' && tokens[i + 1]?.name === 'Parens';
+    const next = tokens[i + 1];
+    const hint = t.name !== 'Parens' && next?.name === 'Parens' && isHint(next, text);
+    const call = t.name !== 'Parens' && next?.name === 'Parens' && !hint;
+    // A CTE's name is the CTE's, even when the model has a table of that name.
+    const cte = parts.length === 1 && ctes.has(parts[0].toLowerCase());
     const item: FromItem = {
       name: parts[parts.length - 1],
-      known: t.name === 'Parens' || call ? undefined : index.get(parts.join('.').toLowerCase()),
+      known: t.name === 'Parens' || call || cte ? undefined : index.get(parts.join('.').toLowerCase()),
       at: t.from,
       to: t.to,
       path: t.name === 'Parens' ? [] : parts,
       call,
       ends: [t.to],
     };
-    let j = call ? i + 2 : i + 1;
+    let j = call || hint ? i + 2 : i + 1;
     if (tokens[j]?.name === 'Keyword' && text(tokens[j]).toUpperCase() === 'AS') j++;
     if (tokens[j] && (tokens[j].name === 'Identifier' || tokens[j].name === 'QuotedIdentifier')) {
       item.name = unquote(text(tokens[j]));
@@ -705,7 +743,7 @@ function pathOf(node: Node, text: (n: Node) => string): string[] {
 }
 
 /** A name as written, without its [brackets] or "quotes". */
-function unquote(name: string): string {
+export function unquote(name: string): string {
   if (/^\[.*\]$/s.test(name)) return name.slice(1, -1).replace(/]]/g, ']');
   if (/^".*"$/s.test(name)) return name.slice(1, -1).replace(/""/g, '"');
   return name;

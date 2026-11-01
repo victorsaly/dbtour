@@ -279,3 +279,14 @@ test('after a table and its alias, only what can follow it, ON first after a joi
   assert.ok(next.includes('JOIN') && next.includes('ORDER'));
   assert.equal((await applies('SELECT * FROM dbo.Orders o JOIN dbo.Customers c |', { explicit: true }))[0], 'ON');
 });
+
+test('a table hint after a table keeps it known: its columns, its alias, and * expanded', async () => {
+  assert.equal((await applies('SELECT | FROM dbo.Orders (NOLOCK)', { explicit: true }))[0], 'Id');
+  assert.deepEqual(await applies('SELECT o.Cu| FROM dbo.Orders (NOLOCK) o'), ['CustomerId']);
+  assert.equal(tab('SELECT *| FROM dbo.Products (NOLOCK)'), 'SELECT Id, Sku, Price FROM dbo.Products (NOLOCK)');
+});
+
+test('a CTE named like a model table is the CTE: none of the table\'s columns', async () => {
+  const listed = await applies('WITH Orders AS (SELECT 1 AS Extra) SELECT | FROM Orders', { explicit: true });
+  assert.ok(!listed.includes('CustomerId'));
+});

@@ -7,7 +7,7 @@ import type { Diagnostic } from '@codemirror/lint';
 import { syntaxTree } from '@codemirror/language';
 import type { EditorState } from '@codemirror/state';
 import { localRef } from 'dbtour/model';
-import { namesInQuery, readAt, setupOf } from './complete.ts';
+import { namesInQuery, readAt, setupOf, unquote } from './complete.ts';
 import { quoteName } from './query.ts';
 
 const extractAgain = 'If it is new, run dbtour extract again.';
@@ -27,6 +27,8 @@ export function unknownNames(state: EditorState): Diagnostic[] {
   for (const item of items) {
     if (item.known || item.call || !item.path.length) continue;
     const parts = item.path;
+    // A temporary table or a variable, quoted or not, is the session's, not the model's.
+    if (parts.some((p) => p.startsWith('#') || p.startsWith('@'))) continue;
     // The schema it is in, in lower case, when the model has read that schema; else not the model's to know.
     let schema: string | undefined;
     if (parts.length === 1 && !ctes.has(parts[0].toLowerCase())) schema = found.defaultSchema.toLowerCase();
@@ -35,7 +37,7 @@ export function unknownNames(state: EditorState): Diagnostic[] {
     if (schema === undefined || !tables.has(schema)) continue;
     const written = parts.join('.');
     const nearest = closest(parts[parts.length - 1], tables.get(schema)!);
-    const fix = nearest === undefined ? undefined : [...parts.slice(0, -1), quoteName(nearest)].join('.');
+    const fix = nearest === undefined ? undefined : [...parts.slice(0, -1), nearest].map(quoteName).join('.');
     marks.push(mark(item.at, item.to, `dbtour knows no table ${written} in ${found.databaseName}`, fix));
   }
   const tableAt = new Set(items.map((item) => item.at));
@@ -48,11 +50,15 @@ export function unknownNames(state: EditorState): Diagnostic[] {
       const column = parts[1];
       const known = readAt(state, column.from, found.index).dotted?.known;
       if (!known) return;
-      const name = unquoted(state.sliceDoc(column.from, column.to));
+      // CodeMirror's parser ends a "quoted name" at its first quote, so "a""b" comes as "a" and "b": joined
+      // again, as T-SQL reads a doubled quote.
+      let end = column.to;
+      for (let next = column.to === ref.to ? ref.node.nextSibling : null; next?.name === 'QuotedIdentifier' && next.from === end && state.sliceDoc(next.from, next.from + 1) === '"'; next = next.nextSibling) end = next.to;
+      const name = unquote(state.sliceDoc(column.from, end));
       const columns = known.suggestions.children.map((c) => c.label);
       if (columns.some((c) => c.toLowerCase() === name.toLowerCase())) return;
       const nearest = closest(name, columns);
-      marks.push(mark(column.from, column.to, `${localRef(found.model, known.ref)} has no column ${name} in dbtour`, nearest === undefined ? undefined : quoteName(nearest)));
+      marks.push(mark(column.from, end, `${localRef(found.model, known.ref)} has no column ${name} in dbtour`, nearest === undefined ? undefined : quoteName(nearest)));
     },
   });
   return marks.sort((a, b) => a.from - b.from);
@@ -67,10 +73,6 @@ function mark(from: number, to: number, what: string, fix: string | undefined): 
     message: fix === undefined ? `${what}: ${extractAgain.charAt(0).toLowerCase()}${extractAgain.slice(1)}` : `${what}. Did you mean ${fix}? ${extractAgain}`,
     actions: fix === undefined ? [] : [{ name: fix, apply: (view, at, end) => view.dispatch({ changes: { from: at, to: end, insert: fix } }) }],
   };
-}
-
-function unquoted(name: string): string {
-  return /^\[.*\]$/s.test(name) ? name.slice(1, -1).replace(/]]/g, ']') : /^".*"$/s.test(name) ? name.slice(1, -1) : name;
 }
 
 /** The name nearest `name`, a third of its letters off at most (one for a short one), or none. */
