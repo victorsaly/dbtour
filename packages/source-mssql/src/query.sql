@@ -216,7 +216,7 @@ SELECT s.[name] AS [schema],
        pf.[name] AS [function],
        pc.[name] AS [partitionColumn],
        (SELECT COUNT(*) FROM sys.partitions p WHERE p.object_id = t.object_id AND p.index_id IN (0, 1)) AS [partitions],
-       -- Every partition's compression, comma-separated, since partitions may differ.
+       -- The compression of every partition, comma-separated, since partitions may differ.
        STUFF((SELECT DISTINCT N'','' + p.data_compression_desc FROM sys.partitions p WHERE p.object_id = t.object_id AND p.index_id IN (0, 1) FOR XML PATH(N'''')), 1, 1, N'''') AS [compression]
 FROM sys.tables t
 JOIN sys.schemas s ON s.schema_id = t.schema_id

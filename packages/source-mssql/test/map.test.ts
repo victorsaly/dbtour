@@ -250,3 +250,41 @@ test('the review: compression read from every partition, a mix kept as a list', 
   assert.equal(findTable(model, 'dbo.Orders')!.table.compression, 'none, page');
   assert.equal(findTable(model, 'dbo.Customers')!.table.compression, 'row');
 });
+
+/**
+ * Reads T-SQL as SQL Server does for quoting: '' inside a string is a quote, -- and block comments only
+ * count outside one. Returns each string's text, or throws when the batch ends inside a string, which is
+ * what a stray apostrophe does (in a comment written inside text the batch assembles, say).
+ */
+function literals(sql: string, where: string): string[] {
+  const found: string[] = [];
+  let i = 0;
+  while (i < sql.length) {
+    if (sql.startsWith('--', i)) i = sql.indexOf('\n', i) === -1 ? sql.length : sql.indexOf('\n', i);
+    else if (sql.startsWith('/*', i)) i = sql.indexOf('*/', i) + 2;
+    else if (sql[i] === "'") {
+      let text = '';
+      i++;
+      for (;;) {
+        if (i >= sql.length) throw new Error(`${where} ends inside a string that starts: ${text.slice(0, 80)}`);
+        if (sql[i] === "'" && sql[i + 1] === "'") (text += "'"), (i += 2);
+        else if (sql[i] === "'") break;
+        else text += sql[i++];
+      }
+      found.push(text);
+      i++;
+      // A string never runs straight into a word: 'abc'def is what an apostrophe in prose leaves behind.
+      if (/\w/.test(sql[i] ?? '')) throw new Error(`${where} has a string that runs into "${sql.slice(i, i + 20)}": a stray apostrophe before it`);
+    } else i++;
+  }
+  return found;
+}
+
+test('query.sql quotes balance, and so does every query it assembles as text', () => {
+  const sql = readFileSync(new URL('../src/query.sql', import.meta.url), 'utf8');
+  const assembled = literals(sql, 'query.sql').filter((text) => /\bSELECT\b/.test(text));
+  assert.ok(assembled.length >= 4, 'the version-guarded sets are text the batch runs');
+  for (const text of assembled) assert.doesNotThrow(() => literals(text, 'an assembled query'));
+  // A stray apostrophe in a comment inside the text is the mistake this guards against.
+  assert.throws(() => literals("SELECT N'\n-- a partition's note\nSELECT 1';", 'the example'), /stray apostrophe|ends inside a string/);
+});
