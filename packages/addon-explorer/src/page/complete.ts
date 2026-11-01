@@ -27,6 +27,15 @@ const outerColumnBoost = 1;
 const writtenOutBoost = 99;
 // After FROM, a schema is a step towards a table: listed after the tables, before the keywords.
 const schemaBoost = -0.5;
+// A table that has every column the select list names comes a point above one that has none, a part for
+// some: the same scale as a pick, so a better typed match still leads.
+const tableFitBoost = 1;
+// After a table and its alias, the words that can follow it; ON leads after a JOIN, where it is due.
+const afterTableWords = new Set([
+  'AS', 'WITH', 'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'OUTER', 'APPLY', 'ON', 'AND', 'OR',
+  'GROUP', 'ORDER', 'HAVING', 'UNION', 'EXCEPT', 'INTERSECT', 'OPTION', 'FOR', 'SET', 'OUTPUT', 'PIVOT', 'UNPIVOT',
+]);
+const onBoost = 1;
 // A snippet's name is a made-up word: it leads only once typed whole, below a keyword that matches as well.
 const snippetBoost = -2;
 // What was picked before: a tenth a pick, at most nine tenths, so it orders equals (and an outer column never
@@ -112,6 +121,10 @@ export interface Reading {
   taken: Set<string>;
   /** The table being written at the caret has its alias already, after it: `FROM Cust| AS c`. */
   aliased: boolean;
+  /** Just after a table and its alias, where a clause or a join goes: after a JOIN with no ON yet, ON is due. */
+  afterTable?: { joining: boolean };
+  /** The columns the select list names, in lower case: the tables that have them fit the query. */
+  selected: string[];
   /** The caret's own query reads a table the model does not know, or a subquery: * covers columns not known here. */
   unknownOwn: boolean;
   /** Just after ON: the table being joined, and the ones before it it can join to. */
@@ -149,12 +162,21 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
   const keywords = keywordCompletionSource(tsql, true);
   const names = schemaCompletionSource({ dialect: tsql, schema: schema as unknown as SQLNamespace, defaultSchema });
   const sources: CompletionSource[] = [
-    (context) => (read(context).afterDot || read(context).dotted || read(context).star ? null : keywords(context)),
+    (context) => {
+      const at = read(context);
+      // Where a table goes, no keyword; after one, only what can follow it.
+      if (at.afterDot || at.dotted || at.star || (at.tableSpot && at.aliasable && !at.quoted)) return null;
+      const result = keywords(context) as CompletionResult | null;
+      if (!result || !at.afterTable) return result;
+      const joining = at.afterTable.joining;
+      const options = result.options.filter((o) => afterTableWords.has(o.label)).map((o) => (joining && o.label === 'ON' ? { ...o, boost: (o.boost ?? 0) + onBoost } : o));
+      return { ...result, options };
+    },
     // Where a table takes an alias, the tables come from here, written with one; in a [quoted name], from
     // CodeMirror's own, which quotes what it offers.
     (context) => {
       const at = read(context);
-      return at.quiet || at.dotted || at.star || (at.tableSpot && at.aliasable && !at.quoted) ? null : names(context);
+      return at.quiet || at.dotted || at.star || at.afterTable || (at.tableSpot && at.aliasable && !at.quoted) ? null : names(context);
     },
     (context) => withRanks(columns(context, read(context), model), ranked),
     (context) => withRanks(tables(context, read(context), model, index), ranked),
@@ -260,10 +282,15 @@ function conditions(model: Model, joined: InScope, earlier: InScope[]): Completi
  */
 function tables(context: CompletionContext, reading: Reading, model: Model, index: Map<string, Known>): CompletionResult | null {
   if (reading.quiet || reading.quoted || reading.dotted || !reading.tableSpot || !reading.aliasable) return null;
+  // Open as soon as the space after FROM or JOIN is typed: a table is all that can come there.
   const word = context.matchBefore(/\w*$/)!;
-  if (!word.text && !context.explicit && !reading.qualifier) return null;
   const schema = reading.qualifier?.[reading.qualifier.length - 1]?.toLowerCase();
   const options: Keyed[] = [];
+  const fit = (columns: string[]) => {
+    if (!reading.selected.length) return 0;
+    const have = new Set(columns.map((c) => c.toLowerCase()));
+    return (reading.selected.filter((c) => have.has(c)).length / reading.selected.length) * tableFitBoost;
+  };
   const schemas = new Set<string>();
   for (const known of new Set(index.values())) {
     const local = localRef(model, known.ref);
@@ -277,7 +304,14 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
       key: `table:${known.ref}`,
       detail: `${schemaName} · ${table.detail}`,
       apply: reading.aliased ? name : `${name} AS ${aliasFor(table.label, new Set(reading.taken))}`,
+      boost: fit(known.suggestions.children.map((c) => c.label)),
     });
+  }
+  // The query's own CTEs, where it can read them as tables.
+  if (schema === undefined) {
+    for (const cte of namesInQuery(context.state, index).ctes.values()) {
+      options.push({ label: cte, type: 'type', detail: 'CTE', apply: reading.aliased ? quoteName(cte) : `${quoteName(cte)} AS ${aliasFor(cte, new Set(reading.taken))}` });
+    }
   }
   // The schemas, to go on with a dot, after the tables and before the keywords.
   if (schema === undefined) for (const name of schemas) options.push({ label: name, type: 'type', detail: 'schema', boost: schemaBoost });
@@ -380,6 +414,7 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
     aliasable: false,
     taken: new Set(),
     aliased: false,
+    selected: [],
     unknownOwn: false,
     scope: [],
   };
@@ -423,6 +458,11 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
       const named = tableStarts.has(prevWord) || (isComma(prev, text) && inFrom);
       reading.tableSpot = named || items.some((item) => item.ends.includes(prev?.to ?? -1));
       reading.aliasable = named && (aliasStarts.has(prevWord) || isComma(prev, text));
+      if (reading.tableSpot && !named) {
+        const start = [...before].reverse().find((t) => t.name === 'Keyword' && (tableStarts.has(text(t).toUpperCase()) || text(t).toUpperCase() === 'ON'));
+        reading.afterTable = { joining: start !== undefined && text(start).toUpperCase() === 'JOIN' };
+      }
+      reading.selected = selectedColumns(segment, text);
       reading.star = starAt(state, pos, segment, text);
       reading.aliased = (items.find((item) => item.at === nameFrom)?.ends.length ?? 0) > 1;
       reading.unknownOwn = items.some((item) => !item.known);
@@ -477,10 +517,11 @@ function tokensOf(level: Node): Node[] {
  * Every table the query names, at every level, as written, and the names its WITH gives: what the check
  * holds to the model.
  */
-export function namesInQuery(state: EditorState, index: Map<string, Known>): { items: FromItem[]; ctes: Set<string> } {
+export function namesInQuery(state: EditorState, index: Map<string, Known>): { items: FromItem[]; ctes: Map<string, string> } {
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
   const items: FromItem[] = [];
-  const ctes = new Set<string>();
+  // In lower case, to compare, each to the name as the query writes it.
+  const ctes = new Map<string, string>();
   syntaxTree(state).iterate({
     enter: (ref) => {
       if (ref.name !== 'Statement' && ref.name !== 'Parens') return;
@@ -492,7 +533,7 @@ export function namesInQuery(state: EditorState, index: Map<string, Known>): { i
         if (!(t.name === 'Identifier' || t.name === 'QuotedIdentifier') || !before) return;
         if (!((before.name === 'Keyword' && text(before).toUpperCase() === 'WITH') || isComma(before, text))) return;
         const j = tokens[i + 1]?.name === 'Parens' ? i + 2 : i + 1;
-        if (tokens[j]?.name === 'Keyword' && text(tokens[j]).toUpperCase() === 'AS' && tokens[j + 1]?.name === 'Parens') ctes.add(unquote(text(t)).toLowerCase());
+        if (tokens[j]?.name === 'Keyword' && text(tokens[j]).toUpperCase() === 'AS' && tokens[j + 1]?.name === 'Parens') ctes.set(unquote(text(t)).toLowerCase(), unquote(text(t)));
       });
     },
   });
@@ -554,6 +595,29 @@ function segmentAround(tokens: Node[], at: number, text: (n: Node) => string): N
     else if (i < end && t.from > at) end = Math.min(end, i);
   });
   return tokens.slice(start, end);
+}
+
+/**
+ * The columns a query's select list names, in lower case: a bare name, or the last part of a qualified one,
+ * but not a column's alias (after AS), a keyword or a function.
+ */
+function selectedColumns(segment: Node[], text: (n: Node) => string): string[] {
+  const out: string[] = [];
+  const start = segment.findIndex((t) => t.name === 'Keyword' && text(t).toUpperCase() === 'SELECT');
+  if (start < 0) return out;
+  for (let i = start + 1; i < segment.length; i++) {
+    const t = segment[i];
+    if (t.name === 'Keyword' && text(t).toUpperCase() === 'FROM') break;
+    const after = segment[i - 1];
+    if (after?.name === 'Keyword' && text(after).toUpperCase() === 'AS') continue;
+    if (segment[i + 1]?.name === 'Parens') continue;
+    if (t.name === 'Identifier' || t.name === 'QuotedIdentifier') out.push(unquote(text(t)).toLowerCase());
+    else if (t.name === 'CompositeIdentifier') {
+      const parts = pathOf(t, text);
+      if (parts.length > 1 && parts[parts.length - 1]) out.push(parts[parts.length - 1].toLowerCase());
+    }
+  }
+  return out;
 }
 
 /** Whether the last of these tokens is inside a FROM list, where a comma brings another table. */

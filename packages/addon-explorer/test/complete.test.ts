@@ -251,3 +251,31 @@ test('Ctrl+Space after * when every column is protected offers every column, sai
   assert.equal(listed[0].apply, 'Id, Sku, Price');
   assert.match(listed[0].detail ?? '', /every column, masked/);
 });
+
+/** Whether a suggestion is one of CodeMirror's SQL keywords or built-ins: upper-case words, as it writes them. */
+const isKeyword = (label: string) => /^[A-Z][A-Z0-9_]*$/.test(label);
+
+test('where a table goes, only tables, their schemas and the query\'s CTEs, the list open as the space is typed', async () => {
+  const listed = await suggest('SELECT Id FROM |');
+  assert.ok(listed.length > 0, 'open without Ctrl+Space');
+  assert.deepEqual(listed.filter((s) => isKeyword(s.label)).map((s) => s.label), [], 'no keyword or function');
+  assert.deepEqual((await applies('SELECT * FROM Cust|')).filter(isKeyword), [], 'nor as a name is typed');
+  assert.ok((await applies('WITH recent AS (SELECT 1 AS a) SELECT * FROM rec|')).includes('recent AS r'), 'a CTE the query defines');
+});
+
+test('the columns the select list names put the tables that have them first', async () => {
+  assert.equal((await applies('SELECT Email FROM |'))[0], 'dbo.Customers AS c');
+  assert.equal((await applies('SELECT Sku, Price FROM |'))[0], 'dbo.Products AS p');
+  assert.equal((await applies('SELECT p.Sku AS code, Price FROM |'))[0], 'dbo.Products AS p', 'a qualified column counts, a column alias does not');
+  assert.equal((await applies('SELECT Quantity FROM Ord|'))[0], 'dbo.OrderLines AS ol', 'among the tables a typed name matches');
+});
+
+test('after a table and its alias, only what can follow it, ON first after a join', async () => {
+  const where = await applies('SELECT * FROM dbo.Orders o W|');
+  assert.equal(where[0], 'WHERE');
+  assert.ok(!where.includes('WAITFOR') && !where.includes('WHILE'), 'no statement keyword');
+  const next = await applies('SELECT * FROM dbo.Orders o |', { explicit: true });
+  assert.ok(!next.some((a) => /Orders|Customers/.test(a)), 'no table where the alias or a clause goes');
+  assert.ok(next.includes('JOIN') && next.includes('ORDER'));
+  assert.equal((await applies('SELECT * FROM dbo.Orders o JOIN dbo.Customers c |', { explicit: true }))[0], 'ON');
+});
