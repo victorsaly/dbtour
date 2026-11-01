@@ -10,7 +10,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "node packages/addon-explorer/build.mjs",
+    "build": "node scripts/build.mjs",
     "pretest": "npm run build",
     "test": "node --test 'packages/*/test/**/*.test.ts'",
     "pretest:coverage": "npm run build",
@@ -18,12 +18,14 @@
     "pretest:e2e": "npm run build",
     "test:e2e": "node --test 'packages/*/test/e2e/*.e2e.ts'",
     "lint": "eslint .",
+    "pretypecheck": "npm run build",
     "typecheck": "tsc -p . && tsc -p packages/addon-explorer",
     "check": "npm run lint && npm run typecheck && npm run test:coverage",
     "preexample": "npm run build",
     "example": "cd examples/shop && node ../../packages/core/bin/dbtour.mjs render",
     "e2e:mssql": "node scripts/e2e-mssql.mjs",
     "e2e:page": "npm run build && node --test packages/addon-explorer/test/e2e/page.e2e.ts",
+    "smoke": "node scripts/smoke-install.mjs",
     "brand": "node scripts/brand.mjs"
   },
   "devDependencies": {

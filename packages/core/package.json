@@ -1,6 +1,6 @@
 {
   "name": "dbtour",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Tour your database and its API: searchable docs, relations and diagrams, generated from the schema, kept in the repo.",
   "type": "module",
   "license": "MIT",
@@ -17,14 +17,26 @@
     "dbtour": "bin/dbtour.mjs"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./model": "./src/model.ts",
-    "./markdown": "./src/render/markdown.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "default": "./dist/model.js"
+    },
+    "./markdown": {
+      "types": "./dist/render/markdown.d.ts",
+      "default": "./dist/render/markdown.js"
+    }
   },
   "files": [
     "bin",
-    "src"
+    "dist"
   ],
+  "scripts": {
+    "prepack": "node ../../scripts/build.mjs"
+  },
   "keywords": [
     "database",
     "documentation",

@@ -34,3 +34,5 @@ jobs:
       - run: npm run check
       # The page in the Chrome the runner image ships; skipped where there is none.
       - run: npm run e2e:page
+      # What a user installs: the packed tarballs in an empty project, running dbtour from node_modules.
+      - run: npm run smoke
