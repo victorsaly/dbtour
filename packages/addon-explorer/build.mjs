@@ -14,6 +14,8 @@ await build({
   platform: 'browser',
   target: 'es2022',
   jsx: 'automatic',
+  // The two fonts ride inside the stylesheet, so the page needs no font host; OFL, see fonts/.
+  loader: { '.woff2': 'dataurl' },
   define: { 'process.env.NODE_ENV': '"production"' },
   // The licence notices of React, React Flow and ELK stay in the bundle, at its end.
   legalComments: 'eof',

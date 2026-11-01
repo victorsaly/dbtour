@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "world": "Factory Catalogue: matte black field, white hairline ink, numbered entries, schema colour blocks always named, a hairline plot per table",
+  "mode": "operate",
+  "color": {
+    "strategy": "restrained",
+    "dark": { "bg": "#0b0b0b", "ink": "#f5f5f5", "ink2": "#a3a3a3", "line": "rgba(245,245,245,0.22)", "lineStrong": "#f5f5f5", "fill": "rgba(245,245,245,0.06)", "grid": "#1a1a1a", "red": "#e2001a" },
+    "light": { "bg": "#f4f4f2", "ink": "#0b0b0b", "ink2": "#5c5c5c", "line": "rgba(11,11,11,0.22)", "lineStrong": "#0b0b0b", "fill": "rgba(11,11,11,0.05)", "grid": "#e2e2dd", "red": "#e2001a" },
+    "schemaBlocks": ["#e2001a", "#ffd500", "#0057b8", "#f5f5f5", "#8c8c8c"]
+  },
+  "type": {
+    "sans": { "family": "Archivo", "weights": [400, 600], "body": "13px/1.5", "h1": "28px/-0.02em" },
+    "mono": { "family": "Red Hat Mono", "identifier": "12px/400", "label": "10.5px/500, 0.14em tracking, upper case" },
+    "numerals": "tabular"
+  },
+  "space": { "hair": "1px", "page": "28px 32px", "rail": "280px", "panel": "280px", "panelSection": "26px", "breakpoint": "800px" },
+  "radius": "0",
+  "shadow": "none",
+  "motion": { "draw": "0.6s cubic-bezier(0.16,1,0.3,1), 14ms stagger", "button": "0.15s transform", "reducedMotion": "none" },
+  "components": ["block", "entry number", "button with trailing colour block", "search box", "plot", "facts", "map node", "tag"],
+  "files": ["packages/addon-explorer/src/page/styles.css", "packages/addon-explorer/src/page/fonts.css", "packages/addon-explorer/src/page/plot.ts", "packages/addon-explorer/src/page/catalogue.ts", "packages/addon-explorer/src/mark.ts"]
+}

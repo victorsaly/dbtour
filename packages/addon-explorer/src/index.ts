@@ -2,6 +2,7 @@
 // opens from disk with no server and no network. The page itself is built from src/page into dist/.
 import { readFileSync } from 'node:fs';
 import type { Model } from 'dbtour/model';
+import { markDataUri } from './mark.ts';
 
 export function render(model: Model): Record<string, string> {
   return { 'index.html': pageHtml(model, builtFile('page.js'), builtFile('page.css')) };
@@ -29,6 +30,7 @@ export function pageHtml(model: Model, js: string, css: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>${escapeHtml(title)}</title>
+<link rel="icon" href="${markDataUri()}">
 <style>${css}</style>
 </head>
 <body>

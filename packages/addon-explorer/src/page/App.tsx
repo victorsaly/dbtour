@@ -1,6 +1,7 @@
-// The shell: the sidebar with the search and the table list, and the view the hash names.
+// The shell: the rail with the search and the index, and the view the hash names.
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { Model } from 'dbtour/model';
+import { catalogue } from './catalogue.ts';
 import { parseRoute } from './route.ts';
 import { buildIndex } from './search.ts';
 import { Sidebar } from './Sidebar.tsx';
@@ -17,6 +18,7 @@ export function App({ model }: { model: Model }) {
   const hash = useSyncExternalStore(subscribe, () => window.location.hash);
   const route = useMemo(() => parseRoute(hash), [hash]);
   const index = useMemo(() => buildIndex(model), [model]);
+  const cat = useMemo(() => catalogue(model), [model]);
   const searchInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -36,22 +38,22 @@ export function App({ model }: { model: Model }) {
   let view;
   switch (route.kind) {
     case 'home':
-      view = <Home model={model} />;
+      view = <Home model={model} cat={cat} />;
       break;
     case 'table':
-      view = <TableView model={model} tableRef={route.ref} column={route.column} />;
+      view = <TableView model={model} cat={cat} tableRef={route.ref} column={route.column} />;
       break;
     case 'diagram':
-      view = <DiagramView model={model} refs={route.refs} title={`${route.refs[0]} and around it`} />;
+      view = <DiagramView model={model} cat={cat} refs={route.refs} title={`${route.refs[0]} and around it`} />;
       break;
     case 'group': {
       const group = model.groups.find((g) => g.name === route.name);
       view = group ? (
-        <DiagramView model={model} refs={group.tables} title={group.name} description={group.description} />
+        <DiagramView model={model} cat={cat} refs={group.tables} title={group.name} description={group.description} />
       ) : (
         <article className="page">
           <h1>No group named {route.name}</h1>
-          <p>The groups come from the notes file. Pick one from the list, or run dbtour render again.</p>
+          <p>The groups come from the notes file. Pick one from the index, or run dbtour render again.</p>
         </article>
       );
       break;
@@ -60,7 +62,7 @@ export function App({ model }: { model: Model }) {
 
   return (
     <div className="app">
-      <Sidebar model={model} index={index} route={route} inputRef={searchInput} />
+      <Sidebar model={model} cat={cat} index={index} route={route} inputRef={searchInput} />
       <main className="main">{view}</main>
     </div>
   );

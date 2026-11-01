@@ -23,7 +23,8 @@
     "preexample": "npm run build",
     "example": "cd examples/shop && node ../../packages/core/bin/dbtour.mjs render",
     "e2e:mssql": "node scripts/e2e-mssql.mjs",
-    "e2e:page": "npm run build && node --test packages/addon-explorer/test/e2e/page.e2e.ts"
+    "e2e:page": "npm run build && node --test packages/addon-explorer/test/e2e/page.e2e.ts",
+    "brand": "node scripts/brand.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

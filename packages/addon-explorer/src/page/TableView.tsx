@@ -1,20 +1,27 @@
-// One table: its columns in the centre, relations and groups on the right, indexes and constraints below.
+// One entry: its number and name, its plot, its columns ruled beneath; the facts, relations and the sequence
+// on the right. Indexes, constraints and a view's definition fold below.
 import { useEffect, useState } from 'react';
 import { findTable, isUniqueColumn, relationsOf, type Column, type Model, type Relation, type Table } from 'dbtour/model';
+import { neighboursOf, type Catalogue } from './catalogue.ts';
 import { withNeighbours } from './graph.ts';
+import { Plot } from './Plot.tsx';
+import { profile } from './plot.ts';
 import { prompt } from './prompt.ts';
 import { diagramHash, groupHash, tableHash } from './route.ts';
 
 /** How long the button says "Copied" before it offers to copy again. */
 const copiedForMs = 1500;
+/** The entry's own plot is this tall, in plot units. */
+const plotHeight = 56;
 
 interface Props {
   model: Model;
+  cat: Catalogue;
   tableRef: string;
   column?: string;
 }
 
-export function TableView({ model, tableRef, column }: Props) {
+export function TableView({ model, cat, tableRef, column }: Props) {
   const found = findTable(model, tableRef);
   const [copied, setCopied] = useState(false);
 
@@ -27,13 +34,17 @@ export function TableView({ model, tableRef, column }: Props) {
     return (
       <article className="page">
         <h1>No table named {tableRef}</h1>
-        <p>Pick one from the list, or run dbtour extract and render again if it was added since.</p>
+        <p>Pick one from the index, or run dbtour extract and render again if it was added since.</p>
       </article>
     );
   }
   const { schema, table } = found;
+  const entry = cat.byRef.get(tableRef);
   const relations = relationsOf(model, tableRef);
+  const foreign = relations.out.flatMap((r) => r.from.columns);
   const groups = model.groups.filter((g) => g.tables.includes(tableRef));
+  const sequence = neighboursOf(cat, tableRef);
+  const keyCount = (table.primaryKey?.length ?? 0) + table.columns.filter((c) => isUniqueColumn(table, c.name)).length;
 
   const copy = async () => {
     await copyText(prompt(model, [tableRef]));
@@ -44,16 +55,17 @@ export function TableView({ model, tableRef, column }: Props) {
   return (
     <div className="with-panel">
       <article className="page table">
-        <header className="page-head">
-          <div>
-            <div className="crumb">{schema.name}</div>
-            <h1>
-              {table.name}
-              {table.kind === 'view' && <span className="tag">view</span>}
-            </h1>
+        <header className="entry-head">
+          <div className="entry-id">
+            <span className="block" style={{ background: cat.colours.get(schema.name) }} />
+            <span className="label">No. {entry?.number}</span>
+            <span className="label">{schema.name}</span>
+            {table.kind === 'view' && <span className="label">view</span>}
           </div>
+          <h1>{table.name}</h1>
+          {table.description && <p className="description">{table.description}</p>}
           <div className="actions">
-            <a className="button" href={diagramHash(withNeighbours(model, [tableRef]))}>
+            <a className="button is-primary" href={diagramHash(withNeighbours(model, [tableRef]))}>
               Diagram
             </a>
             <button type="button" className="button" onClick={copy}>
@@ -61,8 +73,12 @@ export function TableView({ model, tableRef, column }: Props) {
             </button>
           </div>
         </header>
-        {table.description && <p className="description">{table.description}</p>}
 
+        <div className="entry-plot" key={tableRef}>
+          <Plot ticks={profile(table, foreign)} height={plotHeight} tableRef={tableRef} activeColumn={column} />
+        </div>
+
+        <div className="scroll-x">
         <table className="columns">
           <thead>
             <tr>
@@ -89,6 +105,7 @@ export function TableView({ model, tableRef, column }: Props) {
             ))}
           </tbody>
         </table>
+        </div>
 
         {table.indexes.length > 0 && (
           <details>
@@ -156,6 +173,24 @@ export function TableView({ model, tableRef, column }: Props) {
       </article>
 
       <aside className="panel">
+        <dl className="facts">
+          <div>
+            <dt>Columns</dt>
+            <dd>{table.columns.length}</dd>
+          </div>
+          <div>
+            <dt>Keys</dt>
+            <dd>{keyCount}</dd>
+          </div>
+          <div>
+            <dt>References</dt>
+            <dd>{relations.out.length}</dd>
+          </div>
+          <div>
+            <dt>Referenced by</dt>
+            <dd>{relations.in.length}</dd>
+          </div>
+        </dl>
         <section>
           <h2>References</h2>
           {relations.out.length === 0 ? (
@@ -164,7 +199,9 @@ export function TableView({ model, tableRef, column }: Props) {
             <ul>
               {relations.out.map((r, i) => (
                 <li key={i}>
-                  <span className="mono">{r.from.columns.join(', ')}</span> → <a href={tableHash(r.to.table)}>{r.to.table}</a>
+                  <span className="mono">{r.from.columns.join(', ')}</span>
+                  <span className="arrow"> → </span>
+                  <a href={tableHash(r.to.table)}>{r.to.table}</a>
                   <span className="mono muted">.{r.to.columns.join(', ')}</span>
                   {r.virtual && <span className="tag">notes</span>}
                   <Action relation={r} />
@@ -201,6 +238,27 @@ export function TableView({ model, tableRef, column }: Props) {
             </ul>
           </section>
         )}
+        <section className="sequence">
+          <h2>Sequence</h2>
+          <ul>
+            {sequence.previous && (
+              <li>
+                <a href={tableHash(sequence.previous.ref)}>
+                  <span className="no">{sequence.previous.number}</span>
+                  {sequence.previous.ref}
+                </a>
+              </li>
+            )}
+            {sequence.next && (
+              <li>
+                <a href={tableHash(sequence.next.ref)}>
+                  <span className="no">{sequence.next.number}</span>
+                  {sequence.next.ref}
+                </a>
+              </li>
+            )}
+          </ul>
+        </section>
       </aside>
     </div>
   );

@@ -8,6 +8,9 @@ import { buildIndex, search } from '../src/page/search.ts';
 import { neighbours, withNeighbours, expand, subgraph } from '../src/page/graph.ts';
 import { layout, nodeHeight, nodeWidth } from '../src/page/layout.ts';
 import { prompt } from '../src/page/prompt.ts';
+import { catalogue, neighboursOf } from '../src/page/catalogue.ts';
+import { profile, plotPath, tickWidth, tickCentre } from '../src/page/plot.ts';
+import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
 
 const shop = (): Model => JSON.parse(readFileSync(new URL('../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
 
@@ -90,6 +93,56 @@ test('layout places every table without overlap, from the referencing table towa
   assert.ok(placed.get('dbo.OrderLines')!.x < placed.get('dbo.Orders')!.x);
 });
 
+test('the catalogue numbers every table in model order and gives each schema a colour', () => {
+  const cat = catalogue(shop());
+  assert.deepEqual(cat.entries.map((e) => `${e.number} ${e.ref}`), [
+    '001 dbo.Customers',
+    '002 dbo.Orders',
+    '003 dbo.OrderLines',
+    '004 dbo.Products',
+    '005 dbo.vOrderTotals',
+    '006 billing.Invoices',
+  ]);
+  assert.equal(cat.byRef.get('billing.Invoices')?.number, '006');
+  assert.deepEqual([...cat.colours], [['dbo', '#e2001a'], ['billing', '#ffd500']]);
+  assert.deepEqual(neighboursOf(cat, 'dbo.Customers').previous, undefined);
+  assert.equal(neighboursOf(cat, 'dbo.Customers').next?.ref, 'dbo.Orders');
+  assert.equal(neighboursOf(cat, 'billing.Invoices').next, undefined);
+  assert.deepEqual(neighboursOf(cat, 'dbo.Ghost'), {});
+});
+
+test('a profile rises for keys and the plot path has one pulse per column', () => {
+  const model = shop();
+  const orders = model.databases[0].schemas[0].tables[1];
+  const ticks = profile(orders, ['CustomerId']);
+  assert.deepEqual(ticks.map((t) => [t.column, t.height]), [
+    ['Id', 1],
+    ['CustomerId', 0.6],
+    ['Status', 0.18],
+    ['CreatedAt', 0.18],
+    ['Total', 0.18],
+  ]);
+  const customers = model.databases[0].schemas[0].tables[0];
+  assert.equal(profile(customers, [])[1].height, 0.45, 'a unique column rises a little');
+  const path = plotPath(ticks, 200, 40);
+  assert.equal(path.split('L').length - 1, ticks.length * 3 + 1, 'three points per pulse and the run-out');
+  assert.match(path, /^M0,39 L14\.0,39 L20\.0,1\.0 L26\.0,39/);
+  assert.match(path, /L200\.0,39$/, 'runs out to the full width on the baseline');
+  assert.equal(tickWidth(3, 1000), 72, 'capped');
+  assert.equal(tickWidth(300, 600), 6, 'floored');
+  assert.equal(tickCentre(1, 5, 200), 60);
+});
+
+test('the mark is one geometry at every size and a favicon-safe data URI', () => {
+  const small = markSvg(16, '#000');
+  const big = markSvg(256, '#fff', 1);
+  assert.match(small, /width="16" height="16" viewBox="0 0 24 24"/);
+  assert.match(big, /stroke="#fff" stroke-width="1"/);
+  assert.ok(small.includes(markPulse) && big.includes(markPulse));
+  assert.match(markDataUri(), /^data:image\/svg\+xml,%3Csvg/);
+  assert.doesNotMatch(markDataUri(), /[<>"]/);
+});
+
 test('the prompt frames the tables and includes each one as Markdown', () => {
   const text = prompt(shop(), ['dbo.Orders', 'dbo.Customers']);
   assert.match(text, /^The schema of the Shop database, from dbtour\./);
@@ -102,6 +155,7 @@ test('pageHtml inlines the model and the bundle so neither can end its script el
   model.databases[0].description = 'Closes </script><!-- early';
   const html = pageHtml(model, 'var a = "</script>"; // </SCRIPT', 'body{}');
   assert.match(html, /<title>Shop · dbtour<\/title>/);
+  assert.match(html, /<link rel="icon" href="data:image\/svg\+xml,/);
   assert.match(html, /<style>body\{\}<\/style>/);
   assert.equal(html.match(/<\/script>/g)!.length, 2, 'only the two script elements close');
   const json = /<script id="dbtour-model" type="application\/json">(.*?)<\/script>/s.exec(html)![1];

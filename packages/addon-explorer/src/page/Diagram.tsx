@@ -1,14 +1,17 @@
-// The canvas: the chosen tables as nodes, their relations as edges, laid out by ELK, drawn by React Flow.
-// "+" on a node adds its neighbours by changing the hash, so the browser's back button undoes it.
+// The map: the chosen tables as entries on the black field, their relations as hairlines, laid out by ELK,
+// drawn by React Flow. "+" on a node adds its neighbours by changing the hash, so back undoes it.
 import { useEffect, useMemo, useState } from 'react';
-import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
+import { Background, BackgroundVariant, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
 import { findTable, relationsOf, type Column, type Model } from 'dbtour/model';
+import type { Catalogue } from './catalogue.ts';
 import { expand, subgraph, type Subgraph } from './graph.ts';
 import { layout, type Position as Placed } from './layout.ts';
 import { diagramHash, tableHash } from './route.ts';
 
 interface TableNodeData extends Record<string, unknown> {
   ref: string;
+  number: string;
+  colour: string;
   schema: string;
   name: string;
   kind: 'table' | 'view';
@@ -27,8 +30,9 @@ function TableNodeView({ data }: NodeProps<TableNode>) {
     <div className={`node${data.focus ? ' is-focus' : ''}`}>
       <Handle type="target" position={Position.Left} className="handle" />
       <div className="node-head">
+        <span className="block" style={{ background: data.colour }} />
+        <span className="no">{data.number}</span>
         <a className="nodrag node-name" href={tableHash(data.ref)} title={`Open ${data.ref}`}>
-          <span className="node-schema">{data.schema}.</span>
           {data.name}
         </a>
         {data.kind === 'view' && <span className="tag">view</span>}
@@ -56,12 +60,13 @@ const nodeTypes = { table: TableNodeView };
 
 interface Props {
   model: Model;
+  cat: Catalogue;
   refs: string[];
   title: string;
   description?: string;
 }
 
-export function DiagramView({ model, refs, title, description }: Props) {
+export function DiagramView({ model, cat, refs, title, description }: Props) {
   const key = refs.join(',');
   // Keyed on the joined refs: the array is new on every parse of the hash, its content is what matters.
   const graph = useMemo(() => subgraph(model, refs), [model, key]);
@@ -78,7 +83,7 @@ export function DiagramView({ model, refs, title, description }: Props) {
   }, [model, graph, key]);
 
   const positions = placed?.key === key ? placed.positions : undefined;
-  const nodes = useMemo(() => (positions ? toNodes(model, graph, positions) : []), [model, graph, positions]);
+  const nodes = useMemo(() => (positions ? toNodes(model, cat, graph, positions) : []), [model, cat, graph, positions]);
   const edges = useMemo(() => toEdges(graph), [graph]);
 
   return (
@@ -88,8 +93,8 @@ export function DiagramView({ model, refs, title, description }: Props) {
           <h1>{title}</h1>
           {description && <p className="muted">{description}</p>}
         </div>
-        <p className="muted">
-          {graph.tables.length} tables · {graph.relations.length} relations · drag to pan, scroll to zoom, + on a node adds its neighbours
+        <p className="label">
+          {graph.tables.length} tables · {graph.relations.length} relations · drag to pan · scroll to zoom · + adds neighbours
         </p>
       </header>
       <div className="canvas">
@@ -109,7 +114,7 @@ export function DiagramView({ model, refs, title, description }: Props) {
             elementsSelectable={false}
             proOptions={{ hideAttribution: true }}
           >
-            <Background gap={24} />
+            <Background variant={BackgroundVariant.Lines} gap={32} lineWidth={1} color="var(--grid)" />
             <Controls showInteractive={false} />
           </ReactFlow>
         ) : (
@@ -120,7 +125,7 @@ export function DiagramView({ model, refs, title, description }: Props) {
   );
 }
 
-function toNodes(model: Model, graph: Subgraph, positions: Map<string, Placed>): TableNode[] {
+function toNodes(model: Model, cat: Catalogue, graph: Subgraph, positions: Map<string, Placed>): TableNode[] {
   return graph.tables.map((ref, i) => {
     const { schema, table } = findTable(model, ref)!;
     const expanded = expand(model, graph.tables, ref);
@@ -130,6 +135,8 @@ function toNodes(model: Model, graph: Subgraph, positions: Map<string, Placed>):
       position: positions.get(ref) ?? { x: 0, y: 0 },
       data: {
         ref,
+        number: cat.byRef.get(ref)?.number ?? '',
+        colour: cat.colours.get(schema.name) ?? '#8c8c8c',
         schema: schema.name,
         name: table.name,
         kind: table.kind,
@@ -149,7 +156,7 @@ function toEdges(graph: Subgraph): Edge[] {
     source: relation.from.table,
     target: relation.to.table,
     label: relation.from.columns.join(', ') + (relation.virtual ? ' (notes)' : ''),
-    style: relation.virtual ? { strokeDasharray: '6 4' } : undefined,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+    style: relation.virtual ? { strokeDasharray: '4 4' } : undefined,
+    markerEnd: { type: MarkerType.Arrow, width: 14, height: 14, color: 'var(--ink)' },
   }));
 }

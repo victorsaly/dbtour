@@ -6,3 +6,9 @@ examples/*/docs/tables/
 examples/*/docs/index.html
 # What `npm run build` bundles for the page.
 packages/*/dist/
+# SideShot's pictures of a pull request; the published ones live on the sideshot branch.
+.sideshot/
+# The design skill's working captures; its records (design.json, the surface briefs) are kept.
+.impeccable/review/
+.impeccable/build/
+.impeccable/mocks/

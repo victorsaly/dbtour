@@ -13,7 +13,9 @@ For coding agents changing this repository. The design is in [PLAN.md](PLAN.md);
 - `packages/addon-explorer`: the page. `src/index.ts` is what `render` loads: it inlines `dist/` and the model
   into one index.html. `src/page/` is the React app that esbuild bundles into `dist/` (`npm run build`, run
   for you before the tests). Its pure parts, `route.ts`, `search.ts`, `graph.ts`, `layout.ts` and
-  `prompt.ts`, are tested in Node; the components by `test/e2e/` in Google Chrome, skipped when there is none.
+  `prompt.ts`, `catalogue.ts` and `plot.ts`, are tested in Node; the components by `test/e2e/` in Google
+  Chrome, skipped when there is none. `fonts/` holds the two OFL fonts the build inlines; `src/mark.ts` is the
+  logo's geometry, which `npm run brand` draws into `brand/`. The look is recorded in `DESIGN.md`.
 - `examples/shop`: a small model, its notes and config; `npm run example` renders it.
 
 ## How the code is written

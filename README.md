@@ -1,6 +1,7 @@
 <div align="center">
 
-# dbtour
+<img src="https://raw.githubusercontent.com/victorsaly/dbtour/main/brand/logo-light.svg#gh-dark-mode-only" alt="dbtour" width="220">
+<img src="https://raw.githubusercontent.com/victorsaly/dbtour/main/brand/logo.svg#gh-light-mode-only" alt="dbtour" width="220">
 
 **Tour your database and its API.**
 
@@ -52,7 +53,8 @@ It holds the structure and never the rows.
 - Every view has a URL: `#dbo.Orders`, `#dbo.Orders.Status`, `#diagram/dbo.Orders,dbo.Customers`,
   `#group/Billing`.
 - **Copy for Claude** puts the table's Markdown on the clipboard, ready to paste into an agent.
-- Dark mode follows the system.
+- Every table has a number and every schema a colour, and each table is drawn as one line: a pulse per
+  column, a key as a peak. Dark mode follows the system.
 
 `dbtour.notes.yaml` adds what the database cannot say, and wins over it:
 
@@ -77,6 +79,7 @@ npm install
 npm run check      # lint, typecheck, tests with coverage (builds the page first)
 npm run example    # renders examples/shop into examples/shop/docs; open examples/shop/docs/index.html
 npm run e2e:page   # drives the page in Google Chrome
+npm run brand      # redraws brand/ from the mark in packages/addon-explorer/src/mark.ts
 ```
 
 ## Licence
