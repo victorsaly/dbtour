@@ -18,7 +18,7 @@
   chosen one; CodeMirror put it just under the chosen one. The description and the check's box are drawn
   like the list, in a hairline box.
 
-## 0.9.2 (unreleased)
+## 0.9.2 (1 November 2026)
 
 - The SQL editor does more of what SQL Server's completion add-ins do, written for dbtour (SQL Prompt is
   closed source, so nothing is taken from it). Tab after * in the select list writes the columns of the
