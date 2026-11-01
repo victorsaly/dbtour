@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.2.3 (unreleased)
+## 0.2.4 (unreleased)
+
+- The release workflow retries a failed publish. It decides the tag and the publish apart: a version
+  already tagged is not tagged again, and a version npm lacks is published from a checkout of its tag,
+  package by package, even when it was tagged earlier. So when the trusted publisher was not set up in
+  time, running the workflow again (Actions, Release, Run workflow) ships what is missing; 0.2.3 never
+  reached npm for that reason.
+
+## 0.2.3 (1 November 2026)
 
 - `npm run release -- --publish` publishes a version the workflow has already tagged, from a checkout of
   that tag, which is how a version gets to npm until npm trusts the workflow, or after its publish failed.

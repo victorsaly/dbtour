@@ -90,6 +90,31 @@ test('--check takes the notes from its own version, not one it is a prefix of', 
   assert.equal(notes, '- This one.\n');
 });
 
+test('--check on a tagged version says it is not new but still unpublished, so the workflow can publish on a rerun', () => {
+  const repo = tagged();
+  assert.equal(repo.release('--check').status, 0);
+  const output = readFileSync(join(repo.root, 'output'), 'utf8');
+  assert.match(output, /^new=false$/m);
+  assert.match(output, /^unpublished=true$/m);
+});
+
+test('--check says unpublished=false once npm has every package, and unknown when npm cannot be asked', () => {
+  const done = tagged({ published: ['dbtour@0.2.2', 'dbtour-source-mssql@0.2.2', 'dbtour-addon-explorer@0.2.2'] });
+  assert.equal(done.release('--check').status, 0);
+  assert.match(readFileSync(join(done.root, 'output'), 'utf8'), /^unpublished=false$/m);
+  const down = tagged({ registryDown: true });
+  const result = down.release('--check');
+  assert.equal(result.status, 0, 'a registry that cannot be asked does not stop the tag and the release');
+  assert.match(readFileSync(join(down.root, 'output'), 'utf8'), /^unpublished=unknown$/m);
+  assert.match(result.stderr, /Could not ask npm/);
+});
+
+test('--publish --provenance hands the flag to npm, for the workflow', () => {
+  const repo = tagged();
+  assert.equal(repo.release('--publish', '--provenance').status, 0);
+  assert.match(repo.called(), /^npm publish --workspace packages\/core --access public --provenance$/m);
+});
+
 test('--publish on a new version tags, releases and publishes, and exits 0', () => {
   const repo = repository();
   const result = repo.release('--publish');

@@ -2,7 +2,9 @@ name: Release
 
 # Every push to main whose version has no tag yet becomes a tag, a GitHub release with that version's
 # changelog section as its notes, and a publish of the three packages to npm. One pull request is one
-# release, so this runs on the merge. A version that is already tagged does nothing.
+# release, so this runs on the merge. The tag and the publish are decided apart: a version already tagged
+# is not tagged again, and a version npm lacks is published even when it was tagged earlier, so a failed
+# publish is retried by running the workflow again (Actions, Release, Run workflow).
 on:
   push:
     branches: [main]
@@ -40,13 +42,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "v${{ steps.version.outputs.version }}" --target "$GITHUB_SHA" --title "${{ steps.version.outputs.version }}" --notes-file "${{ steps.version.outputs.notes }}"
-      # Trusted publishing needs npm 11.5 or newer; the runner's Node 22 ships an older one. The publish
-      # runs once the repository variable NPM_TRUSTED_PUBLISHING is "true", which says each package on
-      # npmjs.com trusts this workflow (Settings, Trusted publisher: GitHub Actions, victorsaly/dbtour,
-      # release.yml). Until then, or when this step fails after the release was made, publish by hand from a
-      # checkout of the tag: npm run release -- --publish. Re-running this workflow will not, since the
-      # version is tagged by then.
-      - if: steps.version.outputs.new == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+      # The publish runs when npm lacks the version and the repository variable NPM_TRUSTED_PUBLISHING is
+      # "true", which says each package on npmjs.com trusts this workflow (Settings, Trusted publisher:
+      # GitHub Actions, victorsaly/dbtour, release.yml; npm answers 404 on publish when that is not so).
+      # It ships exactly what the tag holds: the tag's commit is checked out first, which matters on a rerun
+      # after commits that did not bump the version. Trusted publishing needs npm 11.5 or newer; the
+      # runner's Node 22 ships an older one.
+      - if: steps.version.outputs.unpublished == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+        name: Check out the tag
+        run: |
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ github.token }}" fetch -q origin "refs/tags/v${{ steps.version.outputs.version }}:refs/tags/v${{ steps.version.outputs.version }}"
+          git checkout -q "v${{ steps.version.outputs.version }}"
+          npm ci
+      - if: steps.version.outputs.unpublished == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
         run: npm install -g npm@latest
-      - if: steps.version.outputs.new == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
-        run: npm publish --workspace packages/core --workspace packages/source-mssql --workspace packages/addon-explorer --access public --provenance
+      - if: steps.version.outputs.unpublished == 'true' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+        run: node scripts/release.mjs --publish --provenance
