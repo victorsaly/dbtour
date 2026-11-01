@@ -3,15 +3,16 @@
 // (sql.ts), so a check reads the same in a cell as in a trigger. The editor is where a SQL generator will
 // later let the reader write; for now nothing can be typed into it.
 import { useEffect, useRef, useState } from 'react';
-import { autocompletion, completionKeymap, type CompletionContext } from '@codemirror/autocomplete';
+import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { foldGutter, syntaxHighlighting } from '@codemirror/language';
-import { MSSQL, SQLDialect, sql, type SQLNamespace } from '@codemirror/lang-sql';
+import { MSSQL, sql } from '@codemirror/lang-sql';
 import { EditorState } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
 import type { Model } from 'dbtour/model';
 import { CopyButton } from './Copy.tsx';
-import { completionSchema, joinCompletions, sqlPrompt } from './query.ts';
+import { sqlSupport } from './complete.ts';
+import { sqlPrompt } from './query.ts';
 import { sqlHighlighter, sqlTokens } from './sql.ts';
 import { storedTool } from './tools.ts';
 import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, parseServed, statusOf, type Served } from './served.ts';
@@ -56,12 +57,6 @@ export function SqlInline({ code }: { code: string }) {
     </code>
   );
 }
-
-/**
- * T-SQL as SQL Server reads it by default: names are not case-sensitive, so a completed OrderLines needs no
- * quotes, and a name that does need them gets [brackets], as T-SQL is written, rather than "double quotes".
- */
-const tsql = SQLDialect.define({ ...MSSQL.spec, caseInsensitiveIdentifiers: true, identifierQuotes: '["' });
 
 /**
  * Where the text is: CodeMirror's own caret is black, which vanishes on the dark field, so it is drawn in ink,
@@ -215,7 +210,6 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
   };
   useEffect(() => {
     if (!host.current) return;
-    const { schema, defaultSchema } = completionSchema(model, database);
     view.current = new EditorView({
       parent: host.current,
       state: EditorState.create({
@@ -230,16 +224,8 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
           // No Tab binding: Tab leaves the editor, so the keyboard is never trapped in it.
           // ⌘/Ctrl+Enter runs the query, ahead of the default keymap's own use of it.
           keymap.of([{ key: 'Mod-Enter', run: () => (run.current(), true) }, ...completionKeymap, ...defaultKeymap, ...historyKeymap]),
-          sql({ dialect: tsql, schema: schema as unknown as SQLNamespace, defaultSchema, upperCaseKeywords: true }),
-          // After JOIN: the tables related to those already in the query, each with its ON clause written.
-          tsql.language.data.of({
-            autocomplete: (context: CompletionContext) => {
-              if (!context.matchBefore(/\bJOIN\s+[\w.[\]]*$/i)) return null;
-              const word = context.matchBefore(/[\w.[\]]*$/)!;
-              const options = joinCompletions(model, context.state.doc.toString(), database).map((j) => ({ ...j, boost: 99 }));
-              return options.length ? { from: word.from, options, validFor: /^[\w.[\]]*$/ } : null;
-            },
-          }),
+          // What belongs at the caret: columns in scope, conditions after ON, joins after JOIN (complete.ts).
+          sqlSupport(model, database),
           // Words only, no icons: the catalogue draws no glyph it does not explain.
           autocompletion({ icons: false }),
           syntaxHighlighting(sqlHighlighter),

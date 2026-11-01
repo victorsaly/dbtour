@@ -3,7 +3,7 @@ name: dbtour
 description: Documents a project's database from its structure and answers questions about it without reading a row - which table holds something, how two tables join, what a column means, how big a table is - and writes SQL against it from the real tables and columns, through dbtour (dbtour.yaml, docs/dbtour/schema.json, the dbtour MCP server). Use when asked to document a database or keep its docs current, to find where data lives, to explain a schema, to write or check a query for the project's database, or to set up dbtour. Load it before writing SQL against a database the project uses, even a short query.
 license: MIT
 metadata:
-  version: 0.9.0
+  version: 0.9.1
   homepage: https://github.com/victorsaly/dbtour
 allowed-tools: Bash(npx dbtour *)
 ---
