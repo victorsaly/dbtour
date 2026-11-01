@@ -1,6 +1,6 @@
 {
   "name": "dbtour-source-mssql",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "description": "SQL Server source for dbtour: tables, views, columns, keys, relations, indexes, descriptions.",
   "type": "module",
   "license": "MIT",
@@ -36,6 +36,6 @@
   },
   "devDependencies": {
     "@types/mssql": "^9.1.8",
-    "dbtour": "0.9.3"
+    "dbtour": "0.10.0"
   }
 }

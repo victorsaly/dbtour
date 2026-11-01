@@ -1,6 +1,31 @@
 # Changelog
 
-## 0.9.3 (unreleased)
+## 0.10.0 (unreleased)
+
+- Databases set up on your own machine, the first half of the plan's sixth milestone. Without a
+  `dbtour.yaml`, `dbtour add <name> --server <host>` tests a connection and saves it in `~/.dbtour`
+  (`DBTOUR_HOME` elsewhere): a settings file with no secret in it, and a folder per database for its model,
+  notes and page. `dbtour read <name>` writes them, `dbtour list` shows every database without a secret, and
+  `dbtour remove <name>` forgets one and its passwords and keeps its folder.
+- Passwords live in the system's keychain through a new package, `dbtour-keychain` (macOS Keychain, Windows
+  Credential Manager, the Secret Service), under "dbtour · <name> · login" or "· reader". dbtour signs in with
+  `az` by default; a login's password comes only on stdin (`--password-stdin`), and `--password` is refused,
+  as a command line ends up in shell history, `ps` and an agent's log. A database that does not answer is not
+  saved, nor its password kept.
+- `dbtour reader <name> --create` prints the statements that make `dbtour_reader`, a contained user with
+  `db_datareader` alone, and exits 3; with `--confirm <name>` it runs them with the admin's sign-in, makes a
+  password nobody sees, keeps it in the keychain and signs in once to check. A login that holds any other role
+  is refused. `--user <login> --password-stdin` uses a reader you have.
+- With several databases set up, `sql`, `mcp` and `serve` take `--database <name>` and refuse to guess.
+  `dbtour serve` with none named and no `dbtour.yaml` serves a home of every database, each page at
+  `/db/<name>/` with its queries run through its own reader; the settings file is never served.
+- The page: the home lists the databases as numbered entries with their facts and a dot, green when it has a
+  reader; a database's rail lists the others to switch to. No colour block marks a database: a block is a
+  schema.
+- The skill teaches an agent the same rules: name the database, prefer `az`, never put a password in a
+  command, and show the reader's statements to the person before confirming them.
+
+## 0.9.3 (2 November 2026)
 
 - The SQL editor checks names against the model as you type, as SQL Server's completion add-ins do. A table
   after FROM or JOIN the model does not have, or a column a table it has does not (after its alias or name

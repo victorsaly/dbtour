@@ -67,7 +67,7 @@ function harness(options: { roles?: string[]; exists?: boolean; failTest?: boole
     secrets: store,
     stdin,
     load: async () => source,
-    loadAddon: async () => ({ render: (model: Model) => ({ 'index.html': `<title>${model.databases[0].name}</title>` }) }),
+    loadAddon: async () => ({ render: (model: Model) => ({ 'index.html': `<title>${model.databases[0]?.name ?? 'home'}</title>` }) }),
   };
   return { io, out, err, calls, secrets, home };
 }
@@ -192,4 +192,29 @@ test('remove forgets a database and its passwords, keeps its folder, and says ho
   assert.equal(h.secrets.size, 0);
   assert.ok(existsSync(join(h.home, 'databases', 'Shop', 'schema.json')), 'notes and pages are the user\'s to delete');
   assert.match(h.out.join('\n'), /DROP USER \[dbtour_reader\]/);
+});
+
+test('serve with databases set up and no dbtour.yaml here serves the home, and each database at /db/<name>/', async () => {
+  const h = harness();
+  await main(shop, h.io);
+  await main(['read', 'Shop'], h.io);
+  let stop!: () => void;
+  const stopped = new Promise<void>((done) => (stop = done));
+  h.out.length = 0;
+  const serving = main(['serve', '--port', '0'], { ...h.io, stop: stopped });
+  for (let waited = 0; !h.out.some((l) => l.startsWith('Serving')); waited += 20) {
+    if (waited > 5000) assert.fail(`serve did not start: ${[...h.out, ...h.err].join(' / ')}`);
+    await new Promise((next) => setTimeout(next, 20));
+  }
+  const url = /at (http:\/\/\S+)/.exec(h.out[0])![1];
+  try {
+    assert.match(h.out[0], /^Serving Shop at http:\/\/127\.0\.0\.1:\d+$/);
+    const meta = (html: string) => JSON.parse(/<meta name="dbtour-serve" content="([^"]*)">/.exec(html)![1].replace(/&quot;/g, '"'));
+    const front = meta(await (await fetch(`${url}/`)).text());
+    assert.deepEqual(front.databases.map((d: { name: string; read: boolean; tables: number }) => [d.name, d.read, d.tables]), [['Shop', true, 6]]);
+    assert.equal(await (await fetch(`${url}/db/Shop/`)).text().then((t) => t.includes('<title>Shop</title>')), true);
+  } finally {
+    stop();
+    assert.equal(await serving, 0);
+  }
 });

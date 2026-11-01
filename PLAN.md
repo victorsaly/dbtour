@@ -184,7 +184,10 @@ shop window, and nothing goes on the page before it is released.
    passwords and connection strings go to the system's keychain (macOS Keychain, Windows Credential Manager,
    the Secret Service), named from the settings, never written to a file or shown again. `dbtour.yaml`
    and environment variables keep working as they do, for CI and agents. The keychain is a dependency, so it
-   lives in a package of its own, not core. The design is drawn and agreed before it is built. ← here
+   lives in a package of its own, not core. The owner chose the layout on 1 November 2026: the setup is a
+   page shaped like an entry, five numbered sections, and the home is a list of database entries with the
+   rail switching between them. First the settings, the keychain, the commands an agent can run safely and
+   the home (0.10.0), then the wizard on the page. ← here
 7. `source-openapi` and table-to-endpoint links.
 8. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
    and the comments its database keeps.

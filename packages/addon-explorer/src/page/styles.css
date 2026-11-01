@@ -1753,3 +1753,103 @@ table.columns tr.is-pointed td {
   top: 0;
   background: var(--bg);
 }
+
+/* Words for a screen reader beside a mark that says them to the eye. */
+.hidden-words {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The rail's switcher on a served database's page: back to all of them, and the others one click away,
+   each with its dot (green: it has a reader). No colour block: a block is a schema. */
+.switcher {
+  display: grid;
+  gap: 4px;
+  margin: 0 16px 16px;
+}
+.switcher-home {
+  text-decoration: none;
+}
+.switcher-home:hover,
+.switcher-home:focus-visible {
+  color: var(--ink);
+}
+.switcher ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--hair) solid var(--line);
+}
+.switcher a:not(.switcher-home) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0 5px 8px;
+  border-bottom: var(--hair) solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.switcher a:not(.switcher-home):hover {
+  background: var(--fill);
+}
+.switcher a.is-current {
+  box-shadow: inset 2px 0 0 var(--red);
+}
+.switcher .status::before {
+  margin-right: 0;
+}
+
+/* The home of several databases: an entry each, numbered as the index's tables are, its dot and facts. */
+.database-entries {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--hair) solid var(--line);
+}
+.database-entry {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 12px 0;
+  border-bottom: var(--hair) solid var(--line);
+}
+.database-entry .no {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.database-entry .name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.database-entry a.name {
+  text-decoration: none;
+}
+.database-entry a.name:hover,
+.database-entry a.name:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.database-entry .facts {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.databases-hint {
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+}

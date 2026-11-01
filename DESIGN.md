@@ -109,6 +109,14 @@ Strategy: restrained. No gradient, no shadow, no radius.
   the database answers: on the rail's "Connected through dbtour serve" it is green when a source has a
   reader, grey when none has. On the SQL page the caret waits in the editor, on the line under SELECT; an
   entry's Query section never takes focus.
+- **Databases home and switcher** (`Databases.tsx`, `served.ts`): served with several databases set up,
+  `/` is a page of database entries: a three-digit number in mono, the name at 18px Archivo 600 linking to its
+  page, a status dot at the right (green `--live` and "reader" when it can run queries, grey "no reader"),
+  and a line of mono facts (driver, database on server, tables, size, when read); one not read yet says the
+  command that reads it and links nowhere. A database's rail carries "All databases" and, with two or more,
+  the others as hairline rows with their dots, the current one with a 2px red inset like the current entry.
+  Chosen by the owner on 1 November 2026 from three layouts. A database has no colour block: a block is a
+  schema.
 - **Facts**: four mono-caps labels with 20px mono values, in two columns, each over a hairline: columns,
   keys, references, referenced by. Every entry shows the same four in the same place.
 - **Map nodes**: 240px wide, a 34px head with block, number and name, 22px rows, 6px padding; sizes

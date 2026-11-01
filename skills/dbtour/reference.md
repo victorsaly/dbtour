@@ -38,6 +38,25 @@ their own shell: `export DBTOUR_MSSQL='…'`. It never goes in a file.
 Exit codes: 1 for what was asked, 2 for what is missing (no `dbtour.yaml`, no `schema.json`, an unset
 variable), 3 for nothing to do. Every error says what to do next.
 
+### Databases set up on this machine
+
+Without a `dbtour.yaml`, dbtour keeps databases in `~/.dbtour` (`DBTOUR_HOME` elsewhere): `databases.json`
+with no secret in it, a folder per database for its model, notes and page, and every password in the system's
+keychain under "dbtour · <name> · login" or "· reader". `dbtour-keychain` must be installed beside `dbtour`.
+
+| Command | What it does |
+|---|---|
+| `npx dbtour add <name> --server <host> [--database <on the server>]` | Tests the connection, then saves it. Signs in with `az` unless `--sign-in login --user <login> --password-stdin`; the password comes only on stdin. `--password` is refused. |
+| `npx dbtour reader <name> --create` | Prints the statements that make `dbtour_reader` (db_datareader alone) and exits 3. With `--confirm <name>` it runs them with the admin's sign-in, makes the password, keeps it in the keychain and signs in once to check. A login with any other role is refused. |
+| `npx dbtour reader <name> --user <login> --password-stdin` | Uses a read-only login the person has, after signing in with it. |
+| `npx dbtour read <name>` | Extracts and renders into the database's folder. |
+| `npx dbtour list` | Each database: type, server and database, how dbtour signs in, the reader, when it was read. Never a secret. |
+| `npx dbtour remove <name>` | Forgets it and its passwords. Keeps its folder, and says how to drop the reader. |
+
+`sql`, `mcp` and `serve` take `--database <name>`; with several set up and none named, they stop and list the
+names. `serve` with none named and no `dbtour.yaml` here serves the home: every database at `/db/<name>/`,
+each page's queries through its own reader.
+
 ## dbtour.notes.yaml
 
 What the database cannot say. It wins over the database when the docs are rendered.
