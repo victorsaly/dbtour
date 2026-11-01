@@ -416,6 +416,10 @@ kbd {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+/* A count never wraps away from its label; the items wrap as whole units. */
+.meta span {
+  white-space: nowrap;
+}
 .actions {
   display: flex;
   gap: 10px;
