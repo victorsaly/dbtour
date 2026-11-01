@@ -1,6 +1,6 @@
 // Markdown GitHub shows: an index with every table, and one page per table with its columns, keys,
 // relations both ways, indexes, constraints and the diagram of its neighbourhood.
-import { findTable, isUniqueColumn, relationsOf, tableRef, type Database, type Model, type Table, type TableStats } from '../model.ts';
+import { findTable, isUniqueColumn, relationsOf, tableRef, type Column, type Constraint, type Database, type Index, type Model, type Properties, type Relation, type Table, type TableStats } from '../model.ts';
 import { erDiagram, neighbourhood } from './mermaid.ts';
 
 // Mermaid lays out a whole database only while it is small; above this many tables the index shows the
@@ -28,6 +28,7 @@ function renderIndex(model: Model): string {
     parts.push(`${single ? '#' : '##'} ${database.name}\n`);
     if (database.description) parts.push(`${database.description}\n`);
     parts.push(`${driverLine(database)}\n`);
+    if (database.unread?.length) parts.push(`Not read: ${database.unread.join('; ')}.\n`);
     // Rows and size only when the source read them; a view, which keeps no rows of its own, leaves them blank.
     const sized = database.schemas.some((s) => s.tables.some((t) => t.stats));
     parts.push(sized ? '| Table | Kind | Columns | Rows | Size | Description |\n|---|---|---|---|---|---|' : '| Table | Kind | Columns | Description |\n|---|---|---|---|');
@@ -40,6 +41,9 @@ function renderIndex(model: Model): string {
     }
     parts.push('');
   }
+  const owned: [string, Properties | undefined][] = model.databases.flatMap((d) => [[d.name, d.properties] as [string, Properties | undefined], ...d.schemas.map((s) => [s.name, s.properties] as [string, Properties | undefined])]);
+  const properties = propertiesTable(owned);
+  if (properties) parts.push(`## Properties\n\n${properties}`);
   for (const group of model.groups) {
     parts.push(`## ${group.name}\n`);
     if (group.description) parts.push(`${group.description}\n`);
@@ -64,7 +68,81 @@ export function driverName(driver: string): string {
 
 function driverLine(database: Database): string {
   const name = driverName(database.driver);
-  return database.version ? `${name} ${database.version}.` : `${name}.`;
+  const collation = database.collation ? `, collation ${database.collation}` : '';
+  return `${database.version ? `${name} ${database.version}` : name}${collation}.`;
+}
+
+/** A thing the catalogue says about a table beyond its columns and keys: a name, and its particulars. */
+export interface Feature {
+  name: string;
+  detail?: string;
+  /** A table the detail names, for a link. */
+  ref?: string;
+}
+
+/** What the catalogue says about a table beyond its columns and keys, in the order a reader weighs it. */
+export function features(table: Table): Feature[] {
+  const list: Feature[] = [];
+  if (table.temporal) {
+    const { history, start, end } = table.temporal;
+    list.push({ name: 'System-versioned', detail: `history in ${history}, each row valid from ${start} to ${end}`, ref: history });
+  }
+  if (table.historyOf) list.push({ name: 'History', detail: `of ${table.historyOf}`, ref: table.historyOf });
+  if (table.memoryOptimised) list.push({ name: 'Memory-optimised', detail: table.memoryOptimised });
+  if (table.ledger) list.push({ name: 'Ledger', detail: table.ledger });
+  if (table.partitioning) {
+    const { column, scheme, function: fn, partitions } = table.partitioning;
+    list.push({ name: 'Partitioned', detail: `on ${column} by ${scheme} (function ${fn}), ${partitions} partitions` });
+  }
+  if (table.compression) list.push({ name: 'Compressed', detail: table.compression });
+  if (table.changeTracking) list.push({ name: 'Change tracking' });
+  if (table.cdc) list.push({ name: 'Change data capture' });
+  if (table.triggers?.length) list.push({ name: 'Triggers', detail: String(table.triggers.length) });
+  if (table.security?.length) list.push({ name: 'Row-level security', detail: [...new Set(table.security.map((s) => s.policy))].join(', ') });
+  if (table.created) {
+    const altered = table.altered && table.altered.slice(0, 10) !== table.created.slice(0, 10) ? `, last altered ${table.altered.slice(0, 10)}` : '';
+    list.push({ name: 'Created', detail: `${table.created.slice(0, 10)}${altered}` });
+  }
+  return list;
+}
+
+/** A column's type, with its collation where it differs from the database's. */
+function columnType(column: Column): string {
+  return column.collation ? `${column.type}, collation ${column.collation}` : column.type;
+}
+
+/** What else the catalogue says about a column, for the Key cell: identity, sparse, masking, encryption. */
+function columnTraits(column: Column): string[] {
+  const traits: string[] = [];
+  if (column.identity) traits.push(column.identitySeed !== undefined ? `identity(${column.identitySeed},${column.identityIncrement ?? '1'})` : 'identity');
+  if (column.computed !== undefined) traits.push(`computed \`${column.computed}\``);
+  if (column.sparse) traits.push('sparse');
+  if (column.masked) traits.push(`masked \`${column.masked}\``);
+  if (column.encrypted) traits.push(`encrypted (${column.encrypted.type}, ${column.encrypted.key})`);
+  return traits;
+}
+
+/** The description cell: the description, then the sensitivity classification when there is one. */
+function columnDescription(column: Column): string {
+  const parts = column.description ? [column.description] : [];
+  const s = column.sensitivity;
+  if (s) parts.push(`Sensitivity: ${[s.label, s.informationType, s.rank && `rank ${s.rank}`].filter(Boolean).join(', ')}.`);
+  return parts.join(' ');
+}
+
+/** Not enforced, or not checked against the rows already there. */
+function enforcement(item: Constraint | Relation): string[] {
+  return [item.disabled ? 'disabled' : '', item.untrusted ? 'not trusted' : ''].filter(Boolean);
+}
+
+function indexKind(index: Index): string {
+  return [index.type ?? '', index.filter ? `filtered \`${index.filter}\`` : '', index.disabled ? 'disabled' : ''].filter(Boolean).join(', ');
+}
+
+/** Every extended property of the things listed, one row each; empty when there are none. */
+function propertiesTable(owners: [string, Properties | undefined][]): string {
+  const rows = owners.flatMap(([on, properties]) => Object.entries(properties ?? {}).map(([name, value]) => `| ${cell(on)} | ${cell(name)} | ${cell(value)} |`));
+  return rows.length === 0 ? '' : `| On | Name | Value |\n|---|---|---|\n${rows.join('\n')}\n`;
 }
 
 /** 1,204,377: thousands grouped the same way wherever it runs, so the docs do not change with the machine. */
@@ -103,6 +181,13 @@ function renderTable(model: Model, ref: string, table: Table, database: Database
   const parts: string[] = [`# ${ref}\n`];
   if (table.description) parts.push(`${table.description}\n`);
   if (table.stats) parts.push(`${statsLine(table.stats, database.statsReadAt)}\n`);
+  const listed = features(table);
+  if (listed.length > 0) {
+    parts.push('## Features\n');
+    // A table the feature names gets a link when it is in the model, as a relation's would.
+    const linked = (f: Feature): string | undefined => (f.ref && f.detail && findTable(model, f.ref) ? f.detail.replace(f.ref, `[${f.ref}](${f.ref}.md)`) : f.detail);
+    parts.push(listed.map((f) => `- **${f.name}**${f.detail ? `: ${linked(f)}` : ''}`).join('\n') + '\n');
+  }
   const relations = relationsOf(model, ref);
 
   parts.push('| Column | Type | Nullable | Default | Key | Description |\n|---|---|---|---|---|---|');
@@ -113,13 +198,13 @@ function renderTable(model: Model, ref: string, table: Table, database: Database
       const i = relation.from.columns.indexOf(column.name);
       if (i === -1) continue;
       const { table: toTable, columns } = relation.to;
-      keys.push(`FK → [${toTable}](${toTable}.md).${columns[i] ?? columns.join(',')}${relation.virtual ? ' (notes)' : ''}`);
+      const state = [relation.virtual ? 'notes' : '', ...enforcement(relation)].filter(Boolean);
+      keys.push(`FK → [${toTable}](${toTable}.md).${columns[i] ?? columns.join(',')}${state.length ? ` (${state.join(', ')})` : ''}`);
     }
     if (isUniqueColumn(table, column.name)) keys.push('unique');
-    if (column.identity) keys.push('identity');
-    if (column.computed !== undefined) keys.push(`computed \`${column.computed}\``);
+    keys.push(...columnTraits(column));
     const dflt = column.default === undefined ? '' : `\`${column.default}\``;
-    parts.push(`| ${cell(column.name)} | ${cell(column.type)} | ${column.nullable ? 'yes' : 'no'} | ${cell(dflt)} | ${keys.join(', ')} | ${cell(column.description)} |`);
+    parts.push(`| ${cell(column.name)} | ${cell(columnType(column))} | ${column.nullable ? 'yes' : 'no'} | ${cell(dflt)} | ${keys.join(', ')} | ${cell(columnDescription(column))} |`);
   }
   parts.push('');
 
@@ -133,10 +218,12 @@ function renderTable(model: Model, ref: string, table: Table, database: Database
 
   if (table.indexes.length > 0) {
     parts.push('## Indexes\n');
-    parts.push('| Name | Columns | Unique |\n|---|---|---|');
+    // The Kind column only when the source said what kind; a model without it renders as it always did.
+    const kinds = table.indexes.some((i) => indexKind(i) !== '');
+    parts.push(kinds ? '| Name | Columns | Unique | Kind |\n|---|---|---|---|' : '| Name | Columns | Unique |\n|---|---|---|');
     for (const index of table.indexes) {
       const columns = index.columns.join(', ') + (index.included?.length ? ` (includes ${index.included.join(', ')})` : '');
-      parts.push(`| ${cell(index.name)} | ${cell(columns)} | ${index.unique ? 'yes' : 'no'} |`);
+      parts.push(`| ${cell(index.name)} | ${cell(columns)} | ${index.unique ? 'yes' : 'no'} |${kinds ? ` ${cell(indexKind(index))} |` : ''}`);
     }
     parts.push('');
   }
@@ -146,7 +233,35 @@ function renderTable(model: Model, ref: string, table: Table, database: Database
     parts.push('| Name | Kind | Columns | Definition |\n|---|---|---|---|');
     for (const constraint of table.constraints) {
       const definition = constraint.definition === undefined ? '' : `\`${constraint.definition}\``;
-      parts.push(`| ${cell(constraint.name)} | ${constraint.kind} | ${cell(constraint.columns.join(', '))} | ${cell(definition)} |`);
+      const kind = [constraint.kind, ...enforcement(constraint)].join(', ');
+      parts.push(`| ${cell(constraint.name)} | ${kind} | ${cell(constraint.columns.join(', '))} | ${cell(definition)} |`);
+    }
+    parts.push('');
+  }
+
+  const properties = propertiesTable([
+    [ref, table.properties],
+    ...table.columns.map((c) => [c.name, c.properties] as [string, Properties | undefined]),
+    ...table.indexes.map((i) => [i.name, i.properties] as [string, Properties | undefined]),
+    ...table.constraints.map((c) => [c.name, c.properties] as [string, Properties | undefined]),
+  ]);
+  if (properties) parts.push(`## Properties\n\n${properties}`);
+
+  if (table.triggers?.length) {
+    parts.push('## Triggers\n');
+    for (const trigger of table.triggers) {
+      const when = `${trigger.timing === 'after' ? 'After' : 'Instead of'} ${trigger.events.join(', ')}. ${trigger.enabled ? 'Enabled' : 'Disabled'}.`;
+      parts.push(`### ${trigger.name}\n\n${when}\n`);
+      if (trigger.definition) parts.push('```sql\n' + trigger.definition.trim() + '\n```\n');
+    }
+  }
+
+  if (table.security?.length) {
+    parts.push('## Row-level security\n');
+    parts.push('| Policy | Kind | Predicate | Enabled |\n|---|---|---|---|');
+    for (const s of table.security) {
+      const kind = s.operation ? `${s.kind}, ${s.operation}` : s.kind;
+      parts.push(`| ${cell(s.policy)} | ${kind} | ${cell(`\`${s.predicate}\``)} | ${s.enabled ? 'yes' : 'no'} |`);
     }
     parts.push('');
   }

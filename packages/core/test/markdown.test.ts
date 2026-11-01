@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { formatBytes, formatCount, renderMarkdown, renderTableMarkdown } from '../src/render/markdown.ts';
+import { features, formatBytes, formatCount, renderMarkdown, renderTableMarkdown } from '../src/render/markdown.ts';
+import { describe } from './fixtures/described.ts';
 import type { Model } from '../src/model.ts';
 
 const shop = (): Model => JSON.parse(readFileSync(new URL('./fixtures/shop.json', import.meta.url), 'utf8'));
@@ -101,4 +102,58 @@ test('formatCount groups thousands and formatBytes uses binary units, one decima
   assert.equal(formatBytes(107085824), '102 MB');
   assert.equal(formatBytes(3 * 1024 ** 4), '3 TB');
   assert.equal(formatBytes(5000 * 1024 ** 4), '5000 TB');
+});
+
+test('features names what the catalogue says about a table, one line each, in a fixed order', () => {
+  const orders = describe(shop()).databases[0].schemas[0].tables[1];
+  assert.deepEqual(features(orders), [
+    { name: 'System-versioned', detail: 'history in dbo.OrdersHistory, each row valid from ValidFrom to ValidTo', ref: 'dbo.OrdersHistory' },
+    { name: 'Memory-optimised', detail: 'schema and data' },
+    { name: 'Ledger', detail: 'updatable' },
+    { name: 'Partitioned', detail: 'on CreatedAt by psByYear (function pfByYear), 12 partitions' },
+    { name: 'Compressed', detail: 'page' },
+    { name: 'Change tracking' },
+    { name: 'Change data capture' },
+    { name: 'Triggers', detail: '1' },
+    { name: 'Row-level security', detail: 'rls.Tenants' },
+    { name: 'Created', detail: '2024-01-02, last altered 2026-10-30' },
+  ]);
+  assert.deepEqual(features(shop().databases[0].schemas[0].tables[0]), [], 'a table the catalogue says nothing more about has none');
+  const history = { ...orders, temporal: undefined, historyOf: 'dbo.Orders', triggers: [], security: [], created: undefined, memoryOptimised: undefined, ledger: undefined, partitioning: undefined, compression: undefined, changeTracking: undefined, cdc: undefined };
+  assert.deepEqual(features(history), [{ name: 'History', detail: 'of dbo.Orders', ref: 'dbo.Orders' }]);
+});
+
+test('a table page says everything the catalogue does: features, column details, index kinds, keys not trusted', () => {
+  const page = renderMarkdown(describe(shop()))['tables/dbo.Orders.md'];
+  assert.match(page, /## Features\n\n- \*\*System-versioned\*\*: history in dbo\.OrdersHistory, each row valid from ValidFrom to ValidTo\n- \*\*Memory-optimised\*\*: schema and data\n/);
+  assert.match(page, /- \*\*Change tracking\*\*\n/);
+  assert.match(page, /\| Id \| int \| no \| {2}\| PK, identity\(1,1\) \| {2}\|/);
+  assert.match(page, /\| Status \| tinyint, collation Latin1_General_BIN2 \| no \| `\(\(0\)\)` \| sparse, masked `default\(\)` \| {2}\|/);
+  assert.match(page, /\| CreatedAt \| datetime2\(7\) \| no \| `\(sysutcdatetime\(\)\)` \| encrypted \(deterministic, CEK_Auto1\) \| Sensitivity: Confidential, Financial, rank medium\. \|/);
+  assert.match(page, /FK → \[dbo\.Customers\]\(dbo\.Customers\.md\)\.Id \(not trusted\)/);
+  assert.match(page, /## Indexes\n\n\| Name \| Columns \| Unique \| Kind \|\n\|[-| ]+\|\n\| IX_Orders_CustomerId \| CustomerId \| no \| nonclustered, filtered `\(\[Status\]<\(9\)\)`, disabled \|/);
+  assert.match(page, /\| CK_Orders_Status \| check, disabled, not trusted \|/);
+  assert.match(page, /## Properties\n\n\| On \| Name \| Value \|\n\|[-| ]+\|\n\| dbo\.Orders \| Retention \| 7 years \|\n\| Id \| Source \| checkout \|\n\| IX_Orders_CustomerId \| Why \| checkout lookups \|\n\| PK_Orders \| Note \| from 2019 \|/);
+  assert.match(page, /## Triggers\n\n### trOrdersAudit\n\nAfter insert, update\. Enabled\.\n\n```sql\nCREATE TRIGGER trOrdersAudit \.\.\.\n```/);
+  assert.match(page, /## Row-level security\n\n\| Policy \| Kind \| Predicate \| Enabled \|\n\|[-| ]+\|\n\| rls\.Tenants \| filter \| `\(\[rls\]\.\[fnTenant\]\(\[TenantId\]\)\)` \| yes \|/);
+});
+
+test('the index says the collation, the database and schema properties, and what could not be read', () => {
+  const readme = renderMarkdown(describe(shop()))['README.md'];
+  assert.match(readme, /SQL Server 16\.0\.1000, collation Latin1_General_CI_AS\.\n/);
+  assert.match(readme, /Not read: sensitivity labels: the login lacks VIEW ANY SENSITIVITY CLASSIFICATION\.\n/);
+  assert.match(readme, /## Properties\n\n\| On \| Name \| Value \|\n\|[-| ]+\|\n\| Shop \| Owner \| Data team \|\n\| dbo \| Purpose \| Trading \|/);
+});
+
+test('a model without any of it renders as before: no Features, Properties, Triggers or Kind', () => {
+  const page = renderMarkdown(shop())['tables/dbo.Orders.md'];
+  for (const heading of ['## Features', '## Properties', '## Triggers', '## Row-level security']) assert.doesNotMatch(page, new RegExp(heading));
+  assert.match(page, /\| Name \| Columns \| Unique \|\n/);
+  assert.doesNotMatch(renderMarkdown(shop())['README.md'], /## Properties|Not read|collation/);
+});
+
+test('a feature that names a table in the model links to its page', () => {
+  const model = shop();
+  model.databases[0].schemas[0].tables[3].historyOf = 'dbo.Orders';
+  assert.match(renderMarkdown(model)['tables/dbo.Products.md'], /- \*\*History\*\*: of \[dbo\.Orders\]\(dbo\.Orders\.md\)\n/);
 });

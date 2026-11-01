@@ -4,6 +4,19 @@
 
 export const MODEL_VERSION = 1;
 
+/**
+ * Extended properties other than MS_Description (which is `description`), by name: what a team records about
+ * an object in the database itself, such as its owner, source or retention.
+ */
+export type Properties = Record<string, string>;
+
+/** A column's sensitivity classification, as SQL Server's data discovery or a team set it. */
+export interface Sensitivity {
+  label?: string;
+  informationType?: string;
+  rank?: string;
+}
+
 export interface Column {
   name: string;
   /** As the database spells it, with its size: nvarchar(320), decimal(18,2). */
@@ -13,7 +26,19 @@ export interface Column {
   /** The expression of a computed column. */
   computed?: string;
   identity?: boolean;
+  /** An identity's seed and increment, as the database spells them. */
+  identitySeed?: string;
+  identityIncrement?: string;
   description?: string;
+  /** Only where it differs from the database's collation. */
+  collation?: string;
+  sparse?: boolean;
+  /** The dynamic data masking function: default(), email(), partial(2,"XX",0). */
+  masked?: string;
+  /** Always Encrypted: how, and under which column encryption key. */
+  encrypted?: { type: 'deterministic' | 'randomized'; key: string };
+  sensitivity?: Sensitivity;
+  properties?: Properties;
 }
 
 export interface Index {
@@ -21,6 +46,12 @@ export interface Index {
   columns: string[];
   unique: boolean;
   included?: string[];
+  /** As the database names the kind: nonclustered, clustered columnstore, xml, spatial. */
+  type?: string;
+  /** A filtered index's WHERE. */
+  filter?: string;
+  disabled?: boolean;
+  properties?: Properties;
 }
 
 export interface Constraint {
@@ -28,6 +59,30 @@ export interface Constraint {
   kind: 'primary' | 'unique' | 'check' | 'foreign';
   columns: string[];
   definition?: string;
+  /** A foreign key or check the database no longer enforces. */
+  disabled?: boolean;
+  /** Enforced, but not checked against the rows already there, so the optimiser cannot rely on it. */
+  untrusted?: boolean;
+  properties?: Properties;
+}
+
+export interface Trigger {
+  name: string;
+  timing: 'after' | 'instead of';
+  /** insert, update, delete. */
+  events: string[];
+  enabled: boolean;
+  definition?: string;
+}
+
+/** A row-level security predicate on the table: a filter hides rows, a block refuses writes. */
+export interface SecurityPredicate {
+  policy: string;
+  kind: 'filter' | 'block';
+  /** For a block predicate: after insert, before update, and so on. */
+  operation?: string;
+  predicate: string;
+  enabled: boolean;
 }
 
 /**
@@ -53,11 +108,29 @@ export interface Table {
   /** The SQL of a view. */
   definition?: string;
   stats?: TableStats;
+  properties?: Properties;
+  /** When the table was created and its definition last altered, as ISO timestamps. */
+  created?: string;
+  altered?: string;
+  /** A system-versioned table: its history table (a ref) and the columns that bound each row's period. */
+  temporal?: { history: string; start: string; end: string };
+  /** The history table of a system-versioned table, as its ref. */
+  historyOf?: string;
+  memoryOptimised?: 'schema and data' | 'schema only';
+  ledger?: 'updatable' | 'append-only' | 'history';
+  partitioning?: { scheme: string; function: string; column: string; partitions: number };
+  /** The table's own compression, when it has any: row, page, columnstore, columnstore archive. */
+  compression?: string;
+  changeTracking?: boolean;
+  cdc?: boolean;
+  triggers?: Trigger[];
+  security?: SecurityPredicate[];
 }
 
 export interface Schema {
   name: string;
   tables: Table[];
+  properties?: Properties;
 }
 
 export interface RelationEnd {
@@ -73,6 +146,9 @@ export interface Relation {
   virtual?: boolean;
   onDelete?: string;
   onUpdate?: string;
+  /** As on its constraint: not enforced, or not checked against the rows already there. */
+  disabled?: boolean;
+  untrusted?: boolean;
 }
 
 export interface Database {
@@ -82,6 +158,11 @@ export interface Database {
   description?: string;
   /** When the source read its tables' stats, as an ISO timestamp: they change, so they carry their moment. */
   statsReadAt?: string;
+  /** The default collation; a column says its own only where it differs. */
+  collation?: string;
+  properties?: Properties;
+  /** What the source could not read and why, so a reader knows an absence is not a no. */
+  unread?: string[];
   schemas: Schema[];
   relations: Relation[];
 }
@@ -245,9 +326,13 @@ function checkDatabase(check: Checker, d: unknown, p: string): void {
   check.optionalString(d.version, `${p}.version`);
   check.optionalString(d.description, `${p}.description`);
   check.optionalString(d.statsReadAt, `${p}.statsReadAt`);
+  check.optionalString(d.collation, `${p}.collation`);
+  check.properties(d.properties, `${p}.properties`);
+  if (d.unread !== undefined) check.strings(d.unread, `${p}.unread`);
   check.list(d.schemas, `${p}.schemas`, (s, sp) => {
     if (!check.object(s, sp)) return;
     check.string(s.name, `${sp}.name`);
+    check.properties(s.properties, `${sp}.properties`);
     check.list(s.tables, `${sp}.tables`, (t, tp) => checkTable(check, t, tp));
   });
   check.list(d.relations, `${p}.relations`, (r, rp) => {
@@ -260,6 +345,8 @@ function checkDatabase(check: Checker, d: unknown, p: string): void {
       check.strings(e.columns, `${rp}.${end}.columns`);
     }
     check.optionalBoolean(r.virtual, `${rp}.virtual`);
+    check.optionalBoolean(r.disabled, `${rp}.disabled`);
+    check.optionalBoolean(r.untrusted, `${rp}.untrusted`);
   });
 }
 
@@ -273,6 +360,7 @@ function checkTable(check: Checker, t: unknown, p: string): void {
     for (const field of ['rows', 'dataBytes', 'indexBytes']) check.count(t.stats[field], `${p}.stats.${field}`);
   }
   if (t.primaryKey !== undefined) check.strings(t.primaryKey, `${p}.primaryKey`);
+  checkCatalogue(check, t, p);
   check.list(t.columns, `${p}.columns`, (c, cp) => {
     if (!check.object(c, cp)) return;
     check.string(c.name, `${cp}.name`);
@@ -282,12 +370,26 @@ function checkTable(check: Checker, t: unknown, p: string): void {
     check.optionalString(c.computed, `${cp}.computed`);
     check.optionalBoolean(c.identity, `${cp}.identity`);
     check.optionalString(c.description, `${cp}.description`);
+    for (const field of ['identitySeed', 'identityIncrement', 'collation', 'masked']) check.optionalString(c[field], `${cp}.${field}`);
+    check.optionalBoolean(c.sparse, `${cp}.sparse`);
+    check.properties(c.properties, `${cp}.properties`);
+    if (c.encrypted !== undefined && check.object(c.encrypted, `${cp}.encrypted`)) {
+      check.oneOf(c.encrypted.type, ['deterministic', 'randomized'], `${cp}.encrypted.type`);
+      check.string(c.encrypted.key, `${cp}.encrypted.key`);
+    }
+    if (c.sensitivity !== undefined && check.object(c.sensitivity, `${cp}.sensitivity`)) {
+      for (const field of ['label', 'informationType', 'rank']) check.optionalString(c.sensitivity[field], `${cp}.sensitivity.${field}`);
+    }
   });
   check.list(t.indexes, `${p}.indexes`, (x, xp) => {
     if (!check.object(x, xp)) return;
     check.string(x.name, `${xp}.name`);
     check.strings(x.columns, `${xp}.columns`);
     if (typeof x.unique !== 'boolean') check.errors.push(`${xp}.unique must be true or false`);
+    check.optionalString(x.type, `${xp}.type`);
+    check.optionalString(x.filter, `${xp}.filter`);
+    check.optionalBoolean(x.disabled, `${xp}.disabled`);
+    check.properties(x.properties, `${xp}.properties`);
   });
   check.list(t.constraints, `${p}.constraints`, (c, cp) => {
     if (!check.object(c, cp)) return;
@@ -295,7 +397,46 @@ function checkTable(check: Checker, t: unknown, p: string): void {
     if (!['primary', 'unique', 'check', 'foreign'].includes(String(c.kind))) check.errors.push(`${cp}.kind is not a constraint kind`);
     check.strings(c.columns, `${cp}.columns`);
     check.optionalString(c.definition, `${cp}.definition`);
+    check.optionalBoolean(c.disabled, `${cp}.disabled`);
+    check.optionalBoolean(c.untrusted, `${cp}.untrusted`);
+    check.properties(c.properties, `${cp}.properties`);
   });
+}
+
+/** What the catalogue says about a table beyond its columns, keys and indexes. */
+function checkCatalogue(check: Checker, t: Record<string, any>, p: string): void { // eslint-disable-line @typescript-eslint/no-explicit-any
+  check.properties(t.properties, `${p}.properties`);
+  for (const field of ['created', 'altered', 'historyOf', 'compression']) check.optionalString(t[field], `${p}.${field}`);
+  for (const field of ['changeTracking', 'cdc']) check.optionalBoolean(t[field], `${p}.${field}`);
+  if (t.memoryOptimised !== undefined) check.oneOf(t.memoryOptimised, ['schema and data', 'schema only'], `${p}.memoryOptimised`);
+  if (t.ledger !== undefined) check.oneOf(t.ledger, ['updatable', 'append-only', 'history'], `${p}.ledger`);
+  if (t.temporal !== undefined && check.object(t.temporal, `${p}.temporal`)) {
+    for (const field of ['history', 'start', 'end']) check.string(t.temporal[field], `${p}.temporal.${field}`);
+  }
+  if (t.partitioning !== undefined && check.object(t.partitioning, `${p}.partitioning`)) {
+    for (const field of ['scheme', 'function', 'column']) check.string(t.partitioning[field], `${p}.partitioning.${field}`);
+    check.count(t.partitioning.partitions, `${p}.partitioning.partitions`);
+  }
+  if (t.triggers !== undefined) {
+    check.list(t.triggers, `${p}.triggers`, (g, gp) => {
+      if (!check.object(g, gp)) return;
+      check.string(g.name, `${gp}.name`);
+      check.oneOf(g.timing, ['after', 'instead of'], `${gp}.timing`);
+      check.strings(g.events, `${gp}.events`);
+      if (typeof g.enabled !== 'boolean') check.errors.push(`${gp}.enabled must be true or false`);
+      check.optionalString(g.definition, `${gp}.definition`);
+    });
+  }
+  if (t.security !== undefined) {
+    check.list(t.security, `${p}.security`, (r, rp) => {
+      if (!check.object(r, rp)) return;
+      check.string(r.policy, `${rp}.policy`);
+      check.oneOf(r.kind, ['filter', 'block'], `${rp}.kind`);
+      check.optionalString(r.operation, `${rp}.operation`);
+      check.string(r.predicate, `${rp}.predicate`);
+      if (typeof r.enabled !== 'boolean') check.errors.push(`${rp}.enabled must be true or false`);
+    });
+  }
 }
 
 class Checker {
@@ -321,6 +462,17 @@ class Checker {
 
   optionalBoolean(value: unknown, path: string): void {
     if (value !== undefined && typeof value !== 'boolean') this.errors.push(`${path} must be true or false when given`);
+  }
+
+  properties(value: unknown, path: string): void {
+    if (value === undefined || !this.object(value, path)) return;
+    for (const [name, text] of Object.entries(value)) {
+      if (typeof text !== 'string') this.errors.push(`${path}.${name} must be a string`);
+    }
+  }
+
+  oneOf(value: unknown, allowed: string[], path: string): void {
+    if (!allowed.includes(value as string)) this.errors.push(`${path} must be ${allowed.map((a) => `"${a}"`).join(' or ')}`);
   }
 
   count(value: unknown, path: string): void {
