@@ -17,6 +17,29 @@ were never declared as foreign keys, groups of tables by domain, and which endpo
 is how a SQL Server shop documents production without altering it. Notes merge into the model at render time
 and win over what the database says.
 
+### All the catalogue says
+
+A description is one extended property among many. The source reads everything the database keeps about an
+object, as long as it describes the object and not its rows:
+
+- **Every extended property**, under any name, on schemas, tables, columns, indexes and constraints: a
+  `properties` map of name to text beside `description`, which stays `MS_Description`. Teams already record
+  owners, sources and retention this way; dbtour shows them rather than asking for them again in the notes.
+- **The table**: when it was created and last altered, whether it is temporal (with its history table and
+  period columns), memory-optimised or a ledger table, how it is partitioned and compressed, its triggers
+  (events, enabled, definition), change tracking or change data capture, and the row-level security
+  policies that filter it.
+- **The column**: collation, identity seed and increment, sparse, the masking function, Always Encrypted,
+  and the sensitivity label and information type (`sys.sensitivity_classifications`, which Azure SQL fills
+  in from data discovery).
+- **Indexes and keys**: clustered, columnstore or filtered (with the filter), disabled; a foreign key that
+  is disabled or no longer trusted.
+
+All of it but the labels comes from catalogue views a login with `VIEW DEFINITION` reads; the labels want
+`VIEW ANY SENSITIVITY CLASSIFICATION`, and without it they are absent and the source says so. Other engines
+bring what they keep (`COMMENT ON` in Postgres, column comments in MySQL). Notes win over properties as they
+win over descriptions.
+
 ### Beyond the structure
 
 The structure says what a table is; three more things say how it is used. Two of them the database keeps
@@ -74,6 +97,9 @@ table or the canvas in the centre, relations and notes on the right.
 - `/` searches tables, columns and endpoints. Enter opens. Every view has a URL (`#dbo.Users`).
 - A table shows columns (type, nullable, default, key, description), relations in and out as links, and
   indexes and constraints collapsed below.
+- What the catalogue says beyond that, when the model has it: the table's features (temporal, partitioned,
+  triggers) as a line under its name, its properties as a list, and a column's label, masking and
+  properties beside its type.
 - The diagram is on demand: the selected table and its neighbours at distance one, "expand" on any node.
   Never the whole schema. React Flow for the canvas, elkjs for layout. Groups from the notes are named views.
 - Endpoints grouped by tag, each with parameters and responses and "touches" links to tables. A table shows
@@ -100,7 +126,7 @@ to cite and runs the result through the source with a read-only login and a row 
 
 ## Showing it
 
-Not before there is enough to show. Once milestones 4 to 7 are released (the skill installs with one
+Not before there is enough to show. Once milestones 5 to 8 are released (the skill installs with one
 command, a second database works, and a project can deploy its page and check it in CI), dbtour gets a card
 on [skills.victorsaly.com](https://skills.victorsaly.com/) and a page of its own at `/dbtour`, built the way
 [SideShot's](https://skills.victorsaly.com/sideshot) is:
@@ -126,14 +152,17 @@ shop window, and nothing goes on the page before it is released.
 2. **The page**: search, table view, neighbourhood diagram.
 3. **Size and shape**: `stats` on each table from the SQL Server source, and the page and the Markdown
    showing it: rows and bytes on the entry, the index ordered by them, lines weighted by rows.
-4. The skill and the SQL add-on, with the stats telling the agent where to look first. ← here
-5. `source-openapi` and table-to-endpoint links.
-6. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
-   its database keeps.
-7. Deploy workflow, `check`, `addon-lint`.
-8. `addon-usage`: index and table usage from the management views, as a panel on the entry.
-9. **Showing it**: the page on skills.victorsaly.com with its film and the live example, the script that
-   records them, once 4 to 7 are released.
+4. **All the catalogue says**: every extended property, the table's features, column labels and masking,
+   index kinds and untrusted keys from the SQL Server source, and the page and the Markdown showing
+   them. ← here
+5. The skill and the SQL add-on, with the stats telling the agent where to look first.
+6. `source-openapi` and table-to-endpoint links.
+7. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
+   and the comments its database keeps.
+8. Deploy workflow, `check`, `addon-lint`.
+9. `addon-usage`: index and table usage from the management views, as a panel on the entry.
+10. **Showing it**: the page on skills.victorsaly.com with its film and the live example, the script that
+    records them, once 5 to 8 are released.
 
 ## Borrowed from
 
