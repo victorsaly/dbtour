@@ -2,7 +2,7 @@
 // the server's, the commands are the command's, and every version is the packages' version.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { main } from '../../packages/core/src/cli.ts';
 import { toolList } from '../../packages/core/src/mcp.ts';
@@ -61,4 +61,18 @@ test('the plugin and its marketplace carry the version and start the MCP server'
   const market = JSON.parse(read('.claude-plugin/marketplace.json'));
   assert.equal(market.name, 'dbtour');
   assert.deepEqual(market.plugins.map((p: { name: string; source: string }) => [p.name, p.source]), [['dbtour', './']]);
+});
+
+test('the setup installs all three packages before init, since npx alone fetches only the command', () => {
+  const install = skill.indexOf('npm install --save-dev dbtour dbtour-source-mssql dbtour-addon-explorer');
+  assert.ok(install !== -1, 'SKILL.md installs the source and the page with the command');
+  assert.ok(install < skill.indexOf('npx dbtour init'), 'before init');
+  assert.doesNotMatch(reference, /or run them with `npx`/);
+});
+
+test('every eval\'s frontmatter is YAML a runner can read', () => {
+  for (const name of readdirSync(new URL('evals/', root), { withFileTypes: true }).filter((d) => d.isDirectory() && d.name !== 'results')) {
+    const files = [`evals/${name.name}/prompt.md`, ...readdirSync(new URL(`evals/${name.name}/graders/`, root)).map((g) => `evals/${name.name}/graders/${g}`)];
+    for (const file of files) assert.doesNotThrow(() => frontmatter(read(file)), file);
+  }
 });

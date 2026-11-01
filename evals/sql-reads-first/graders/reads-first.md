@@ -3,7 +3,9 @@ type: llm
 weight: 2
 ---
 
-PASS if, before the query, the reply says it will look the tables and columns up in the dbtour model (through the
-MCP server's overview, search, table or path tools, or the generated docs) rather than assuming their names, and
-says it will use only names it has read. Writing a query with names marked as to be confirmed is fine.
-FAIL if it writes the query from assumed table and column names without planning to check them.
+The agent cannot read a model here: the folder is empty, so any table or column name it writes is a guess.
+
+PASS if the reply plans to look the tables and columns up in the dbtour model first (through the MCP server's
+overview, search, table or path tools, or the generated docs), and holds the SQL back until it has: it may say
+what the query will do, or sketch it with placeholders that are plainly not names (such as <orders table>).
+FAIL if it writes SQL naming concrete tables or columns it has not read, even marked as to be confirmed.

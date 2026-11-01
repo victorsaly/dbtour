@@ -15,7 +15,9 @@ addons:
 ```
 
 The packages: `dbtour` (the command), `dbtour-source-mssql` (SQL Server), `dbtour-addon-explorer` (the page).
-`npm install --save-dev dbtour dbtour-source-mssql dbtour-addon-explorer`, or run them with `npx`.
+Install all three in the project, `npm install --save-dev dbtour dbtour-source-mssql dbtour-addon-explorer`:
+the command finds the source and the page by name in the project, so `npx dbtour` on its own cannot extract
+or draw the page. Only `dbtour mcp`, which reads the model alone, runs without them.
 
 A connection string is anything the mssql package takes, such as
 `Server=host,1433;Database=Shop;User Id=reader;Password=…;TrustServerCertificate=True`. The person sets it in

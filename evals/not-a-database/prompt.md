@@ -1,5 +1,5 @@
 ---
-description: A near miss: code that happens to mention a table, with no database to look at, stays clear of dbtour.
+description: 'A near miss: code that happens to mention a table, with no database to look at, stays clear of dbtour.'
 expected_outcome: The function, written without dbtour.
 tags: [trigger, negative]
 max_turns: 8
