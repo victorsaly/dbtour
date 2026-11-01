@@ -1,12 +1,14 @@
 // Releases what main holds: the version in packages/core/package.json becomes a tag and a GitHub release
 // whose notes are that version's changelog section, then the three packages go to npm.
 //
-//   node scripts/release.mjs --check     say whether the version is unreleased; in GitHub Actions, write the
-//                                        outputs `version`, `new` and `notes` for the release workflow
+//   node scripts/release.mjs --check     say whether the version is untagged, whether npm lacks it and
+//                                        whether the checkout is the tag's commit; in GitHub Actions, write
+//                                        the outputs `version`, `new`, `unpublished`, `at_tag` and `notes`
+//                                        for the release workflow
 //   node scripts/release.mjs             tag, push the tag and create the release, from a clean, current main
 //   node scripts/release.mjs --publish   the same, then publish the packages (needs npm login with 2FA);
 //                                        on a version already tagged, from a checkout of that tag, only
-//                                        the publish
+//                                        the publish. `--provenance` goes through to npm, for the workflow
 //
 // The workflow in .github/workflows/release.yml runs this on every push to main, so by hand is for when
 // the workflow could not: it tags before it publishes, and skips the publish until npm trusts it, so a
@@ -45,32 +47,63 @@ function notes() {
   return match[1].trim() + '\n';
 }
 
-const remoteTags = run('git', ['ls-remote', '--tags', 'origin', tag]);
-const released = remoteTags.includes(`refs/tags/${tag}`);
-
-if (args.has('--check')) {
-  const notesPath = join(tmpdir(), `dbtour-notes-${version}.md`);
-  if (!released) writeFileSync(notesPath, notes());
-  console.log(released ? `${tag} exists on origin: nothing to release.` : `${tag} is new: release it.`);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nnew=${released ? 'false' : 'true'}\nnotes=${notesPath}\n`);
-  process.exit(0);
-}
+// An annotated tag (made by hand) is listed twice, the second time as `^{}` with the commit it points to;
+// a lightweight one (made by the workflow's gh release create) once, with the commit itself.
+const remoteTags = new Map(run('git', ['ls-remote', '--tags', 'origin', tag, `${tag}^{}`]).split('\n').filter(Boolean).map((line) => line.split('\t').reverse()));
+const released = remoteTags.has(`refs/tags/${tag}`);
+const tagCommit = remoteTags.get(`refs/tags/${tag}^{}`) ?? remoteTags.get(`refs/tags/${tag}`);
 
 /**
- * Publishes each package npm does not have at this version yet and returns how many that was. A publish
- * that stopped part way leaves some on npm, which refuses them a second time, so asking first is what
- * lets it be run again. Anything but npm's E404 is not an answer, and stops it before publishing.
+ * The workspaces npm does not have at this version. A publish that stopped part way leaves some on npm,
+ * which refuses them a second time, so asking first is what lets it be run again. Anything but npm's E404
+ * is not an answer: the error is thrown with the first line of what npm said.
  */
-function publishMissing() {
+function missingPackages() {
   const missing = [];
   for (const { workspace, name } of manifests) {
     const spec = `${name}@${version}`;
     const view = spawnSync('npm', ['view', spec, 'version'], { cwd: repo, encoding: 'utf8' });
     if (view.status === 0 && view.stdout.trim() === version) console.log(`${spec} is on npm already: skipped.`);
     else if (view.status === 0 || /\bE404\b/.test(view.stderr)) missing.push(workspace);
-    else fail(`Could not ask npm whether ${spec} is published (${view.stderr.trim().split('\n')[0] || `exit ${view.status}`}). Check the network and npm login, then run it again.`);
+    else throw new Error(`Could not ask npm whether ${spec} is published (${view.stderr.trim().split('\n')[0] || `exit ${view.status}`}). Check the network and npm login, then run it again.`);
   }
-  for (const workspace of missing) run('npm', ['publish', '--workspace', workspace, '--access', 'public'], { stdio: 'inherit' });
+  return missing;
+}
+
+if (args.has('--check')) {
+  const notesPath = join(tmpdir(), `dbtour-notes-${version}.md`);
+  if (!released) writeFileSync(notesPath, notes());
+  console.log(released ? `${tag} exists on origin: nothing to tag.` : `${tag} is new: release it.`);
+  // Whether npm lacks the version is asked separately from the tag, so a publish that failed after the
+  // tag was made is picked up by a rerun. A registry that cannot be asked is "unknown", which the workflow
+  // reads as "do not publish", rather than a reason to skip the tag and the release.
+  let unpublished = 'unknown';
+  try {
+    unpublished = missingPackages().length > 0 ? 'true' : 'false';
+    console.log(unpublished === 'true' ? `npm lacks ${version}: publish it.` : `npm has every package of ${version}.`);
+  } catch (error) {
+    console.error(error.message);
+  }
+  // npm's provenance names the commit and ref the run was started on, not what is checked out, so the
+  // workflow publishes only from the tag's commit: the run that makes the tag, or one started on the tag.
+  const atTag = released && tagCommit === run('git', ['rev-parse', 'HEAD']);
+  if (released && !atTag && unpublished === 'true') {
+    console.log(`This checkout is not ${tag}, so it does not publish. Publish from the tag: gh workflow run release.yml --ref ${tag}`);
+  }
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nnew=${released ? 'false' : 'true'}\nunpublished=${unpublished}\nat_tag=${atTag}\nnotes=${notesPath}\n`);
+  process.exit(0);
+}
+
+/** Publishes each package npm does not have at this version yet and returns how many that was. */
+function publishMissing() {
+  let missing;
+  try {
+    missing = missingPackages();
+  } catch (error) {
+    fail(error.message);
+  }
+  const flags = args.has('--provenance') ? ['--provenance'] : [];
+  for (const workspace of missing) run('npm', ['publish', '--workspace', workspace, '--access', 'public', ...flags], { stdio: 'inherit' });
   return missing.length;
 }
 

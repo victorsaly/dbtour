@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.2.3 (unreleased)
+## 0.2.4 (unreleased)
+
+- The release workflow retries a failed publish. It decides the tag and the publish apart: a version
+  already tagged is not tagged again, and a version npm lacks is published package by package, even when
+  it was tagged earlier. It publishes only from the tag's commit, since npm's provenance names the commit
+  the run started on: re-running the failed run does it, and so does `gh workflow run release.yml --ref
+  v<version>`; a run on a later commit warns with that command instead. 0.2.3 never reached npm because its
+  trusted publisher was not set up in time. `package-lock.json` carries the new version too.
+
+## 0.2.3 (1 November 2026)
 
 - `npm run release -- --publish` publishes a version the workflow has already tagged, from a checkout of
   that tag, which is how a version gets to npm until npm trusts the workflow, or after its publish failed.

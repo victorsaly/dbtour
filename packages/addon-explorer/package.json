@@ -1,6 +1,6 @@
 {
   "name": "dbtour-addon-explorer",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "The dbtour page: search, table view and neighbourhood diagrams in one HTML file that opens without a server.",
   "type": "module",
   "license": "MIT",
@@ -40,7 +40,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@xyflow/react": "^12.12.0",
-    "dbtour": "0.2.3",
+    "dbtour": "0.2.4",
     "elkjs": "^0.12.1",
     "esbuild": "^0.28.2",
     "react": "^19.3.1",
