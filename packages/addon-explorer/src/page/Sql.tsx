@@ -126,6 +126,33 @@ function countUse(key: string): void {
 }
 
 /**
+ * A pick asked for while CodeMirror cannot take it yet: it refuses one for 75 ms after the list changes, and
+ * while its sources answer the last key typed, and Tab would then leave the editor and Enter type a new line.
+ * The key is kept and the pick made as soon as it can be: tried every 25 ms, a frame and a half, for at most a
+ * second, longer than any source here takes. Typing on, or the list closing, drops it.
+ */
+const pickRetryMs = 25;
+const pickPatienceMs = 1000;
+
+/** Whether a suggestion list is on show: CodeMirror's own answer hides one it is refreshing, the page does not. */
+function listShown(view: EditorView): boolean {
+  return Boolean(view.dom.querySelector('.cm-tooltip-autocomplete'));
+}
+
+function pickNowOrSoon(view: EditorView): boolean {
+  if (acceptCompletion(view)) return true;
+  if (!listShown(view)) return false;
+  const doc = view.state.doc;
+  const until = Date.now() + pickPatienceMs;
+  const retry = () => {
+    if (!view.dom.isConnected || view.state.doc !== doc || !listShown(view) || Date.now() > until) return;
+    if (!acceptCompletion(view)) setTimeout(retry, pickRetryMs);
+  };
+  setTimeout(retry, pickRetryMs);
+  return true;
+}
+
+/**
  * How long typing pauses before names are checked against the model: soon enough to see as one stops, not
  * so soon that a name half typed is underlined.
  */
@@ -276,10 +303,12 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
           keymap.of([
             { key: 'Mod-Enter', run: () => (run.current(), true) },
             { key: 'Ctrl-Enter', run: () => (run.current(), true) },
+            // Enter takes the suggestion even while CodeMirror refreshes the list; with none open, a new line.
+            { key: 'Enter', run: pickNowOrSoon },
             {
               key: 'Tab',
               run: (v) => {
-                if (acceptCompletion(v)) return true;
+                if (pickNowOrSoon(v)) return true;
                 const spec = expandStar(v.state);
                 if (spec) v.dispatch(spec);
                 return Boolean(spec);

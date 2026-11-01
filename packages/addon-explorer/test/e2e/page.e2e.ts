@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { chromium, type Browser, type Page } from 'playwright-core';
+import { chromium, type Browser, type Locator } from 'playwright-core';
 import { scope, type Model } from 'dbtour/model';
 import { render } from '../../src/index.ts';
 import { startServer } from '../../../core/src/serve.ts';
@@ -15,15 +15,17 @@ import { describe } from '../../../core/test/fixtures/described.ts';
 import { twoDatabases } from '../../../core/test/fixtures/two.ts';
 
 /**
- * CodeMirror ignores Enter for 75 ms after the completion list changes (its interactionDelay), so a key pressed
- * at once types a new line; a reader is never that quick, a test is.
+ * The text a locator settles on: a pick asked for while CodeMirror refreshes its list is made a moment later,
+ * so the editor is read once it says what is expected, or after five seconds, whatever it says then.
  */
-const completionSettleMs = 100;
-
-/** Takes the highlighted suggestion with Enter or Tab, once CodeMirror will let it. */
-async function take(page: Page, key: 'Enter' | 'Tab'): Promise<void> {
-  await page.waitForTimeout(completionSettleMs);
-  await page.keyboard.press(key);
+async function textOf(locator: Locator, expected: string | RegExp): Promise<string> {
+  const until = Date.now() + 5000;
+  let text = (await locator.textContent()) ?? '';
+  while (!(typeof expected === 'string' ? text === expected : expected.test(text)) && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    text = (await locator.textContent()) ?? '';
+  }
+  return text;
 }
 
 /** Evaluated in the page, where the DOM is; written as text because this file is typed for Node. */
@@ -344,15 +346,15 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     const options = page.locator('.cm-tooltip-autocomplete li');
     await options.first().waitFor();
     assert.match((await options.allTextContents()).join(' '), /OrderLines/);
-    await take(page, 'Enter');
-    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines AS ol$/);
+    await page.keyboard.press('Enter');
+    assert.match(await textOf(editor, /FROM dbo\.OrderLines AS ol$/), /FROM dbo\.OrderLines AS ol$/);
 
     // In WHERE, the columns of the table the query reads come first, before keywords like QUOTENAME.
     await page.keyboard.type(' WHERE Qu');
     await options.first().waitFor();
     assert.match((await options.first().textContent()) ?? '', /^Quantity/);
-    await take(page, 'Enter');
-    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines AS ol WHERE Quantity$/);
+    await page.keyboard.press('Enter');
+    assert.match(await textOf(editor, /FROM dbo\.OrderLines AS ol WHERE Quantity$/), /FROM dbo\.OrderLines AS ol WHERE Quantity$/);
 
     // The draft is kept in the browser, and Reset goes back to the starter.
     await page.reload();
@@ -379,12 +381,14 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await page.keyboard.type('ssf');
     await options.first().waitFor();
     assert.match((await options.first().textContent()) ?? '', /^ssf/);
-    await take(page, 'Enter');
+    await page.keyboard.press('Enter');
+    assert.equal(await textOf(sqlEditor, 'SELECT * FROM '), 'SELECT * FROM ');
     await options.first().waitFor();
     await page.keyboard.type('Cust');
     await options.filter({ hasText: /^Customers/ }).first().waitFor();
-    await take(page, 'Tab');
-    assert.equal(await sqlEditor.textContent(), 'SELECT * FROM dbo.Customers AS c', 'Tab takes the suggestion, as Enter does');
+    // At once, while CodeMirror may still be refreshing the list for the last letter: the pick waits for it.
+    await page.keyboard.press('Tab');
+    assert.equal(await textOf(sqlEditor, 'SELECT * FROM dbo.Customers AS c'), 'SELECT * FROM dbo.Customers AS c', 'Tab takes the suggestion, as Enter does');
     await page.keyboard.press('Home');
     for (let i = 0; i < 'SELECT *'.length; i++) await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Tab');

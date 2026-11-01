@@ -24,6 +24,10 @@
   statements have no semicolon between them, and a CTE stands for its name only in its own statement and its
   UNION branches. A column's alias, written with AS, without it or as `alias = expression`, does not rank
   the tables.
+- Tab or Enter pressed while CodeMirror is still refreshing the list for the last letter typed (it takes no
+  pick for 75 ms after the list changes, nor while its sources answer) takes the suggestion as soon as it can,
+  instead of leaving the editor or typing a new line. Typing on drops it. The browser test presses at once,
+  so it holds the editor to that; it had failed on GitHub's slower Mac runner.
 - On a phone, a suggestion's description goes under or over the list, never over the suggestions after the
   chosen one; CodeMirror put it just under the chosen one. The description and the check's box are drawn
   like the list, in a hairline box.
