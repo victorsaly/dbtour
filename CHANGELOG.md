@@ -8,9 +8,10 @@
   `overview` (the databases and their tables, largest first, all of them up to 100), `search`, `table`
   (the table's Markdown, as the docs and "Copy for …" hold it; a bare name or any case finds it, and an
   unknown one gets suggestions) and `path` (the shortest chain of relations between two tables as JOINs,
-  a relation from the notes marked as such). It reads `schema.json` and the notes again when either
-  changes, writes only answers to stdout, and speaks protocol versions 2024-11-05 to 2025-11-25 without
-  a dependency: JSON-RPC on stdin and stdout, written in core.
+  within one database, every name quoted as that database quotes it, a relation from the notes marked as
+  such). It reads `schema.json` and the notes again when either changes, writes only answers to stdout,
+  refuses a request that is not JSON-RPC 2.0, and speaks protocol versions 2024-11-05 to 2025-11-25
+  without a dependency: JSON-RPC on stdin and stdout, written in core.
 - Search moves from the page into core as `dbtour/search`, so the page and the agent find the same tables
   in the same order.
 - The smoke test asks the installed `dbtour mcp` for a table.

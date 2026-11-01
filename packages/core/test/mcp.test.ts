@@ -34,9 +34,20 @@ test('a notification gets no answer, ping an empty one, and an unknown method or
   const unknown = answer({ jsonrpc: '2.0', id: 3, method: 'resources/list' }, context()) as { error: { code: number; message: string } };
   assert.equal(unknown.error.code, -32601);
   assert.match(unknown.error.message, /resources\/list/);
-  const malformed = answer({ id: 4 }, context()) as { id: number; error: { code: number } };
+  const malformed = answer({ jsonrpc: '2.0', id: 4 }, context()) as { id: number; error: { code: number } };
   assert.deepEqual([malformed.id, malformed.error.code], [4, -32600]);
   assert.equal((answer([1, 2], context()) as { error: { code: number } }).error.code, -32600, 'a batch is not a request');
+});
+
+test('a request must say jsonrpc 2.0 and carry a string or number id, or it is invalid and answered with a null id', () => {
+  const unversioned = answer({ id: 1, method: 'ping' }, context()) as { id: unknown; error: { code: number; message: string } };
+  assert.deepEqual([unversioned.id, unversioned.error.code], [1, -32600]);
+  assert.match(unversioned.error.message, /jsonrpc/);
+  assert.equal((answer({ jsonrpc: '1.0', method: 'notifications/initialized' }, context()) as { error: { code: number } }).error.code, -32600, 'not even a notification without 2.0');
+  for (const id of [{ nested: true }, null, [1], true]) {
+    const invalid = answer({ jsonrpc: '2.0', id, method: 'ping' }, context()) as { id: unknown; error: { code: number } };
+    assert.deepEqual([invalid.id, invalid.error.code], [null, -32600], JSON.stringify(id));
+  }
 });
 
 test('a line that is not JSON is a parse error, a blank line nothing, and a request is answered as a line', () => {
@@ -140,10 +151,10 @@ test('path writes the joins between two tables, through the tables between them'
   const { text, isError } = call(shop(), 'path', { from: 'dbo.OrderLines', to: 'customers' });
   assert.equal(isError, false);
   assert.match(text, /^dbo\.OrderLines to dbo\.Customers: 2 joins\./);
-  assert.match(text, /FROM dbo\.OrderLines\nJOIN dbo\.Orders ON dbo\.Orders\.Id = dbo\.OrderLines\.OrderId\nJOIN dbo\.Customers ON dbo\.Customers\.Id = dbo\.Orders\.CustomerId\n/);
+  assert.ok(text.includes('FROM [dbo].[OrderLines]\nJOIN [dbo].[Orders] ON [dbo].[Orders].[Id] = [dbo].[OrderLines].[OrderId]\nJOIN [dbo].[Customers] ON [dbo].[Customers].[Id] = [dbo].[Orders].[CustomerId]\n'), text);
   const across = call(shop(), 'path', { from: 'billing.Invoices', to: 'dbo.Products' }).text;
   assert.match(across, /3 joins/);
-  assert.match(across, /JOIN dbo\.Orders ON dbo\.Orders\.Id = billing\.Invoices\.OrderId\nJOIN dbo\.OrderLines ON dbo\.OrderLines\.OrderId = dbo\.Orders\.Id\nJOIN dbo\.Products ON dbo\.Products\.Id = dbo\.OrderLines\.ProductId/);
+  assert.ok(across.includes('JOIN [dbo].[Orders] ON [dbo].[Orders].[Id] = [billing].[Invoices].[OrderId]\nJOIN [dbo].[OrderLines] ON [dbo].[OrderLines].[OrderId] = [dbo].[Orders].[Id]\nJOIN [dbo].[Products] ON [dbo].[Products].[Id] = [dbo].[OrderLines].[ProductId]'), across);
 });
 
 test('path says when tables are the same or unconnected, marks a join from the notes, and joins every column of a key', () => {
@@ -156,7 +167,51 @@ test('path says when tables are the same or unconnected, marks a join from the n
   model.databases[0].relations.push({ from: { table: 'dbo.Audit', columns: ['OrderId', 'Line'] }, to: { table: 'dbo.OrderLines', columns: ['OrderId', 'Line'] }, virtual: true });
   model.databases[0].relations.push({ from: { table: 'dbo.Audit', columns: ['ParentId'] }, to: { table: 'dbo.Audit', columns: ['Id'] } });
   const noted = call(model, 'path', { from: 'dbo.Audit', to: 'dbo.OrderLines' }).text;
-  assert.match(noted, /JOIN dbo\.OrderLines ON dbo\.OrderLines\.OrderId = dbo\.Audit\.OrderId AND dbo\.OrderLines\.Line = dbo\.Audit\.Line -- from the notes, not a declared key/);
+  assert.ok(noted.includes('JOIN [dbo].[OrderLines] ON [dbo].[OrderLines].[OrderId] = [dbo].[Audit].[OrderId] AND [dbo].[OrderLines].[Line] = [dbo].[Audit].[Line] -- from the notes, not a declared key'), noted);
   assert.equal(call(model, 'path', { from: 'dbo.Nope', to: 'dbo.Orders' }).isError, true);
   assert.equal(call(model, 'path', { from: 'dbo.Orders' }).isError, true);
+});
+
+test('path quotes every name as its database does, so a space, a bracket or a reserved word still joins', () => {
+  const model = shop();
+  const [dbo] = model.databases[0].schemas;
+  dbo.tables.push({ name: 'Order Notes', kind: 'table', columns: [], indexes: [], constraints: [] });
+  dbo.tables.push({ name: 'User', kind: 'table', columns: [], indexes: [], constraints: [] });
+  model.databases[0].relations.push({ from: { table: 'dbo.Order Notes', columns: ['Order Id'] }, to: { table: 'dbo.Orders', columns: ['Id'] } });
+  model.databases[0].relations.push({ from: { table: 'dbo.User', columns: ['a]b'] }, to: { table: 'dbo.Order Notes', columns: ['Id'] } });
+  const text = call(model, 'path', { from: 'dbo.User', to: 'dbo.Orders' }).text;
+  assert.ok(text.includes('FROM [dbo].[User]\nJOIN [dbo].[Order Notes] ON [dbo].[Order Notes].[Id] = [dbo].[User].[a]]b]\nJOIN [dbo].[Orders] ON [dbo].[Orders].[Id] = [dbo].[Order Notes].[Order Id]'), text);
+
+  const quoted = (driver: string) => {
+    const other = shop();
+    other.databases[0].driver = driver;
+    other.databases[0].schemas[0].tables[1].name = 'Or"de`rs';
+    for (const r of other.databases[0].relations) for (const end of [r.from, r.to]) if (end.table === 'dbo.Orders') end.table = 'dbo.Or"de`rs';
+    return call(other, 'path', { from: 'dbo.Customers', to: 'dbo.Or"de`rs' }).text;
+  };
+  assert.ok(quoted('postgres').includes('JOIN "dbo"."Or""de`rs" ON "dbo"."Or""de`rs"."CustomerId" = "dbo"."Customers"."Id"'), quoted('postgres'));
+  assert.ok(quoted('mysql').includes('JOIN `dbo`.`Or"de``rs` ON'), quoted('mysql'));
+  assert.ok(quoted('sqlite').includes('JOIN "dbo"."Or""de`rs" ON'), 'SQLite and any other database take the standard double quotes');
+});
+
+test('path keeps each database to itself: a table of the same name in two does not join them', () => {
+  const table = (name: string) => ({ name, kind: 'table' as const, columns: [], indexes: [], constraints: [] });
+  const model: Model = {
+    dbtour: 1,
+    databases: [
+      { name: 'Sales', driver: 'mssql', schemas: [{ name: 'dbo', tables: [table('Invoices'), table('Customers')] }], relations: [{ from: { table: 'dbo.Invoices', columns: ['CustomerId'] }, to: { table: 'dbo.Customers', columns: ['Id'] } }] },
+      { name: 'Billing', driver: 'mssql', schemas: [{ name: 'dbo', tables: [table('Payments'), table('Customers')] }], relations: [{ from: { table: 'dbo.Payments', columns: ['CustomerId'] }, to: { table: 'dbo.Customers', columns: ['Id'] } }] },
+    ],
+    apis: [],
+    links: [],
+    groups: [],
+  };
+  const apart = call(model, 'path', { from: 'dbo.Invoices', to: 'dbo.Payments' });
+  assert.equal(apart.isError, false);
+  assert.match(apart.text, /dbo\.Invoices is in Sales and dbo\.Payments in Billing: relations do not cross databases/);
+  const billing = call(model, 'path', { from: 'dbo.Payments', to: 'dbo.Customers' }).text;
+  assert.match(billing, /^In Billing, dbo\.Payments to dbo\.Customers: 1 join\./);
+  const sales = call(model, 'path', { from: 'dbo.Customers', to: 'dbo.Invoices' }).text;
+  assert.match(sales, /^In Sales, dbo\.Customers to dbo\.Invoices: 1 join\./);
+  assert.match(call(model, 'path', { from: 'customers', to: 'invoices' }).text, /^In Sales, dbo\.Customers to dbo\.Invoices/, 'a bare name in two databases is still one table name');
 });

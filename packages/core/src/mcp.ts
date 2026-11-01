@@ -84,7 +84,7 @@ export const toolList = [
 
 const toolNames = toolList.map((t) => t.name);
 
-type Request = { jsonrpc: '2.0'; id?: string | number | null; method: string; params?: Record<string, unknown> };
+type Id = string | number | null;
 
 /** One line in, at most one line out: a notification and a blank line get none. */
 export function answerLine(line: string, context: Context): string | undefined {
@@ -101,12 +101,16 @@ export function answerLine(line: string, context: Context): string | undefined {
 
 export function answer(message: unknown, context: Context): object | undefined {
   if (typeof message !== 'object' || message === null || Array.isArray(message)) return failure(null, -32600, 'Send one JSON-RPC request as an object; batches are not accepted.');
-  const request = message as Partial<Request>;
-  const id = request.id ?? null;
+  const request = message as Record<string, unknown>;
+  // An id that is neither a string nor a number cannot be echoed back, so its error carries null.
+  const validId = typeof request.id === 'string' || typeof request.id === 'number';
+  const id = validId ? (request.id as Id) : null;
+  if (request.jsonrpc !== '2.0') return failure(id, -32600, 'A request must say "jsonrpc": "2.0".');
   if (typeof request.method !== 'string') return failure(id, -32600, 'A request needs a method.');
   // A notification wants no answer, whatever it says.
   if (!('id' in request)) return undefined;
-  const params = request.params ?? {};
+  if (!validId) return failure(null, -32600, 'A request id must be a string or a number.');
+  const params = typeof request.params === 'object' && request.params !== null ? (request.params as Record<string, unknown>) : {};
   switch (request.method) {
     case 'initialize': {
       const asked = params.protocolVersion;
@@ -138,11 +142,11 @@ export function answer(message: unknown, context: Context): object | undefined {
   }
 }
 
-function success(id: Request['id'], result: object): object {
+function success(id: Id, result: object): object {
   return { jsonrpc: '2.0', id, result };
 }
 
-function failure(id: Request['id'], code: number, message: string): object {
+function failure(id: Id, code: number, message: string): object {
   return { jsonrpc: '2.0', id, error: { code, message } };
 }
 
@@ -244,7 +248,7 @@ function resolve(model: Model, written: string): { ref: string } | { problem: st
   if (parts.length >= 2 && parts.length <= 3 && !parts.includes('') && findTable(model, wanted)) return { ref: wanted };
   const all = model.databases.flatMap((d) => d.schemas.flatMap((s) => s.tables.map((t) => tableRef(s.name, t.name))));
   const lower = wanted.toLowerCase();
-  const matches = all.filter((ref) => ref.toLowerCase() === lower || (!lower.includes('.') && ref.slice(ref.indexOf('.') + 1).toLowerCase() === lower));
+  const matches = [...new Set(all)].filter((ref) => ref.toLowerCase() === lower || (!lower.includes('.') && ref.slice(ref.indexOf('.') + 1).toLowerCase() === lower));
   if (matches.length === 1) return { ref: matches[0] };
   if (matches.length > 1) return { problem: `${matches.slice(0, -1).join(', ')} and ${matches.at(-1)} are ${matches.length === 2 ? 'both' : 'all'} called ${wanted}: ask for one as schema.table.` };
   const name = wanted.slice(wanted.lastIndexOf('.') + 1);
@@ -260,27 +264,59 @@ interface Step {
   forward: boolean;
 }
 
-function pathText(model: Model, from: string, to: string): string {
-  if (from === to) return `${from} is the same table at both ends: no join is needed.`;
-  const steps = shortestPath(model, from, to);
-  if (!steps) {
-    return `No relation connects ${from} and ${to}, declared or in the notes. If they are related all the same, add the relation to dbtour.notes.yaml so the docs and this path know it.`;
-  }
-  const lines = [`FROM ${from}`];
-  let at = from;
-  for (const step of steps) {
-    const mine = step.forward ? step.relation.to.columns : step.relation.from.columns;
-    const theirs = step.forward ? step.relation.from.columns : step.relation.to.columns;
-    const on = mine.map((column, i) => `${step.table}.${column} = ${at}.${theirs[i] ?? theirs[0]}`).join(' AND ');
-    lines.push(`JOIN ${step.table} ON ${on}${step.relation.virtual ? ' -- from the notes, not a declared key' : ''}`);
-    at = step.table;
-  }
-  return `${from} to ${to}: ${plural(steps.length, 'join', 'joins')}.\n\n\`\`\`sql\n${lines.join('\n')}\n\`\`\`\n\nEach JOIN follows a relation as the docs record it; read the tables to choose the columns and whether a LEFT JOIN suits.`;
+/** The databases that have a table of this name: refs carry no database, so two can share one. */
+function databasesWith(model: Model, ref: string): Database[] {
+  return model.databases.filter((d) => d.schemas.some((s) => s.tables.some((t) => tableRef(s.name, t.name) === ref)));
 }
 
-/** Breadth first over the relations both ways, so the first path found is a shortest one. */
-function shortestPath(model: Model, from: string, to: string): Step[] | undefined {
-  const relations = model.databases.flatMap((d) => d.relations);
+// Each database quotes names its own way: brackets in SQL Server, backticks in MySQL, the standard double
+// quotes elsewhere. Every name is quoted, since a reserved word (User, Order) or a space breaks a bare one,
+// and the closing quote inside a name is doubled.
+function quote(driver: string, name: string): string {
+  if (driver === 'mssql') return `[${name.replace(/]/g, ']]')}]`;
+  if (driver === 'mysql') return `\`${name.replace(/`/g, '``')}\``;
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function quoteRef(driver: string, ref: string, column?: string): string {
+  const dot = ref.indexOf('.');
+  const names = [ref.slice(0, dot), ref.slice(dot + 1), ...(column === undefined ? [] : [column])];
+  return names.map((name) => quote(driver, name)).join('.');
+}
+
+function pathText(model: Model, from: string, to: string): string {
+  if (from === to) return `${from} is the same table at both ends: no join is needed.`;
+  // Relations stay inside their database, so the search runs in each database that has both tables.
+  const toDatabases = databasesWith(model, to);
+  const shared = databasesWith(model, from).filter((d) => toDatabases.includes(d));
+  if (shared.length === 0) {
+    const names = (ref: string) => databasesWith(model, ref).map((d) => d.name).join(' and ');
+    return `${from} is in ${names(from)} and ${to} in ${names(to)}: relations do not cross databases, so no join connects them.`;
+  }
+  let best: { database: Database; steps: Step[] } | undefined;
+  for (const database of shared) {
+    const steps = shortestPath(database.relations, from, to);
+    if (steps && (!best || steps.length < best.steps.length)) best = { database, steps };
+  }
+  if (!best) {
+    return `No relation connects ${from} and ${to}, declared or in the notes. If they are related all the same, add the relation to dbtour.notes.yaml so the docs and this path know it.`;
+  }
+  const { driver } = best.database;
+  const lines = [`FROM ${quoteRef(driver, from)}`];
+  let at = from;
+  for (const step of best.steps) {
+    const mine = step.forward ? step.relation.to.columns : step.relation.from.columns;
+    const theirs = step.forward ? step.relation.from.columns : step.relation.to.columns;
+    const on = mine.map((column, i) => `${quoteRef(driver, step.table, column)} = ${quoteRef(driver, at, theirs[i] ?? theirs[0])}`).join(' AND ');
+    lines.push(`JOIN ${quoteRef(driver, step.table)} ON ${on}${step.relation.virtual ? ' -- from the notes, not a declared key' : ''}`);
+    at = step.table;
+  }
+  const where = model.databases.length > 1 ? `In ${best.database.name}, ` : '';
+  return `${where}${from} to ${to}: ${plural(best.steps.length, 'join', 'joins')}.\n\n\`\`\`sql\n${lines.join('\n')}\n\`\`\`\n\nEach JOIN follows a relation as the docs record it; read the tables to choose the columns and whether a LEFT JOIN suits.`;
+}
+
+/** Breadth first over one database's relations both ways, so the first path found is a shortest one. */
+function shortestPath(relations: Relation[], from: string, to: string): Step[] | undefined {
   const reached = new Map<string, Step[]>([[from, []]]);
   const queue = [from];
   while (queue.length > 0) {
