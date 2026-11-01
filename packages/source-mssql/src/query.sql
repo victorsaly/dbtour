@@ -15,7 +15,7 @@ SELECT DB_NAME() AS [name],
        CONVERT(nvarchar(33), SYSUTCDATETIME(), 127) + 'Z' AS [readAt],
        CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS nvarchar(128)) AS [collation],
        CASE WHEN OBJECT_ID('sys.sensitivity_classifications') IS NULL THEN 'absent'
-            WHEN HAS_PERMS_BY_NAME(NULL, 'DATABASE', 'VIEW ANY SENSITIVITY CLASSIFICATION') = 1 THEN 'read'
+            WHEN HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW ANY SENSITIVITY CLASSIFICATION') = 1 THEN 'read'
             ELSE 'denied' END AS [labels];
 
 -- 2. Tables and views, with each table's rows and bytes as the catalogue counts them (no row is read).
@@ -216,7 +216,8 @@ SELECT s.[name] AS [schema],
        pf.[name] AS [function],
        pc.[name] AS [partitionColumn],
        (SELECT COUNT(*) FROM sys.partitions p WHERE p.object_id = t.object_id AND p.index_id IN (0, 1)) AS [partitions],
-       (SELECT TOP (1) p.data_compression_desc FROM sys.partitions p WHERE p.object_id = t.object_id AND p.index_id IN (0, 1) ORDER BY p.partition_number) AS [compression]
+       -- Every partition's compression, comma-separated, since partitions may differ.
+       STUFF((SELECT DISTINCT N'','' + p.data_compression_desc FROM sys.partitions p WHERE p.object_id = t.object_id AND p.index_id IN (0, 1) FOR XML PATH(N'''')), 1, 1, N'''') AS [compression]
 FROM sys.tables t
 JOIN sys.schemas s ON s.schema_id = t.schema_id
 LEFT JOIN sys.indexes i ON i.object_id = t.object_id AND i.index_id IN (0, 1)
@@ -289,7 +290,7 @@ ELSE
 --     an older server, from being asked about there.
 DECLARE @labelsRead bit = 0;
 IF OBJECT_ID('sys.sensitivity_classifications') IS NOT NULL
-    IF HAS_PERMS_BY_NAME(NULL, 'DATABASE', 'VIEW ANY SENSITIVITY CLASSIFICATION') = 1 SET @labelsRead = 1;
+    IF HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW ANY SENSITIVITY CLASSIFICATION') = 1 SET @labelsRead = 1;
 IF @labelsRead = 1
 BEGIN
     DECLARE @labels nvarchar(max) = CAST(N'' AS nvarchar(max)) + N'

@@ -204,6 +204,7 @@ test('what the catalogue says: an About block in sentences, a Protection column,
     assert.match(text, /System-versioned\s*Every change is kept in dbo\.OrdersHistory/);
     assert.match(text, /Triggers\s*trOrdersAudit runs after insert and update/);
     assert.match(text, /Retention\s*7 years/);
+    assert.equal(await about.getByRole('link', { name: 'dbo.OrdersHistory' }).count(), 0, 'a history table not in the model is named, not linked');
 
     assert.equal(await page.locator('table.columns th', { hasText: 'Protection' }).count(), 1);
     const createdAt = page.locator('tr', { hasText: 'CreatedAt' });
@@ -240,6 +241,11 @@ test('what the catalogue says: an About block in sentences, a Protection column,
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('ArrowLeft');
     assert.match((await tip.textContent()) ?? '', /^Id\s*int.*Primary key.*identity\(1,1\).*Source: checkout/);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('tooltip').count(), 0, 'Escape hides the tooltip');
+    assert.equal(await page.evaluate('document.activeElement?.getAttribute("aria-label")'), 'Id, int, primary key', 'and leaves focus on the tick');
+    await page.keyboard.press('ArrowRight');
+    await page.getByRole('tooltip').waitFor();
     await page.locator('table.columns tr', { hasText: 'CreatedAt' }).hover();
     assert.equal(await page.locator('.entry-plot a.plot-tick.is-hover').count(), 1, 'a row lifts its tick');
     assert.equal(await page.getByRole('tooltip').count(), 0, 'without a tooltip over the map');

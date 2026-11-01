@@ -232,7 +232,10 @@ function addFeatures(table: Table, row: FeatureRow, tables: Map<string, Table>):
   if (row.scheme && row.function && row.partitionColumn) {
     table.partitioning = { scheme: row.scheme, function: row.function, column: row.partitionColumn, partitions: Number(row.partitions ?? 0) };
   }
-  if (row.compression && row.compression !== 'NONE') table.compression = row.compression.toLowerCase().replace(/_/g, ' ');
+  // Every partition's setting, comma-separated: one kind is the table's, several are said as a list.
+  const kinds = [...new Set((row.compression ?? '').split(',').map((k) => k.trim().toLowerCase().replace(/_/g, ' ')).filter(Boolean))].sort();
+  if (kinds.length > 1) table.compression = kinds.join(', ');
+  else if (kinds.length === 1 && kinds[0] !== 'none') table.compression = kinds[0];
   if (row.changeTracking) table.changeTracking = true;
   if (row.cdc) table.cdc = true;
 }
@@ -253,8 +256,20 @@ function addProperties(rows: PropertyRow[], database: Database, tables: Map<stri
     else if (row.on === 'column') owner = table?.columns.find((c) => c.name === row.item);
     else if (row.on === 'index') owner = table?.indexes.find((i) => i.name === row.item);
     else owner = table?.constraints.find((c) => c.name === row.item);
-    if (owner) (owner.properties ??= {})[row.name] = row.value;
+    // A primary key's index is not among the indexes: the constraint stands for it, and keeps its properties.
+    // One the constraint already has under the same name, with another value, is kept beside it.
+    let name = row.name;
+    if (!owner && row.on === 'index') {
+      owner = table?.constraints.find((c) => c.kind === 'primary' && c.name === row.item);
+      if (owner?.properties && Object.hasOwn(owner.properties, name) && owner.properties[name] !== row.value) name = `${name} (index)`;
+    }
+    if (owner) setProperty((owner.properties ??= {}), name, row.value);
   }
+}
+
+/** As an own property, so a catalogue name that is also a name of Object's own (__proto__) is kept like any. */
+function setProperty(properties: Properties, name: string, value: string): void {
+  Object.defineProperty(properties, name, { value, enumerable: true, writable: true, configurable: true });
 }
 
 /** The type as SQL Server would spell it in a CREATE TABLE: nvarchar(320), varchar(max), decimal(18,2), datetime2(7). */

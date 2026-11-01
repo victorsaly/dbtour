@@ -94,7 +94,8 @@ export function features(table: Table): Feature[] {
     const { column, scheme, function: fn, partitions } = table.partitioning;
     list.push({ name: 'Partitioned', detail: `on ${column} by ${scheme} (function ${fn}), ${partitions} partitions` });
   }
-  if (table.compression) list.push({ name: 'Compressed', detail: table.compression });
+  // A list is a table whose partitions are compressed differently.
+  if (table.compression) list.push({ name: 'Compressed', detail: table.compression.includes(',') ? `${table.compression}, by partition` : table.compression });
   if (table.changeTracking) list.push({ name: 'Change tracking' });
   if (table.cdc) list.push({ name: 'Change data capture' });
   if (table.triggers?.length) list.push({ name: 'Triggers', detail: String(table.triggers.length) });
@@ -204,7 +205,7 @@ function renderTable(model: Model, ref: string, table: Table, database: Database
     if (isUniqueColumn(table, column.name)) keys.push('unique');
     keys.push(...columnTraits(column));
     const dflt = column.default === undefined ? '' : `\`${column.default}\``;
-    parts.push(`| ${cell(column.name)} | ${cell(columnType(column))} | ${column.nullable ? 'yes' : 'no'} | ${cell(dflt)} | ${keys.join(', ')} | ${cell(columnDescription(column))} |`);
+    parts.push(`| ${cell(column.name)} | ${cell(columnType(column))} | ${column.nullable ? 'yes' : 'no'} | ${cell(dflt)} | ${cell(keys.join(', '))} | ${cell(columnDescription(column))} |`);
   }
   parts.push('');
 

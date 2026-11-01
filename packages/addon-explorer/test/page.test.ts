@@ -402,3 +402,20 @@ test('a tick\'s tooltip says the column, its type, what its peak means, and what
   assert.equal(email.peak, 'Unique');
   assert.equal(email.description, 'Login address.');
 });
+
+test('the review: a switched-off policy says so, and a label with only a rank still shows', () => {
+  const table = shop().databases[0].schemas[0].tables[0];
+  const said = (security: object[]) => Object.fromEntries(aboutOf({ ...table, security } as typeof table).terms.map((t) => [t.term, t.sentence]))['Row-level security'];
+  const off = { policy: 'rls.P', kind: 'filter', predicate: 'x', enabled: false };
+  assert.equal(said([off]), 'rls.P is switched off: it filters and blocks nothing. See Row-level security below.');
+  const on = { policy: 'rls.Q', kind: 'block', operation: 'after insert', predicate: 'y', enabled: true };
+  assert.equal(said([off, on]), 'rls.Q blocks writes that break its predicate; rls.P is switched off. See Row-level security below.');
+  assert.deepEqual(protection({ name: 'x', type: 'int', nullable: false, sensitivity: { rank: 'high' } }), [{ text: 'rank high', rank: 'high' }]);
+  assert.equal(anyProtected({ ...table, columns: [{ name: 'x', type: 'int', nullable: false, sensitivity: { rank: 'high' } }] }), true);
+});
+
+test('the review: compression that differs by partition says so', () => {
+  const table = shop().databases[0].schemas[0].tables[0];
+  const said = Object.fromEntries(aboutOf({ ...table, compression: 'none, page' }).terms.map((t) => [t.term, t.sentence]));
+  assert.equal(said.Compressed, 'Compression differs by partition: none, page.');
+});

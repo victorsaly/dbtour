@@ -157,3 +157,15 @@ test('a feature that names a table in the model links to its page', () => {
   model.databases[0].schemas[0].tables[3].historyOf = 'dbo.Orders';
   assert.match(renderMarkdown(model)['tables/dbo.Products.md'], /- \*\*History\*\*: of \[dbo\.Orders\]\(dbo\.Orders\.md\)\n/);
 });
+
+test('the review: a pipe in a mask does not break the row', () => {
+  const model = shop();
+  model.databases[0].schemas[0].tables[0].columns[1].masked = 'partial(0,"|",0)';
+  assert.match(renderMarkdown(model)['tables/dbo.Customers.md'], /masked `partial\(0,"\\\|",0\)`/);
+});
+
+test('the review: compression that differs by partition says so in the Markdown', () => {
+  const model = shop();
+  model.databases[0].schemas[0].tables[0].compression = 'none, page';
+  assert.match(renderMarkdown(model)['tables/dbo.Customers.md'], /- \*\*Compressed\*\*: none, page, by partition\n/);
+});

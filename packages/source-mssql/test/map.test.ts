@@ -227,3 +227,26 @@ test('rows from before the catalogue sets, as a 0.3 query returned them, still m
   const database = mapRecordsets(sets);
   assert.equal(validate({ ...emptyModel(), databases: [database] }).ok, true);
 });
+
+test('the review: a primary key index\'s properties land on its constraint, and __proto__ is a name like any', () => {
+  const sets = rows();
+  sets.properties.push(
+    { on: 'index', schema: 'dbo', table: 'Orders', item: 'PK_Orders', name: 'Fill', value: '90' },
+    { on: 'index', schema: 'dbo', table: 'Orders', item: 'PK_Orders', name: 'Note', value: 'the index says otherwise' },
+    { on: 'table', schema: 'dbo', table: 'Orders', item: null, name: '__proto__', value: 'kept' },
+  );
+  const model = { ...emptyModel(), databases: [mapRecordsets(sets)] };
+  const orders = findTable(model, 'dbo.Orders')!.table;
+  assert.deepEqual(orders.constraints.find((c) => c.name === 'PK_Orders')!.properties, { Note: 'from 2019', Fill: '90', 'Note (index)': 'the index says otherwise' });
+  assert.deepEqual(Object.entries(orders.properties!), [['Retention', '7 years'], ['__proto__', 'kept']]);
+  assert.match(JSON.stringify(orders.properties), /"__proto__":"kept"/);
+});
+
+test('the review: compression read from every partition, a mix kept as a list', () => {
+  const sets = rows();
+  sets.features[0].compression = 'NONE,PAGE';
+  sets.features[1].compression = 'ROW';
+  const model = { ...emptyModel(), databases: [mapRecordsets(sets)] };
+  assert.equal(findTable(model, 'dbo.Orders')!.table.compression, 'none, page');
+  assert.equal(findTable(model, 'dbo.Customers')!.table.compression, 'row');
+});

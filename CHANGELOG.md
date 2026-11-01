@@ -6,7 +6,7 @@
   keeps about its objects, still with `VIEW DEFINITION` alone: every extended property under any name on
   the database, schemas, tables, columns, indexes and constraints (`properties`); when a table was created
   and altered, whether it is system-versioned (with its history table and period columns), memory-optimised,
-  a ledger table, partitioned or compressed, its triggers, change tracking, change data capture and
+  a ledger table, partitioned or compressed (read from every partition, a mix said as a list), its triggers, change tracking, change data capture and
   row-level security; a column's collation where it differs from the database's, its identity seed and
   increment, sparse, masking function and Always Encrypted; index kinds, filters and disabled indexes; keys
   and checks disabled or no longer trusted. Sensitivity labels are read when the login holds `VIEW ANY

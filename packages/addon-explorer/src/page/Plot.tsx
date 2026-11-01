@@ -34,6 +34,9 @@ interface Props {
 export function Plot({ ticks, height, index = 0, tableRef, activeColumn, className, tips, hover, showTip, onHover }: Props) {
   const svg = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(defaultWidth);
+  // Escape hides the tooltip for the column in hand, and only the tooltip: focus stays on the tick, and the
+  // next column pointed at shows its own again.
+  const [dismissed, setDismissed] = useState<string>();
   useEffect(() => {
     const element = svg.current;
     if (!element || typeof ResizeObserver === 'undefined') return;
@@ -44,6 +47,10 @@ export function Plot({ ticks, height, index = 0, tableRef, activeColumn, classNa
 
   // ← and → move between the ticks, so the line can be read one column at a time from the keyboard.
   const step = (event: KeyboardEvent<Element>, i: number) => {
+    if (event.key === 'Escape') {
+      setDismissed(ticks[i].column);
+      return;
+    }
     const to = event.key === 'ArrowRight' ? i + 1 : event.key === 'ArrowLeft' ? i - 1 : -1;
     if (to < 0 || to >= ticks.length) return;
     event.preventDefault();
@@ -52,7 +59,7 @@ export function Plot({ ticks, height, index = 0, tableRef, activeColumn, classNa
 
   const d = plotPath(ticks, width, height);
   const w = tickWidth(ticks.length, width);
-  const tipAt = showTip && hover !== undefined ? ticks.findIndex((t) => t.column === hover) : -1;
+  const tipAt = showTip && hover !== undefined && hover !== dismissed ? ticks.findIndex((t) => t.column === hover) : -1;
   const tip = tipAt === -1 ? undefined : tips?.[tipAt];
   const x = tipAt === -1 ? 0 : tickCentre(tipAt, ticks.length, width);
   const anchor = x < tipEdge ? 'start' : x > width - tipEdge ? 'end' : 'middle';
@@ -72,9 +79,15 @@ export function Plot({ ticks, height, index = 0, tableRef, activeColumn, classNa
               className={`plot-tick${active ? ' is-active' : ''}${lifted ? ' is-hover' : ''}`}
               aria-label={said ? `${said.column}, ${said.type}, ${said.peak.toLowerCase()}` : tick.column}
               aria-describedby={tip && tip.column === tick.column ? 'plot-tip' : undefined}
-              onMouseEnter={() => onHover?.(tick.column)}
+              onMouseEnter={() => {
+                setDismissed(undefined);
+                onHover?.(tick.column);
+              }}
               onMouseLeave={() => onHover?.(undefined)}
-              onFocus={() => onHover?.(tick.column)}
+              onFocus={() => {
+                setDismissed(undefined);
+                onHover?.(tick.column);
+              }}
               onBlur={() => onHover?.(undefined)}
               onKeyDown={(event) => step(event, i)}
             >

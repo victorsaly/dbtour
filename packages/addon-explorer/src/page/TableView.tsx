@@ -137,7 +137,7 @@ export function TableView({ model, cat, tableRef, column }: Props) {
 
         {table.stats && <Size stats={table.stats} rank={rankByRows(cat, tableRef)} readAt={found.database.statsReadAt} driver={found.database.driver} />}
 
-        <AboutBlock table={table} colour={cat.colours.get(schema.name)} />
+        <AboutBlock table={table} colour={cat.colours.get(schema.name)} has={(ref) => cat.byRef.has(ref)} />
 
         <div className="entry-plot" key={tableRef}>
           <Plot
@@ -510,7 +510,7 @@ function Size({ stats, rank, readAt, driver }: { stats: TableStats; rank?: strin
 
 /** What the catalogue says about the table beyond its columns: each feature in a plain sentence, the dates,
  *  and the extended properties a team recorded. Not drawn when there is nothing to say. */
-function AboutBlock({ table, colour }: { table: Table; colour?: string }) {
+function AboutBlock({ table, colour, has }: { table: Table; colour?: string; has: (ref: string) => boolean }) {
   const about = aboutOf(table);
   if (about.empty) return null;
   return (
@@ -527,7 +527,8 @@ function AboutBlock({ table, colour }: { table: Table; colour?: string }) {
                 <span className="block" style={{ background: colour }} aria-hidden="true" />
                 {t.term}
               </dt>
-              <dd>{t.ref ? linkRef(t.sentence, t.ref) : t.sentence}</dd>
+              {/* A table the source left out of the model (excluded, say) is named, not linked to a page that is not there. */}
+              <dd>{t.ref && has(t.ref) ? linkRef(t.sentence, t.ref) : t.sentence}</dd>
             </div>
           ))}
         </dl>

@@ -46,7 +46,10 @@ function sentence(table: Table, name: string): string {
       return `Split on ${p.column} into ${p.partitions} partitions, by ${p.scheme} (function ${p.function}).`;
     }
     case 'Compressed':
-      return `${table.compression!.charAt(0).toUpperCase()}${table.compression!.slice(1)} compression.`;
+      // A list is a table whose partitions are compressed differently.
+      return table.compression!.includes(',')
+        ? `Compression differs by partition: ${table.compression}.`
+        : `${table.compression!.charAt(0).toUpperCase()}${table.compression!.slice(1)} compression.`;
     case 'Change tracking':
       return 'The database records which rows changed, for keeping copies in step.';
     case 'Change data capture':
@@ -58,14 +61,20 @@ function sentence(table: Table, name: string): string {
       return `${t.name} runs ${t.timing} ${and(t.events)}${t.enabled ? '' : ', and is disabled'}: see Triggers below.`;
     }
     default: {
-      // Row-level security: what each policy does, filtering reads or blocking writes.
+      // Row-level security: what each policy switched on does, filtering reads or blocking writes, and which
+      // are switched off, since a policy that is off protects nothing whatever its predicates say.
       const policies = [...new Set(table.security!.map((s) => s.policy))];
-      const does = policies.map((policy) => {
-        const kinds = new Set(table.security!.filter((s) => s.policy === policy).map((s) => s.kind));
+      const on = policies.filter((policy) => table.security!.some((s) => s.policy === policy && s.enabled));
+      const off = policies.filter((policy) => !on.includes(policy));
+      const does = on.map((policy) => {
+        const kinds = new Set(table.security!.filter((s) => s.policy === policy && s.enabled).map((s) => s.kind));
         const verbs = [kinds.has('filter') ? 'filters the rows a login sees' : '', kinds.has('block') ? 'blocks writes that break its predicate' : ''];
         return `${policy} ${and(verbs.filter(Boolean))}`;
       });
-      return `${and(does)}: see Row-level security below.`;
+      const switched = `${and(off)} ${off.length > 1 ? 'are' : 'is'} switched off`;
+      if (on.length === 0) return `${switched}: ${off.length > 1 ? 'they filter' : 'it filters'} and ${off.length > 1 ? 'block' : 'blocks'} nothing. See Row-level security below.`;
+      if (off.length === 0) return `${and(does)}: see Row-level security below.`;
+      return `${and(does)}; ${switched}. See Row-level security below.`;
     }
   }
 }
@@ -95,7 +104,7 @@ export interface ProtectionTag {
 export function protection(column: Column): ProtectionTag[] {
   const tags: ProtectionTag[] = [];
   const s = column.sensitivity;
-  if (s && (s.label || s.informationType)) {
+  if (s && (s.label || s.informationType || s.rank)) {
     const tag: ProtectionTag = { text: [s.label, s.informationType, s.rank && `rank ${s.rank}`].filter(Boolean).join(' · ') };
     const rank = ranks.find((r) => r === s.rank?.toLowerCase());
     if (rank) tag.rank = rank;
