@@ -1,6 +1,6 @@
 {
   "name": "dbtour",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Tour your database and its API: the structure as Markdown, a page and an MCP server, so an agent finds the table, reads it and writes SQL from the real names without reading a row.",
   "icon": "brand/mark.png",
   "author": { "name": "Victor Saly", "url": "https://github.com/victorsaly" },

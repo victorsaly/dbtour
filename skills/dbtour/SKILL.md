@@ -3,7 +3,7 @@ name: dbtour
 description: Documents a project's database from its structure and answers questions about it without reading a row - which table holds something, how two tables join, what a column means, how big a table is - and writes SQL against it from the real tables and columns, through dbtour (dbtour.yaml, docs/dbtour/schema.json, the dbtour MCP server). Use when asked to document a database or keep its docs current, to find where data lives, to explain a schema, to write or check a query for the project's database, or to set up dbtour. Load it before writing SQL against a database the project uses, even a short query.
 license: MIT
 metadata:
-  version: 0.6.0
+  version: 0.6.1
   homepage: https://github.com/victorsaly/dbtour
 allowed-tools: Bash(npx dbtour *)
 ---
@@ -26,9 +26,10 @@ Look for `dbtour.yaml` at the project's root and `docs/dbtour/schema.json` (or t
      database with. Then `npx dbtour init` writes `dbtour.yaml` for SQL Server; add `exclude` for tables
      nobody should read about.
   2. The connection string goes in the environment variable `dbtour.yaml` names (`DBTOUR_MSSQL`), set by the
-     person in their own shell. **Never write it into `dbtour.yaml`, a command line, a file or this
-     conversation**; if they paste one, say so and ask them to set the variable instead. A login with
-     `VIEW DEFINITION` on the database is enough.
+     person in their own shell. **Never write it into `dbtour.yaml`, a file, a command you run, or a reply**;
+     if they paste one, say so and ask them to set the variable instead. Never quote a password or key back,
+     not even to point at it: say "the password you pasted", and show the variable with the secret left out
+     (`export DBTOUR_MSSQL='Server=…;Password=…'`). A login with `VIEW DEFINITION` on the database is enough.
   3. `npx dbtour extract`, then `npx dbtour render`: the Markdown under `docs/dbtour/`, and the page
      (`docs/dbtour/index.html`) when `addons` lists `explorer`.
   4. Show them `docs/dbtour/README.md` or the page before anything is committed. The model describes their
@@ -56,6 +57,10 @@ for the name, rather than loading the whole file. If the person uses Claude Code
 
 - Name only tables and columns you have read with **table**, as `schema.table`. Never invent one; if what is
   asked is not in the model, say so and say what is closest.
+- **No model to read, no SQL.** When neither the MCP server's tools nor the docs are there to read, do not
+  write a query, or a fragment of one, with likely names, even marked as placeholders: say what you will read,
+  describe the query in words or with placeholders that are plainly not names (`<the order date>`), and write
+  it once you have read the tables. A guessed name looks right and runs wrong, or silently sums the wrong column.
 - Join through the relations the model has, or **path**'s JOINs. A relation marked **(notes)** was written by
   a person, not declared by the database; one marked **not trusted** is not enforced on existing rows.
 - Write the database's dialect: the model's `driver` (`mssql` is T-SQL: `TOP`, `[brackets]`, `N'text'`).
