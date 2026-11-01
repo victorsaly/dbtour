@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import type { Model } from 'dbtour/model';
 import { pageHtml, render } from '../src/index.ts';
 import { parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, type Route } from '../src/page/route.ts';
-import { allTables, relationId } from '../src/page/graph.ts';
+import { allTables, mergeParallel, relationId } from '../src/page/graph.ts';
 import { tools, toolById, storedTool, rememberTool } from '../src/page/tools.ts';
 import { buildIndex, search } from '../src/page/search.ts';
 import { neighbours, withNeighbours, expand, subgraph } from '../src/page/graph.ts';
@@ -36,7 +36,12 @@ test('every route round-trips through the hash, and an odd hash falls back to ho
   assert.deepEqual(parseRoute('#/'), { kind: 'home' });
   assert.deepEqual(parseRoute('#diagram/'), { kind: 'home' });
   assert.deepEqual(parseRoute('#group/'), { kind: 'home' });
-  assert.deepEqual(parseRoute('#%E0%A4%A'), { kind: 'table', ref: '%E0%A4%A' });
+  assert.deepEqual(parseRoute('#%E0%A4%A'), { kind: 'home' }, 'undecodable and not schema.table');
+  assert.deepEqual(parseRoute('#Orders'), { kind: 'home' }, 'no schema');
+  assert.deepEqual(parseRoute('#a.b.c.d'), { kind: 'home' }, 'too many parts');
+  assert.deepEqual(parseRoute('#dbo..x'), { kind: 'home' }, 'an empty part');
+  assert.deepEqual(parseRoute('#diagram/dbo.Orders,invalid,,x.y.z'), { kind: 'diagram', refs: ['dbo.Orders'] }, 'bad refs are dropped');
+  assert.deepEqual(parseRoute('#diagram/invalid'), { kind: 'home' });
 });
 
 test('search ranks a table whose name starts with the word first, then groups, then columns', () => {
@@ -52,6 +57,17 @@ test('search ranks a table whose name starts with the word first, then groups, t
   assert.ok(hits.some((h) => h.kind === 'column' && h.title === 'dbo.OrderLines.OrderId'));
   assert.ok(hits.some((h) => h.kind === 'view' && h.title === 'dbo.vOrderTotals'), 'a view containing the word is found, as a view');
   assert.equal(hits.find((h) => h.title === 'dbo.OrderLines')?.detail, '3 columns', 'a table without a description says its size');
+});
+
+test('search puts the quality of the match before the kind', () => {
+  const model = shop();
+  model.groups.push({ name: 'Customer care', tables: ['dbo.Customers'] });
+  model.databases[0].schemas[0].tables[1].description = 'Placed by a customer.';
+  const index = buildIndex(model);
+  const titles = search(index, 'customer').map((h) => `${h.kind} ${h.title}`);
+  assert.equal(titles[0], 'table dbo.Customers', 'a table whose name starts with the word');
+  assert.equal(titles[1], 'group Customer care', 'then the group whose name starts with it');
+  assert.ok(titles.indexOf('column dbo.Orders.CustomerId') < titles.indexOf('table dbo.Orders'), 'a column named for the word beats a table that only mentions it');
 });
 
 test('search matches descriptions and types, needs every word, and is empty for no words', () => {
@@ -78,6 +94,19 @@ test('a subgraph keeps only tables the model has and relations with both ends sh
   const sub = subgraph(model, ['dbo.Orders', 'dbo.Customers', 'dbo.Ghost', 'dbo.Orders']);
   assert.deepEqual(sub.tables, ['dbo.Orders', 'dbo.Customers']);
   assert.deepEqual(sub.relations.map((r) => `${r.from.table}→${r.to.table}`), ['dbo.Orders→dbo.Customers']);
+});
+
+test('parallel relations between the same tables become one link naming every column', () => {
+  const model = shop();
+  const users = { table: 'dbo.Customers', columns: ['Id'] };
+  const relations = [
+    { from: { table: 'dbo.Orders', columns: ['CustomerId'] }, to: users },
+    { from: { table: 'dbo.Orders', columns: ['SoldBy'] }, to: users, virtual: true },
+    { from: { table: 'billing.Invoices', columns: ['OrderId'] }, to: { table: 'dbo.Orders', columns: ['Id'] } },
+  ];
+  const links = mergeParallel([...model.databases[0].relations.slice(0, 0), ...relations]);
+  assert.deepEqual(links.map((l) => [l.id, l.relations.length]), [['dbo.Orders>dbo.Customers', 2], ['billing.Invoices>dbo.Orders', 1]]);
+  assert.deepEqual(links[0].relations.map((r) => r.from.columns[0]), ['CustomerId', 'SoldBy']);
 });
 
 test('the whole catalogue is every table in model order, and a relation has one id', () => {

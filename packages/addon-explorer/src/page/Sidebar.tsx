@@ -1,6 +1,6 @@
 // The rail: the mark, the search, and the index, every table numbered under its schema's colour block. On a
 // phone the index folds behind the search so the view keeps the first screen.
-import { useEffect, useMemo, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { tableRef, type Model } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
 import { Mark, Wordmark } from './Logo.tsx';
@@ -35,6 +35,11 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
   const hits = useMemo(() => search(index, query), [index, query]);
   useEffect(() => setCursor(0), [query]);
   const phone = usePhone();
+  // The arrows move the cursor while focus stays in the input, so the cursor's row is kept in view.
+  const list = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    list.current?.querySelector('.is-cursor')?.scrollIntoView({ block: 'nearest' });
+  }, [cursor, hits]);
 
   const open = (hit: Hit) => {
     window.location.hash = hit.kind === 'group' ? groupHash(hit.ref) : tableHash(hit.ref, hit.column);
@@ -125,6 +130,11 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
           type="search"
           placeholder="Search the catalogue"
           aria-label="Search tables, columns and groups"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={searching}
+          aria-controls="search-hits"
+          aria-activedescendant={searching && hits[cursor] ? `hit-${cursor}` : undefined}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={onKeyDown}
@@ -137,10 +147,10 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
         Map of the whole catalogue
       </a>
       {searching ? (
-        <ul className="hits" role="listbox" aria-label="Results">
+        <ul className="hits" id="search-hits" ref={list} role="listbox" aria-label="Results">
           {hits.length === 0 && <li className="empty">Nothing matches “{query.trim()}”.</li>}
           {hits.map((hit, i) => (
-            <li key={`${hit.kind}:${hit.title}`} role="option" aria-selected={i === cursor} className={i === cursor ? 'is-cursor' : ''} onMouseEnter={() => setCursor(i)}>
+            <li key={`${hit.kind}:${hit.title}`} id={`hit-${i}`} role="option" aria-selected={i === cursor} className={i === cursor ? 'is-cursor' : ''} onMouseEnter={() => setCursor(i)}>
               <a href={hit.kind === 'group' ? groupHash(hit.ref) : tableHash(hit.ref, hit.column)}>
                 <span className="no">{hit.kind === 'group' ? 'grp' : cat.byRef.get(hit.ref)?.number}</span>
                 <span className="hit-title">{hit.title}</span>

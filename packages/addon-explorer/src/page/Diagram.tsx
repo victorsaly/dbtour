@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Background, BackgroundVariant, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
 import { findTable, relationsOf, type Column, type Model, type Relation, type Table } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
-import { expand, relationId, subgraph, type Subgraph } from './graph.ts';
+import { expand, mergeParallel, relationId, subgraph, type Subgraph } from './graph.ts';
 import { layout, type Position as Placed } from './layout.ts';
 import { diagramHash, tableHash } from './route.ts';
 
@@ -303,13 +303,14 @@ function toNodes(model: Model, cat: Catalogue, graph: Subgraph, positions: Map<s
   });
 }
 
+/** Parallel relations share one line, so neither hides the other; the label names each one's columns. */
 function toEdges(relations: Relation[]): Edge[] {
-  return relations.map((relation) => ({
-    id: relationId(relation),
-    source: relation.from.table,
-    target: relation.to.table,
-    label: relation.from.columns.join(', ') + (relation.virtual ? ' (notes)' : ''),
-    style: relation.virtual ? { strokeDasharray: '4 4' } : undefined,
+  return mergeParallel(relations).map((link) => ({
+    id: link.id,
+    source: link.from,
+    target: link.to,
+    label: link.relations.map((r) => r.from.columns.join(', ') + (r.virtual ? ' (notes)' : '')).join(' · '),
+    style: link.relations.every((r) => r.virtual) ? { strokeDasharray: '4 4' } : undefined,
     markerEnd: { type: MarkerType.Arrow, width: 14, height: 14, color: 'var(--ink)' },
   }));
 }

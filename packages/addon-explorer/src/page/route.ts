@@ -16,13 +16,23 @@ export function parseRoute(hash: string): Route {
   const rest = slash === -1 ? '' : raw.slice(slash + 1);
   if (head === 'map' && rest === '') return { kind: 'map' };
   if (head === 'diagram') {
-    const refs = rest.split(',').filter((r) => r !== '').map(decode);
+    // A ref that is not schema.table is dropped; the rest still draw, and none at all goes home.
+    const refs = rest.split(',').filter((r) => r !== '').map(decode).filter(isRef);
     return refs.length > 0 ? { kind: 'diagram', refs } : { kind: 'home' };
   }
   if (head === 'group') return rest === '' ? { kind: 'home' } : { kind: 'group', name: decode(rest) };
   const parts = decode(raw).split('.');
-  if (parts.length === 3 && parts.every((p) => p !== '')) return { kind: 'table', ref: `${parts[0]}.${parts[1]}`, column: parts[2] };
-  return { kind: 'table', ref: decode(raw) };
+  if (parts.some((p) => p === '')) return { kind: 'home' };
+  if (parts.length === 2) return { kind: 'table', ref: `${parts[0]}.${parts[1]}` };
+  if (parts.length === 3) return { kind: 'table', ref: `${parts[0]}.${parts[1]}`, column: parts[2] };
+  // #Orders or a longer dotted path is nothing the page can show; home rather than a crash.
+  return { kind: 'home' };
+}
+
+/** schema.table, both parts present. */
+function isRef(text: string): boolean {
+  const parts = text.split('.');
+  return parts.length === 2 && parts.every((p) => p !== '');
 }
 
 export function routeHash(route: Route): string {

@@ -4,7 +4,7 @@ import { findTable, relationsOf, type Model } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
 import { Plot } from './Plot.tsx';
 import { peaks, profile } from './plot.ts';
-import { groupHash, mapHash, tableHash } from './route.ts';
+import { groupHash, tableHash } from './route.ts';
 import { lastOpened } from './TableView.tsx';
 
 // The stack fills the field: a few tables get tall lines, a long catalogue keeps a tight pitch that still
@@ -33,11 +33,6 @@ export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
             </header>
           );
         })}
-        <div className="actions">
-          <a className="button" href={mapHash}>
-            Map of the whole catalogue
-          </a>
-        </div>
 
         <div className="label plots-label">Index · one line per table, a key is a peak</div>
         <ol className="plots">

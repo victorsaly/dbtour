@@ -52,9 +52,10 @@ export function buildIndex(model: Model): Entry[] {
   return entries;
 }
 
-// A table is what people look for first, then a group, then a column; within a kind a name that starts
-// with the word beats one that contains it, which beats a match in the description.
-const kindWeight: Record<Hit['kind'], number> = { table: 10, view: 10, group: 9, column: 6 };
+// How well the words match comes first: a name that starts with the word beats one that contains it,
+// which beats a match in the description. Among equal matches a table comes before a group, then a column,
+// so typing a table's name finds the table and typing a column's name finds the column.
+const kindWeight: Record<Hit['kind'], number> = { table: 3, view: 3, group: 2, column: 1 };
 const prefixScore = 3;
 const nameScore = 2;
 const textScore = 1;
@@ -73,8 +74,8 @@ export function search(index: Entry[], query: string, limit = 50): Hit[] {
       }
       score += wordScore;
     }
-    if (score > 0) hits.push({ kind: entry.kind, ref: entry.ref, column: entry.column, title: entry.title, detail: entry.detail, score: score * kindWeight[entry.kind] });
+    if (score > 0) hits.push({ kind: entry.kind, ref: entry.ref, column: entry.column, title: entry.title, detail: entry.detail, score });
   }
-  hits.sort((a, b) => b.score - a.score || a.title.length - b.title.length || a.title.localeCompare(b.title));
+  hits.sort((a, b) => b.score - a.score || kindWeight[b.kind] - kindWeight[a.kind] || a.title.length - b.title.length || a.title.localeCompare(b.title));
   return hits.slice(0, limit);
 }

@@ -42,7 +42,7 @@ interface Props {
 
 export function TableView({ model, cat, tableRef, column }: Props) {
   const found = findTable(model, tableRef);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'refused'>('idle');
   const [tool, setTool] = useState(() => storedTool());
 
   useEffect(() => {
@@ -73,9 +73,8 @@ export function TableView({ model, cat, tableRef, column }: Props) {
   };
 
   const copy = async () => {
-    await copyText(prompt(model, [tableRef]));
-    setCopied(true);
-    setTimeout(() => setCopied(false), copiedForMs);
+    setCopyState((await copyText(prompt(model, [tableRef]))) ? 'copied' : 'refused');
+    setTimeout(() => setCopyState('idle'), copiedForMs);
   };
 
   return (
@@ -108,8 +107,8 @@ export function TableView({ model, cat, tableRef, column }: Props) {
               Open the map
             </a>
             <div className="copy">
-              <button type="button" className="button" onClick={copy}>
-                {copied ? 'Copied' : `Copy for ${tool.name}`}
+              <button type="button" className="button" onClick={copy} aria-live="polite">
+                {copyState === 'copied' ? 'Copied' : copyState === 'refused' ? 'Clipboard refused' : `Copy for ${tool.name}`}
               </button>
               <span className="select">
                 <select aria-label="Which tool the copy is for" value={tool.id} onChange={(event) => chooseTool(event.target.value)}>
@@ -347,16 +346,23 @@ function Action({ relation }: { relation: Relation }) {
   return parts.length === 0 ? null : <span className="muted"> {parts.join(', ')}</span>;
 }
 
-async function copyText(text: string): Promise<void> {
+/** True when the text reached the clipboard; the old way answers false rather than throwing when refused. */
+async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
+    return true;
   } catch {
     // The clipboard API is refused on some file: pages; the old way still works.
     const area = document.createElement('textarea');
     area.value = text;
     document.body.append(area);
-    area.select();
-    document.execCommand('copy');
-    area.remove();
+    try {
+      area.select();
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      area.remove();
+    }
   }
 }

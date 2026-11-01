@@ -42,6 +42,26 @@ export function relationId(relation: Relation): string {
   return `${relation.from.table}.${relation.from.columns.join(',')}>${relation.to.table}.${relation.to.columns.join(',')}`;
 }
 
+/** One line on the map: every relation between the same two tables in the same direction. */
+export interface Link {
+  id: string;
+  from: string;
+  to: string;
+  relations: Relation[];
+}
+
+/** Parallel relations (CreatedById and UpdatedById both to Users) drawn as one line naming every column. */
+export function mergeParallel(relations: Relation[]): Link[] {
+  const links = new Map<string, Link>();
+  for (const relation of relations) {
+    const id = `${relation.from.table}>${relation.to.table}`;
+    const link = links.get(id) ?? { id, from: relation.from.table, to: relation.to.table, relations: [] };
+    link.relations.push(relation);
+    links.set(id, link);
+  }
+  return [...links.values()];
+}
+
 /** Only tables the model has, and only relations with both ends among them. */
 export function subgraph(model: Model, refs: string[]): Subgraph {
   const tables = [...new Set(refs)].filter((ref) => findTable(model, ref) !== undefined);
