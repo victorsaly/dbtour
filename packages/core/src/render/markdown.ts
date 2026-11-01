@@ -112,12 +112,13 @@ function columnType(column: Column): string {
   return column.collation ? `${column.type}, collation ${column.collation}` : column.type;
 }
 
-/** What else the catalogue says about a column, for the Key cell: identity, sparse, masking, encryption. */
+/** What else the catalogue says about a column, for the Key cell: identity, sparse, hidden, masking, encryption. */
 function columnTraits(column: Column): string[] {
   const traits: string[] = [];
   if (column.identity) traits.push(column.identitySeed !== undefined ? `identity(${column.identitySeed},${column.identityIncrement ?? '1'})` : 'identity');
   if (column.computed !== undefined) traits.push(`computed \`${column.computed}\``);
   if (column.sparse) traits.push('sparse');
+  if (column.hidden) traits.push('hidden');
   if (column.masked) traits.push(`masked \`${column.masked}\``);
   if (column.encrypted) traits.push(`encrypted (${column.encrypted.type}, ${column.encrypted.key})`);
   return traits;

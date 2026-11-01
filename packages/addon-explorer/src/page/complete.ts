@@ -115,8 +115,8 @@ export interface Reading {
   aliasable: boolean;
   /** The names before a dot at the caret, as written: a schema, say, or an alias. */
   qualifier?: string[];
-  /** A * the select list ends with at the caret, and the table it is qualified with. */
-  star?: { from: number; qualifier?: string };
+  /** A * the select list ends with at the caret, the table it is qualified with, and whether a word touches it. */
+  star?: { from: number; qualifier?: string; spaced: boolean };
   /** Every name the query gives a table, at every level, in lower case: a new alias must be none of them. */
   taken: Set<string>;
   /** The table being written at the caret has its alias already, after it: `FROM Cust| AS c`. */
@@ -137,7 +137,8 @@ const tableStarts = new Set(['FROM', 'JOIN', 'APPLY', 'INTO', 'UPDATE']);
 const aliasStarts = new Set(['FROM', 'JOIN', 'APPLY']);
 // The clauses a * can be read in: only in SELECT's is it every column.
 const clauses = new Set(['SELECT', 'FROM', 'WHERE', 'GROUP', 'ORDER', 'HAVING', 'ON', 'SET', 'JOIN', 'VALUES']);
-const fromEnds = new Set(['WHERE', 'GROUP', 'ORDER', 'HAVING', 'ON', 'SET', 'UNION', 'EXCEPT', 'INTERSECT', 'OPTION', 'VALUES', 'OUTPUT']);
+// ON is not one: FROM a JOIN b ON …, c goes on with c.
+const fromEnds = new Set(['WHERE', 'GROUP', 'ORDER', 'HAVING', 'SET', 'UNION', 'EXCEPT', 'INTERSECT', 'OPTION', 'VALUES', 'OUTPUT']);
 // Keywords that begin a statement, or a branch of a UNION: each has its own FROM, so its own scope.
 const queryStarts = new Set(['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE']);
 
@@ -309,7 +310,7 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
   }
   // The query's own CTEs, where it can read them as tables.
   if (schema === undefined) {
-    for (const cte of namesInQuery(context.state, index).ctes.values()) {
+    for (const cte of ctesAt(cteScopes(context.state), context.pos).values()) {
       options.push({ label: cte, type: 'type', detail: 'CTE', apply: reading.aliased ? quoteName(cte) : `${quoteName(cte)} AS ${aliasFor(cte, new Set(reading.taken))}` });
     }
   }
@@ -359,9 +360,10 @@ function expansions(reading: Reading, model: Model): Expansion[] {
   const own = reading.scope.filter((s) => s.depth === 0);
   const covered = star.qualifier ? reading.scope.filter((s) => s.name.toLowerCase() === star.qualifier!.toLowerCase()).slice(0, 1) : own;
   const qualify = Boolean(star.qualifier) || covered.length > 1;
-  const columns = covered.flatMap((s) => (findTable(model, s.known.ref)?.table.columns ?? []).map((c) => ({ column: c, table: s })));
+  // What SELECT * returns: a column the database hides from it is not written either.
+  const columns = covered.flatMap((s) => (findTable(model, s.known.ref)?.table.columns ?? []).filter((c) => !c.hidden).map((c) => ({ column: c, table: s })));
   if (!columns.length) return [];
-  const write = (list: typeof columns) => list.map(({ column, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(column.name)).join(', ');
+  const write = (list: typeof columns) => (star.spaced ? '' : ' ') + list.map(({ column, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(column.name)).join(', ');
   const open = columns.filter(({ column }) => !isProtected(column));
   const left = columns.filter(({ column }) => isProtected(column)).map(({ column }) => column.name);
   const all = { text: write(columns), count: columns.length, detail: 'every column', exposes: left.length > 0 };
@@ -438,18 +440,20 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
   const word = /\w*$/.exec(state.sliceDoc(Math.max(0, pos - 250), pos))![0];
   const wordFrom = pos - word.length;
   // After name-and-dot, the place is read from before the name: FROM billing.| is still where a table goes.
-  const qualified = /((?:(?:\[(?:[^\]]|\]\])*\]|"[^"]*"|\w+)\.)+)\w*$/.exec(state.sliceDoc(Math.max(0, pos - 250), pos));
+  // T-SQL allows space around the dot: dbo. Customers is still dbo's.
+  const qualified = /((?:(?:\[(?:[^\]]|\]\])*\]|"[^"]*"|\w+)\s*\.\s*)+)\w*$/.exec(state.sliceDoc(Math.max(0, pos - 250), pos));
   const nameFrom = qualified ? wordFrom - qualified[1].length : wordFrom;
   let anchor = wordFrom;
   // Names a query nearer the caret binds: an outer table of the same name is hidden by it, as in SQL.
   const bound = new Set<string>();
   // Names bound to a CTE, a subquery or a table the model does not know: a dot after one names no model table.
   const boundElsewhere = new Set<string>();
-  const ctes = cteNames(state);
+  const scopes = cteScopes(state);
+  const isCte = (name: string, at: number) => ctesAt(scopes, at).has(name);
   levels.forEach((level, depth) => {
     const tokens = tokensOf(level);
     const segment = segmentAround(tokens, anchor, text);
-    const items = fromItems(segment, text, index, ctes);
+    const items = fromItems(segment, text, index, isCte);
     for (const item of items) {
       const name = item.name.toLowerCase();
       if (bound.has(name)) continue;
@@ -514,7 +518,9 @@ function starAt(state: EditorState, pos: number, segment: Node[], text: (n: Node
   const prevWord = prev?.name === 'Keyword' ? text(prev).toUpperCase() : '';
   const afterTop = (prev?.name === 'Parens' || prev?.name === 'Number') && text(before[before.length - 2] ?? prev).toUpperCase() === 'TOP';
   if (!(prevWord === 'SELECT' || prevWord === 'DISTINCT' || prevWord === 'ALL' || isComma(prev, text) || afterTop)) return undefined;
-  return { from, qualifier: found[1] === undefined ? undefined : unquote(found[1]) };
+  // SELECT* is valid; written out, the columns need the space the * did not.
+  const spaced = !/\w$/.test(state.sliceDoc(Math.max(0, from - 1), from));
+  return { from, qualifier: found[1] === undefined ? undefined : unquote(found[1]), spaced };
 }
 
 /** A statement's or a parenthesis' own tokens. Comments are not the query: a table and its alias read the same with one between them. */
@@ -522,43 +528,67 @@ function tokensOf(level: Node): Node[] {
   return children(level).filter((t) => !/^(\(|\)|LineComment|BlockComment)$/.test(t.name));
 }
 
-/**
- * Every table the query names, at every level, as written, and the names its WITH gives: what the check
- * holds to the model.
- */
-export function namesInQuery(state: EditorState, index: Map<string, Known>): { items: FromItem[]; ctes: Map<string, string> } {
+/** Every table the query names, at every level, as written: what the check holds to the model. */
+export function namesInQuery(state: EditorState, index: Map<string, Known>): FromItem[] {
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
   const items: FromItem[] = [];
-  const ctes = cteNames(state);
+  const scopes = cteScopes(state);
   syntaxTree(state).iterate({
     enter: (ref) => {
-      if (ref.name === 'Statement' || ref.name === 'Parens') items.push(...fromItems(tokensOf(ref.node), text, index, ctes));
+      if (ref.name === 'Statement' || ref.name === 'Parens') items.push(...fromItems(tokensOf(ref.node), text, index, (name, at) => ctesAt(scopes, at).has(name)));
     },
   });
-  return { items, ctes };
+  return items;
 }
 
+/** A name the query's WITH gives, in lower case and as written, and the stretch of the query it stands in. */
+interface Cte {
+  name: string;
+  written: string;
+  from: number;
+  to: number;
+}
+
+// Keywords before a SELECT that joins the query before it, rather than starting one of its own.
+const branchJoins = new Set(['UNION', 'ALL', 'EXCEPT', 'INTERSECT']);
+
 /**
- * The names the query's WITH gives, in lower case, each to the name as written: WITH name AS (…), name (a, b)
- * AS (…). A table so named is the CTE, not the model's table of the same name.
+ * The names each WITH gives: WITH name AS (…), name (a, b) AS (…). Each stands in its own query, from the WITH
+ * to the next query that is not one of its UNION branches; a table so named there is the CTE, not the model's.
  */
-function cteNames(state: EditorState): Map<string, string> {
+function cteScopes(state: EditorState): Cte[] {
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
-  const ctes = new Map<string, string>();
-  syntaxTree(state).iterate({
-    enter: (ref) => {
-      if (ref.name !== 'Statement' && ref.name !== 'Parens') return;
-      const tokens = tokensOf(ref.node);
-      tokens.forEach((t, i) => {
-        const before = tokens[i - 1];
-        if (!(t.name === 'Identifier' || t.name === 'QuotedIdentifier') || !before) return;
-        if (!((before.name === 'Keyword' && text(before).toUpperCase() === 'WITH') || isComma(before, text))) return;
-        const j = tokens[i + 1]?.name === 'Parens' ? i + 2 : i + 1;
-        if (tokens[j]?.name === 'Keyword' && text(tokens[j]).toUpperCase() === 'AS' && tokens[j + 1]?.name === 'Parens') ctes.set(unquote(text(t)).toLowerCase(), unquote(text(t)));
-      });
-    },
-  });
-  return ctes;
+  const scopes: Cte[] = [];
+  const word = (t: Node | undefined) => (t?.name === 'Keyword' ? text(t).toUpperCase() : '');
+  for (let statement = syntaxTree(state).topNode.firstChild; statement; statement = statement.nextSibling) {
+    if (statement.name !== 'Statement') continue;
+    const tokens = tokensOf(statement);
+    tokens.forEach((t, w) => {
+      if (word(t) !== 'WITH' || !(tokens[w + 1]?.name === 'Identifier' || tokens[w + 1]?.name === 'QuotedIdentifier')) return;
+      const names: string[] = [];
+      let i = w + 1;
+      for (;;) {
+        const name = tokens[i];
+        if (!(name?.name === 'Identifier' || name?.name === 'QuotedIdentifier')) break;
+        const as = tokens[i + 1]?.name === 'Parens' ? i + 2 : i + 1;
+        if (word(tokens[as]) !== 'AS' || tokens[as + 1]?.name !== 'Parens') break;
+        names.push(unquote(text(name)));
+        i = as + 2;
+        if (!isComma(tokens[i], text)) break;
+        i++;
+      }
+      // The query the WITH belongs to starts at i; the next one that is not its UNION branch ends it.
+      const next = tokens.findIndex((u, k) => k > i && queryStarts.has(word(u)) && !branchJoins.has(word(tokens[k - 1])));
+      const to = next < 0 ? statement!.to : tokens[next].from;
+      for (const name of names) scopes.push({ name: name.toLowerCase(), written: name, from: t.from, to });
+    });
+  }
+  return scopes;
+}
+
+/** The CTEs that stand at `pos`, by name in lower case, each to its name as written. */
+function ctesAt(scopes: Cte[], pos: number): Map<string, string> {
+  return new Map(scopes.filter((c) => c.from <= pos && pos <= c.to).map((c) => [c.name, c.written]));
 }
 
 /** A box on the screen, as CodeMirror measures the list, the option, its description and the room there is. */
@@ -619,24 +649,34 @@ function segmentAround(tokens: Node[], at: number, text: (n: Node) => string): N
 }
 
 /**
- * The columns a query's select list names, in lower case: a bare name, or the last part of a qualified one,
- * but not a column's alias (after AS), a keyword or a function.
+ * The columns a query's select list names, in lower case: a bare name, or the last part of a qualified one.
+ * Not a column's alias, written `x AS a`, `x a` or `a = x`, nor a keyword or a function.
  */
 function selectedColumns(segment: Node[], text: (n: Node) => string): string[] {
   const out: string[] = [];
   const start = segment.findIndex((t) => t.name === 'Keyword' && text(t).toUpperCase() === 'SELECT');
   if (start < 0) return out;
-  for (let i = start + 1; i < segment.length; i++) {
-    const t = segment[i];
-    if (t.name === 'Keyword' && text(t).toUpperCase() === 'FROM') break;
-    const after = segment[i - 1];
-    if (after?.name === 'Keyword' && text(after).toUpperCase() === 'AS') continue;
-    if (segment[i + 1]?.name === 'Parens') continue;
-    if (t.name === 'Identifier' || t.name === 'QuotedIdentifier') out.push(unquote(text(t)).toLowerCase());
-    else if (t.name === 'CompositeIdentifier') {
-      const parts = pathOf(t, text);
-      if (parts.length > 1 && parts[parts.length - 1]) out.push(parts[parts.length - 1].toLowerCase());
-    }
+  const end = segment.findIndex((t, i) => i > start && t.name === 'Keyword' && text(t).toUpperCase() === 'FROM');
+  // The select list's items, split at its commas (a function's are inside its parentheses).
+  const items: Node[][] = [[]];
+  for (const t of segment.slice(start + 1, end < 0 ? undefined : end)) {
+    if (isComma(t, text)) items.push([]);
+    else items[items.length - 1].push(t);
+  }
+  const isName = (t: Node | undefined) => t?.name === 'Identifier' || t?.name === 'QuotedIdentifier';
+  for (let item of items) {
+    const as = item.findIndex((t) => t.name === 'Keyword' && text(t).toUpperCase() === 'AS');
+    if (as >= 0) item = item.slice(0, as);
+    else if (isName(item[0]) && item[1]?.name === 'Operator' && text(item[1]) === '=') item = item.slice(2);
+    else if (item.length > 1 && isName(item[item.length - 1]) && item[item.length - 2]?.name !== 'Operator') item = item.slice(0, -1);
+    item.forEach((t, i) => {
+      if (item[i + 1]?.name === 'Parens') return;
+      if (isName(t)) out.push(unquote(text(t)).toLowerCase());
+      else if (t.name === 'CompositeIdentifier') {
+        const parts = pathOf(t, text);
+        if (parts.length > 1 && parts[parts.length - 1]) out.push(parts[parts.length - 1].toLowerCase());
+      }
+    });
   }
   return out;
 }
@@ -667,6 +707,8 @@ export interface FromItem {
   to: number;
   /** A table-valued function, called: dbo.fn(1). */
   call: boolean;
+  /** A name the query's own WITH gives, where it stands. */
+  cte: boolean;
   /** Where its name and its alias end: the caret just after either is still in the FROM list. */
   ends: number[];
 }
@@ -684,13 +726,18 @@ function isHint(parens: Node, text: (n: Node) => string): boolean {
   return Boolean(first && tableHints.has(text(first).toUpperCase()));
 }
 
-function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string, Known>, ctes: Map<string, string> = new Map()): FromItem[] {
+function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string, Known>, isCte: (name: string, at: number) => boolean = () => false): FromItem[] {
   const items: FromItem[] = [];
   let expect = false;
   let inFrom = false;
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     const word = t.name === 'Keyword' ? text(t).toUpperCase() : '';
+    // A new query, with or without a semicolon before it: its FROM list is its own.
+    if (queryStarts.has(word)) {
+      inFrom = false;
+      expect = false;
+    }
     if (tableStarts.has(word)) {
       expect = true;
       inFrom = word === 'FROM' || inFrom;
@@ -711,7 +758,7 @@ function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string,
     const hint = t.name !== 'Parens' && next?.name === 'Parens' && isHint(next, text);
     const call = t.name !== 'Parens' && next?.name === 'Parens' && !hint;
     // A CTE's name is the CTE's, even when the model has a table of that name.
-    const cte = parts.length === 1 && ctes.has(parts[0].toLowerCase());
+    const cte = t.name !== 'Parens' && parts.length === 1 && isCte(parts[0].toLowerCase(), t.from);
     const item: FromItem = {
       name: parts[parts.length - 1],
       known: t.name === 'Parens' || call || cte ? undefined : index.get(parts.join('.').toLowerCase()),
@@ -719,6 +766,7 @@ function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string,
       to: t.to,
       path: t.name === 'Parens' ? [] : parts,
       call,
+      cte,
       ends: [t.to],
     };
     let j = call || hint ? i + 2 : i + 1;

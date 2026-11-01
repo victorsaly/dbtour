@@ -18,7 +18,7 @@ export interface TableRow {
 export interface ColumnRow {
   schema: string; table: string; name: string; position: number; type: string; maxLength: number; precision: number; scale: number;
   nullable: boolean; identity: boolean; default: string | null; computed: string | null; description: string | null;
-  collation?: string | null; sparse?: boolean | null; identitySeed?: string | null; identityIncrement?: string | null;
+  collation?: string | null; sparse?: boolean | null; hidden?: boolean | null; identitySeed?: string | null; identityIncrement?: string | null;
 }
 export interface KeyRow { schema: string; table: string; name: string; kind: 'PK' | 'UQ'; column: string; ordinal: number }
 export interface ForeignKeyRow {
@@ -120,6 +120,7 @@ export function mapRecordsets(sets: Recordsets, options: MapOptions = {}): Datab
     // The database's collation is said once, on the database; a column says its own only when it differs.
     if (row.collation && row.collation !== info.collation) column.collation = row.collation;
     if (row.sparse) column.sparse = true;
+    if (row.hidden) column.hidden = true;
     table.columns.push(column);
   }
 

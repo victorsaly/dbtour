@@ -290,3 +290,33 @@ test('a CTE named like a model table is the CTE: none of the table\'s columns', 
   const listed = await applies('WITH Orders AS (SELECT 1 AS Extra) SELECT | FROM Orders', { explicit: true });
   assert.ok(!listed.includes('CustomerId'));
 });
+
+test('* expands to what SELECT * returns: no hidden column, every table in FROM, and the SQL still reads', async () => {
+  const hidden = describe(shop());
+  hidden.databases[0].schemas[0].tables.find((t) => t.name === 'Products')!.columns.find((c) => c.name === 'Price')!.hidden = true;
+  assert.equal(tab('SELECT *| FROM dbo.Products', hidden), 'SELECT Id, Sku FROM dbo.Products', 'SQL Server leaves a hidden column out of *');
+  const listed = await suggest('SELECT *| FROM dbo.Products', { explicit: true, model: hidden });
+  assert.deepEqual(listed.filter((s) => s.label === '*').map((s) => s.apply), ['Id, Sku']);
+  const comma = 'FROM dbo.Products p JOIN dbo.OrderLines ol ON ol.ProductId = p.Id, dbo.Customers c';
+  assert.equal(tab(`SELECT *| ${comma}`), `SELECT p.Id, p.Sku, p.Price, ol.OrderId, ol.ProductId, ol.Quantity, c.Id, c.Email, c.Name ${comma}`, 'a table after a comma that follows ON');
+  assert.equal(tab('SELECT*| FROM dbo.Products'), 'SELECT Id, Sku, Price FROM dbo.Products', 'a space after SELECT when * had none');
+  assert.equal(tab('SELECT DISTINCT*| FROM dbo.Products'), 'SELECT DISTINCT Id, Sku, Price FROM dbo.Products');
+  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT *| FROM Products'), null, 'a CTE named like a table is not that table');
+  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT p.*| FROM Products p'), null);
+});
+
+test('a space after the schema\'s dot is still the schema: the table is written once', async () => {
+  assert.equal((await applies('SELECT * FROM dbo. Cust|'))[0], 'Customers AS c');
+});
+
+test('a CTE is offered, and stands for its name, only in its own statement', async () => {
+  assert.ok((await applies('WITH Orders AS (SELECT 1 AS Extra) SELECT * FROM Orders; SELECT | FROM Orders', { explicit: true })).includes('CustomerId'));
+  assert.ok(!(await applies('WITH recent AS (SELECT 1 AS a) SELECT 1; SELECT * FROM rec|')).includes('recent AS r'));
+  assert.ok((await applies('WITH recent AS (SELECT 1 AS a) SELECT a FROM recent UNION SELECT a FROM rec|')).includes('recent AS r'));
+});
+
+test('a column\'s alias, with AS, without it or as alias = expression, does not rank the tables', async () => {
+  assert.equal((await applies('SELECT Price Email FROM |'))[0], 'dbo.Products AS p');
+  assert.equal((await applies('SELECT Email = Price FROM |'))[0], 'dbo.Products AS p');
+  assert.equal((await applies('SELECT p.Price Email, Sku FROM |'))[0], 'dbo.Products AS p');
+});

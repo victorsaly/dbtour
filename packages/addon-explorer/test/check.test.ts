@@ -107,3 +107,9 @@ test('a fix quotes every part that needs it, and a "quoted" name is read with it
   model.databases[0].schemas[0].tables.find((t) => t.name === 'Orders')!.columns.push(column('a"b'));
   assert.deepEqual(check('SELECT o."a""b" FROM dbo.Orders o', model), []);
 });
+
+test('each query reads its own tables, and a CTE is the CTE only in its own statement', () => {
+  assert.deepEqual(check('SELECT Id FROM dbo.Orders SELECT Email, Id FROM dbo.Customers'), [], 'no FROM carried into the next select list');
+  assert.deepEqual(check('WITH Orders AS (SELECT 1 AS Extra) SELECT * FROM Orders; SELECT o.Totl FROM Orders o;').map((c) => c.text), ['Totl']);
+  assert.deepEqual(check('WITH r AS (SELECT 1 AS a) SELECT a FROM r UNION SELECT a FROM r'), [], 'a UNION branch is in the CTE\'s statement');
+});

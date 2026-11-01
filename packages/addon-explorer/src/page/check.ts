@@ -16,7 +16,7 @@ const extractAgain = 'If it is new, run dbtour extract again.';
 export function unknownNames(state: EditorState): Diagnostic[] {
   const found = setupOf(state);
   if (!found) return [];
-  const { items, ctes } = namesInQuery(state, found.index);
+  const items = namesInQuery(state, found.index);
   const tables = new Map<string, string[]>();
   for (const known of new Set(found.index.values())) {
     const local = localRef(found.model, known.ref);
@@ -31,7 +31,8 @@ export function unknownNames(state: EditorState): Diagnostic[] {
     if (parts.some((p) => p.startsWith('#') || p.startsWith('@'))) continue;
     // The schema it is in, in lower case, when the model has read that schema; else not the model's to know.
     let schema: string | undefined;
-    if (parts.length === 1 && !ctes.has(parts[0].toLowerCase())) schema = found.defaultSchema.toLowerCase();
+    if (item.cte) continue;
+    if (parts.length === 1) schema = found.defaultSchema.toLowerCase();
     else if (parts.length === 2) schema = parts[0].toLowerCase();
     else if (parts.length === 3 && parts[0].toLowerCase() === found.databaseName.toLowerCase()) schema = parts[1].toLowerCase();
     if (schema === undefined || !tables.has(schema)) continue;

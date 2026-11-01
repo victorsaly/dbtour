@@ -17,6 +17,13 @@
   keyword or function; the tables that have the columns the select list names come first (`SELECT Email
   FROM ` puts Customers first). After a table and its alias, only what can follow it (WHERE, JOIN, ON, ORDER,
   GROUP…), no table, and ON first after a JOIN.
+- Fixed, from the reviews of 0.9.2 and this release: Tab after * leaves out a column the database hides from
+  SELECT * (a temporal table's HIDDEN period columns), which the SQL Server source now reads as `hidden` and
+  the docs show in the Key cell; it covers a table after a comma that follows an ON, and writes the space a
+  `SELECT*` lacked. `FROM dbo. Cust` completes to the table once. Each query reads its own tables when
+  statements have no semicolon between them, and a CTE stands for its name only in its own statement and its
+  UNION branches. A column's alias, written with AS, without it or as `alias = expression`, does not rank
+  the tables.
 - On a phone, a suggestion's description goes under or over the list, never over the suggestions after the
   chosen one; CodeMirror put it just under the chosen one. The description and the check's box are drawn
   like the list, in a hairline box.

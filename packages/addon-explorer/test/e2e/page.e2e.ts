@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import { scope, type Model } from 'dbtour/model';
 import { render } from '../../src/index.ts';
 import { startServer } from '../../../core/src/serve.ts';
@@ -19,6 +19,12 @@ import { twoDatabases } from '../../../core/test/fixtures/two.ts';
  * at once types a new line; a reader is never that quick, a test is.
  */
 const completionSettleMs = 100;
+
+/** Takes the highlighted suggestion with Enter or Tab, once CodeMirror will let it. */
+async function take(page: Page, key: 'Enter' | 'Tab'): Promise<void> {
+  await page.waitForTimeout(completionSettleMs);
+  await page.keyboard.press(key);
+}
 
 /** Evaluated in the page, where the DOM is; written as text because this file is typed for Node. */
 const nodeCount = (n: number): string => `document.querySelectorAll('.react-flow__node').length === ${n}`;
@@ -338,14 +344,14 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     const options = page.locator('.cm-tooltip-autocomplete li');
     await options.first().waitFor();
     assert.match((await options.allTextContents()).join(' '), /OrderLines/);
-    await page.keyboard.press('Enter');
+    await take(page, 'Enter');
     assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines AS ol$/);
 
     // In WHERE, the columns of the table the query reads come first, before keywords like QUOTENAME.
     await page.keyboard.type(' WHERE Qu');
     await options.first().waitFor();
     assert.match((await options.first().textContent()) ?? '', /^Quantity/);
-    await page.keyboard.press('Enter');
+    await take(page, 'Enter');
     assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines AS ol WHERE Quantity$/);
 
     // The draft is kept in the browser, and Reset goes back to the starter.
@@ -373,12 +379,11 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await page.keyboard.type('ssf');
     await options.first().waitFor();
     assert.match((await options.first().textContent()) ?? '', /^ssf/);
-    await page.keyboard.press('Enter');
+    await take(page, 'Enter');
     await options.first().waitFor();
     await page.keyboard.type('Cust');
     await options.filter({ hasText: /^Customers/ }).first().waitFor();
-    await page.waitForTimeout(completionSettleMs);
-    await page.keyboard.press('Tab');
+    await take(page, 'Tab');
     assert.equal(await sqlEditor.textContent(), 'SELECT * FROM dbo.Customers AS c', 'Tab takes the suggestion, as Enter does');
     await page.keyboard.press('Home');
     for (let i = 0; i < 'SELECT *'.length; i++) await page.keyboard.press('ArrowRight');
