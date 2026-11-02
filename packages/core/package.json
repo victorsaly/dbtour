@@ -1,6 +1,6 @@
 {
   "name": "dbtour",
-  "version": "0.9.6",
+  "version": "0.10.1",
   "description": "Schema docs for your database, kept in your repository: Markdown with Mermaid diagrams, a searchable one-file page, and an MCP server so agents write SQL from the real names. Read from the catalogue, never the rows.",
   "type": "module",
   "license": "MIT",

@@ -3,7 +3,7 @@ name: dbtour
 description: Documents a project's database from its structure and answers questions about it without reading a row - which table holds something, how two tables join, what a column means, how big a table is - and writes SQL against it from the real tables and columns, through dbtour (dbtour.yaml, docs/dbtour/schema.json, the dbtour MCP server). Use when asked to document a database or keep its docs current, to find where data lives, to explain a schema, to write or check a query for the project's database, or to set up dbtour. Load it before writing SQL against a database the project uses, even a short query.
 license: MIT
 metadata:
-  version: 0.9.6
+  version: 0.10.1
   homepage: https://github.com/victorsaly/dbtour
 allowed-tools: Bash(npx dbtour *)
 ---
@@ -35,7 +35,24 @@ Look for `dbtour.yaml` at the project's root and `docs/dbtour/schema.json` (or t
   4. Show them `docs/dbtour/README.md` or the page before anything is committed. The model describes their
      database, so committing it is their call; a private schema stays out of a public repository.
 
-[reference.md](reference.md) has the yaml, the notes file and the MCP setup for each client.
+- **No project, but the person wants to look at their databases** (one or several, on their machine, not in a
+  repository): for a person at their own machine, the simplest is one line they run themselves,
+  `npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p dbtour-keychain dbtour serve`, which
+  opens a page that sets a database up step by step and types the password into it, not into you. To do it
+  from the terminal instead, set them up in `~/.dbtour` with `npx dbtour add`, which keeps passwords in the
+  system's keychain. `npx dbtour list` shows what is set up already. The rules, every time:
+  - Name the database in every command (`--database <name>` on `sql`, `mcp` and `serve`). With several set up,
+    dbtour refuses to guess, and so do you.
+  - Prefer `--sign-in az`: no password at all. A login's password goes only on stdin (`--password-stdin`),
+    typed or piped by the person; **never pass `--password`, never put a password in a command you run**. If
+    you do not have it, ask the person to run the command themselves.
+  - `npx dbtour reader <name> --create` changes the database: without `--confirm` it only prints the
+    statements. Show them to the person and wait for their yes before running it with `--confirm <name>`.
+  - Then `npx dbtour read <name>`, and `npx dbtour serve` for the person: a home of every database, each with
+    its page.
+
+[reference.md](reference.md) has the yaml, the notes file, the commands for databases set up on a machine, and
+the MCP setup for each client.
 
 ## 2. Find what you need, a piece at a time
 

@@ -1,6 +1,6 @@
 {
   "name": "dbtour-source-mssql",
-  "version": "0.9.6",
+  "version": "0.10.1",
   "description": "SQL Server source for dbtour: tables, views, keys, relations, indexes, row counts and extended properties, read from the catalogue with VIEW DEFINITION alone, never the rows.",
   "type": "module",
   "license": "MIT",
@@ -45,10 +45,10 @@
     "mssql": "^12.7.13"
   },
   "peerDependencies": {
-    "dbtour": "0.9.6"
+    "dbtour": "0.10.1"
   },
   "devDependencies": {
     "@types/mssql": "^9.1.8",
-    "dbtour": "0.9.6"
+    "dbtour": "0.10.1"
   }
 }

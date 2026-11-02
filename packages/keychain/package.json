@@ -1,0 +1,53 @@
+{
+  "name": "dbtour-keychain",
+  "version": "0.10.1",
+  "description": "dbtour's passwords in the system's keychain: macOS Keychain, Windows Credential Manager, the Secret Service on Linux. Never a file.",
+  "type": "module",
+  "license": "MIT",
+  "author": {
+    "name": "Victor Saly",
+    "url": "https://github.com/victorsaly"
+  },
+  "homepage": "https://github.com/victorsaly/dbtour#readme",
+  "bugs": {
+    "url": "https://github.com/victorsaly/dbtour/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victorsaly/dbtour.git",
+    "directory": "packages/keychain"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/build.mjs"
+  },
+  "keywords": [
+    "dbtour",
+    "keychain",
+    "secrets",
+    "credentials",
+    "macos-keychain",
+    "credential-manager",
+    "secret-service"
+  ],
+  "dependencies": {
+    "@napi-rs/keyring": "2.1.1"
+  },
+  "peerDependencies": {
+    "dbtour": "0.10.1"
+  },
+  "devDependencies": {
+    "dbtour": "0.10.1"
+  }
+}

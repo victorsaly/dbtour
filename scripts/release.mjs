@@ -30,7 +30,7 @@ const fail = (message, code = 1) => {
 };
 
 // Core first: the others depend on its exact version.
-const workspaces = ['packages/core', 'packages/source-mssql', 'packages/addon-explorer'];
+const workspaces = ['packages/core', 'packages/keychain', 'packages/source-mssql', 'packages/addon-explorer'];
 const manifests = workspaces.map((workspace) => ({ workspace, ...JSON.parse(readFileSync(join(repo, workspace, 'package.json'), 'utf8')) }));
 const version = manifests[0].version;
 const tag = `v${version}`;

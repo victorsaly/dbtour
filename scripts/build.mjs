@@ -11,11 +11,11 @@ const repo = fileURLToPath(new URL('..', import.meta.url));
 const tsc = `${repo}node_modules/.bin/tsc`;
 
 // Core first: the others import it by name, which resolves to its dist/.
-for (const pkg of ['core', 'source-mssql', 'addon-explorer']) {
+for (const pkg of ['core', 'keychain', 'source-mssql', 'addon-explorer']) {
   execFileSync(tsc, ['-p', `${repo}packages/${pkg}/tsconfig.build.json`], { stdio: 'inherit' });
 }
 mkdirSync(`${repo}packages/source-mssql/dist`, { recursive: true });
 copyFileSync(`${repo}packages/source-mssql/src/query.sql`, `${repo}packages/source-mssql/dist/query.sql`);
 execFileSync(process.execPath, [`${repo}packages/addon-explorer/build.mjs`], { stdio: 'inherit' });
 // npm packs a licence only from the package's own folder, so each gets the repository's.
-for (const pkg of ['core', 'source-mssql', 'addon-explorer']) copyFileSync(`${repo}LICENSE`, `${repo}packages/${pkg}/LICENSE`);
+for (const pkg of ['core', 'keychain', 'source-mssql', 'addon-explorer']) copyFileSync(`${repo}LICENSE`, `${repo}packages/${pkg}/LICENSE`);

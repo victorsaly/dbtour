@@ -10,13 +10,22 @@ import { Home } from './Home.tsx';
 import { TableView } from './TableView.tsx';
 import { DiagramView } from './Diagram.tsx';
 import { SqlPage } from './SqlPage.tsx';
+import { servedPage } from './Sql.tsx';
+import { DatabasesHome } from './Databases.tsx';
 
 function subscribe(onChange: () => void): () => void {
   window.addEventListener('hashchange', onChange);
   return () => window.removeEventListener('hashchange', onChange);
 }
 
+/** The home of the databases set up on this machine when dbtour serve gives one; a catalogue otherwise. */
 export function App({ model }: { model: Model }) {
+  const served = servedPage();
+  if (model.databases.length === 0 && served?.databases) return <DatabasesHome served={served} />;
+  return <CatalogueApp model={model} />;
+}
+
+function CatalogueApp({ model }: { model: Model }) {
   const hash = useSyncExternalStore(subscribe, () => window.location.hash);
   const route = useMemo(() => canonicalRoute(parseRoute(hash), model), [hash, model]);
   const index = useMemo(() => buildIndex(model), [model]);

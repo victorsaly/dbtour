@@ -5,6 +5,8 @@ import { PassThrough } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../src/cli.ts';
+// Never the machine's own ~/.dbtour: a folder of the test's, empty.
+process.env.DBTOUR_HOME = mkdtempSync(join(tmpdir(), 'dbtour-home-'));
 import type { Model } from '../src/model.ts';
 import { twoDatabases } from './fixtures/two.ts';
 

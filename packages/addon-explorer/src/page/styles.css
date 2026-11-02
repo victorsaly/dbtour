@@ -1750,3 +1750,323 @@ table.columns tr.is-pointed td {
   top: 0;
   background: var(--bg);
 }
+
+/* Words for a screen reader beside a mark that says them to the eye. */
+.hidden-words {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The rail's switcher on a served database's page: back to all of them, and the others one click away,
+   each with its dot (green: it has a reader). No colour block: a block is a schema. */
+.switcher {
+  display: grid;
+  gap: 4px;
+  margin: 0 16px 16px;
+}
+.switcher-home {
+  text-decoration: none;
+}
+.switcher-home:hover,
+.switcher-home:focus-visible {
+  color: var(--ink);
+}
+.switcher ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--hair) solid var(--line);
+}
+.switcher a:not(.switcher-home) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0 5px 8px;
+  border-bottom: var(--hair) solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.switcher a:not(.switcher-home):hover {
+  background: var(--fill);
+}
+.switcher a.is-current {
+  box-shadow: inset 2px 0 0 var(--red);
+}
+.switcher .status::before {
+  margin-right: 0;
+}
+
+/* The home of several databases: an entry each, numbered as the index's tables are, its dot and facts. */
+.database-entries {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--hair) solid var(--line);
+}
+.database-entry {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 12px 0;
+  border-bottom: var(--hair) solid var(--line);
+}
+.database-entry .no {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.database-entry .name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.database-entry a.name {
+  text-decoration: none;
+}
+.database-entry a.name:hover,
+.database-entry a.name:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.database-entry .facts {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.database-read {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+.database-read .setup-error {
+  margin: 0;
+}
+.databases-hint {
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+}
+
+/* Adding a database: an entry of five numbered steps. The current one's number is red and its title ink; a
+   done one folds to its line; a later one waits in grey. */
+.setup-steps {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--hair) solid var(--line);
+}
+.setup-step {
+  border-bottom: var(--hair) solid var(--line);
+}
+.setup-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 0;
+}
+.setup-head .no {
+  width: 28px;
+  flex: none;
+}
+.setup-title {
+  flex: none;
+}
+.setup-step.is-current .no {
+  color: var(--red);
+}
+.setup-step.is-current .setup-title,
+.setup-step.is-done .setup-title {
+  color: var(--ink);
+}
+.setup-summary {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.setup-change {
+  margin-left: auto;
+}
+.setup-body {
+  padding: 0 0 22px 40px;
+}
+.setup-lead {
+  margin: 0 0 16px;
+  max-width: 70ch;
+  font-size: 14px;
+}
+.setup-fields {
+  display: grid;
+  gap: 14px;
+  max-width: 520px;
+}
+.setup-field {
+  display: grid;
+  gap: 5px;
+}
+.setup-field input {
+  width: 100%;
+  padding: 9px 12px;
+  border: var(--hair) solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  appearance: none;
+}
+.setup-field input::placeholder {
+  color: var(--ink-2);
+}
+.setup-field input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.setup-value {
+  font-size: 14px;
+}
+.setup-help {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.setup-help.is-problem {
+  color: var(--ink);
+}
+.setup-choices {
+  max-width: 640px;
+  border-top: var(--hair) solid var(--line);
+}
+.setup-choice {
+  padding: 12px 0 12px 12px;
+  border-bottom: var(--hair) solid var(--line);
+}
+.setup-choice.is-on {
+  box-shadow: inset 2px 0 0 var(--red);
+}
+.setup-choice > label {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 8px;
+  cursor: pointer;
+}
+.setup-choice > label input {
+  grid-row: span 2;
+  margin: 3px 0 0;
+  accent-color: var(--ink);
+}
+.setup-choice-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.setup-choice > :not(label) {
+  margin: 12px 0 0 28px;
+}
+/* An account name keeps its own case inside the caps of a status line. */
+.setup-az .status {
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+.setup-az {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.setup-plan p {
+  margin: 0;
+}
+.setup-sql {
+  margin: 8px 0;
+  padding: 10px 12px;
+  outline: var(--hair) solid var(--line);
+  font: 12px/1.6 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.setup-actions {
+  align-items: center;
+  min-height: 36px;
+}
+/* The step's primary button carries the red block on its trailing edge from the start. */
+.button.setup-go::after {
+  transform: scaleX(1);
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.setup-error {
+  margin: 14px 0 0;
+  max-width: 70ch;
+}
+.setup-error .status {
+  margin-right: 6px;
+}
+.setup-done {
+  margin-top: 24px;
+}
+.setup-done p {
+  margin: 0;
+  font-size: 14px;
+}
+/* The log beside the steps: each line its time, its dot (grey doing, green done, red refused) and what. */
+.setup-log ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+.setup-log li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 6px 0;
+  border-bottom: var(--hair) solid var(--line);
+  font: 11px/1.5 var(--mono);
+}
+.setup-log li.is-detail {
+  padding-left: 14px;
+}
+.setup-log li .status::before {
+  margin-right: 0;
+}
+/* Under its time and dot, the whole width: a server's name breaks at its dots, not inside a word. */
+.setup-log-text {
+  grid-column: 1 / -1;
+  overflow-wrap: break-word;
+}
+.setup-log li.is-idle .setup-log-text {
+  color: var(--ink-2);
+}
+.setup-log li.is-failed .setup-log-text {
+  color: var(--ink);
+}
+@media (max-width: 800px) {
+  .setup-head {
+    flex-wrap: wrap;
+  }
+  .setup-summary {
+    flex-basis: 100%;
+    padding-left: 40px;
+  }
+  .setup-change {
+    margin-left: 40px;
+  }
+  .setup-body {
+    padding-left: 0;
+  }
+}

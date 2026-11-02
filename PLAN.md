@@ -69,7 +69,78 @@ about itself and a package reads without touching a row; the third is written by
 
 None of this samples values. A count or a size describes the table; a row would be data, and the model
 never holds data. What a source cannot read (no permission, a database that does not keep it) is simply
-absent, and the page shows nothing rather than a guess.
+absent, and the page shows nothing rather than a guess. The one exception is the owner's to make, table by
+table: the values of a lookup they choose to keep (below), in a file of their own, never in the model.
+
+### Suggestions
+
+Most databases describe little of themselves, and an agent reading the model can say a good deal of the rest:
+what a table is for, what a column means, a relation nobody declared, which tables belong together. What it
+says is a proposal until a person agrees, so it is staged in a file of its own, `dbtour.suggestions.yaml`,
+beside the notes and in the same shape (tables, columns, relations, groups), each entry with why it was
+proposed (the names, keys and relations it read) and when. The agent writes it through the MCP server; it
+reads the structure, never a row, as everything else in the model does.
+
+- **Three origins, each shown.** What the database says is plain; what the notes say is marked *notes*, as a
+  relation is today; what an agent suggested is marked *suggested*, with its reason beside it, on the page
+  and in the Markdown, and the page defines the mark where it shows it. The model records each
+  description's origin so nothing downstream has to guess. A suggestion fills a gap: where the database or
+  the notes already say something, a different suggestion is shown beside it as a proposed change, never
+  in its place.
+- **The kind of a table**, from the structure alone: a lookup (few rows by the stats, a key and a name or
+  code, many relations in and none out), a junction (two foreign keys that are its primary key), or an
+  entity. A pure function in core; the agent may suggest a different kind where the rule is wrong. A column
+  that references a lookup says so, so the reader knows where its values are defined.
+- **From staging to the notes.** `dbtour accept` moves a suggestion into `dbtour.notes.yaml`, where a person
+  stands behind it, and `dbtour reject` drops it; the diff shows who took what. Unreviewed suggestions are
+  never treated as notes.
+- **From the notes to the database.** `dbtour script` writes the T-SQL that puts accepted descriptions where
+  the database keeps them (`sp_addextendedproperty`, or `sp_updateextendedproperty` where one exists, on
+  `MS_Description`). dbtour never runs it: its logins only read, so the script is handed to a person who
+  runs it with their own. Relations from the notes become foreign keys only when asked for separately
+  (`WITH NOCHECK`), since a constraint changes what the database accepts and a description does not. After
+  the script has run, `extract` reads the descriptions back as the database's, and `check` names the notes
+  that now repeat it, to be removed.
+
+### Values the owner chooses to keep
+
+A lookup's rows are what its codes mean (`1 paid`, `2 shipped`), and a reader is often better served by
+seeing them than by a description of them. Whether they belong in the docs is the owner's call, not dbtour's:
+only they know whether the docs are public and whether the values are sensitive. So keeping them is off
+until the owner names a table, and dbtour never chooses one for them.
+
+```yaml
+sources:
+  - type: mssql
+    name: Shop
+    connection: ${DBTOUR_MSSQL}
+    reader: ${DBTOUR_MSSQL_READER}
+    values: [dbo.OrderStatus, dbo.Country]   # the lookups whose rows the owner keeps in the docs
+```
+
+- **Read through the reader**, the login with `db_datareader` alone, by `dbtour extract`; never through the
+  extract's connection, and not at all without a reader.
+- **Refused, with the reason**, for a table with a masked, encrypted or labelled column or a row-level
+  security policy (someone protected it, and the owner listing it is not that person agreeing), and for a
+  table over the limits: a lookup has a few hundred rows and is narrow, so the limits are in rows and in
+  bytes, named and explained where they are defined. The stats' count is an estimate, so the reader counts
+  again before reading.
+- **Refused when the protection could not be read.** A missing label proves nothing when the login could not
+  read labels: the database's `unread` then names what is missing (`VIEW ANY SENSITIVITY CLASSIFICATION`),
+  and no table of that database has its values read until the extract's login can see what protects them.
+  The refusal says which permission to grant.
+- **Kept beside the model, not in it**: `values.json` in the `out` folder, with the moment each table was
+  read. `schema.json` still holds no row.
+- **Private means rendered without them.** The page is one self-contained file and the Markdown has the
+  values too, so leaving `values.json` out after a render would still publish the rows. `dbtour render
+  --without-values` writes the page and the Markdown from the model alone, for a commit or a deploy, and
+  the values stay on the owner's machine, on the served page and over MCP.
+- **Shown as data, with its date**: on the lookup's entry as a table of its rows, marked as read from the
+  database on that day, and on each column that references it, where a value is shown with its meaning.
+  Search finds a value and leads to its table. The Markdown has them on the lookup's page.
+- **For the agent**, the MCP server's `table` includes them, and a suggestion may cite them: a column
+  description that says what each code means is then staged for a person like any other. The agent may also
+  suggest a table for the list, with its reason; only the owner adds it.
 
 ## Three kinds of package
 
@@ -89,10 +160,12 @@ with no runtime plugin loading, which is what keeps it a single HTML file.
 dbtour init                 # writes dbtour.yaml, picks sources
 dbtour extract              # sources → schema.json (connection string from an environment variable, never argv)
 dbtour render               # schema.json + notes → index.html, README.md, one .md per table
-dbtour serve                # the page on 127.0.0.1; with a reader, its editor runs queries; later, the setup wizard
+dbtour serve                # the page on 127.0.0.1; with a reader, its editor runs queries; with no project, the home and its setup
 dbtour check                # CI: fails when the database and schema.json disagree
 dbtour find users           # search from the terminal, same index as the page
-dbtour mcp                  # the model to an agent over MCP: overview, search, table, path
+dbtour mcp                  # the model to an agent over MCP: overview, search, table, path; later gaps, suggest
+dbtour accept dbo.Orders    # a suggestion into the notes; reject drops it
+dbtour script               # T-SQL that writes the accepted descriptions into the database, for a person to run
 ```
 
 ## The page
@@ -120,8 +193,9 @@ table or the canvas in the centre, relations and notes on the right.
 
 `render` writes a static folder: `index.html` self-contained with the model inlined, the Markdown and
 `schema.json`. Locally, open the file or run `serve`. Deployed, it is static files on GitHub Pages, Cloudflare
-Pages or a bucket, with a workflow template in the repo. The page holds structure only, never rows, but a
-private database still belongs behind the host's access control.
+Pages or a bucket, with a workflow template in the repo. The page holds structure only, never rows, unless
+the owner listed lookups to keep (their `values.json`), and a private database still belongs behind the
+host's access control.
 
 ## The agent skill
 
@@ -141,6 +215,11 @@ terminal and over MCP, since the page is a static file.
 `dbtour mcp` hands the model to an agent a piece at a time: an overview, search (the page's), one table's
 Markdown, and the joins between two tables. It is in core, with no dependency, because it only reads the
 model; it never connects to the database. Running queries is the SQL add-on's, behind its read-only login.
+
+Two tools stage suggestions: `gaps` lists the tables and columns nothing describes, largest and most
+related first, since those are the ones people ask about; `suggest` writes one proposal, with its reason, to
+`dbtour.suggestions.yaml`. Neither touches the notes or the database: accepting and scripting stay with a
+person.
 
 ## Showing it
 
@@ -184,14 +263,25 @@ shop window, and nothing goes on the page before it is released.
    passwords and connection strings go to the system's keychain (macOS Keychain, Windows Credential Manager,
    the Secret Service), named from the settings, never written to a file or shown again. `dbtour.yaml`
    and environment variables keep working as they do, for CI and agents. The keychain is a dependency, so it
-   lives in a package of its own, not core. The design is drawn and agreed before it is built. ← here
-7. `source-openapi` and table-to-endpoint links.
+   lives in a package of its own, not core. The owner chose the layout on 1 November 2026: the setup is a
+   page shaped like an entry, five numbered sections, and the home is a list of database entries with the
+   rail switching between them. The settings, the keychain, the commands an agent can run safely, the home
+   and the setup on it, started from nothing with one npx line (0.10.0).
+7. `source-openapi` and table-to-endpoint links. ← next
 8. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
    and the comments its database keeps.
 9. Deploy workflow, `check`, `addon-lint`.
 10. `addon-usage`: index and table usage from the management views, as a panel on the entry.
 11. **Showing it**: the page on skills.victorsaly.com with its film and the live example, the script that
     records them, once 5 to 9 are released.
+12. **Suggestions**: the origin of each description in the model, `dbtour.suggestions.yaml`, the MCP tools
+    `gaps` and `suggest`, the *suggested* mark on the page and in the Markdown, `accept` and `reject`; then
+    the kind of a table; then `dbtour script` for SQL Server's extended properties, and `check` naming notes
+    the database now repeats. The skill learns to fill the gaps and stage what it finds.
+13. **Values the owner chooses to keep**: `values` on a source, read through its reader into `values.json`,
+    refused for protected or oversized tables and wherever the protection could not be read; the rows on
+    the lookup's entry and beside each column that references it, with the day they were read; search over
+    them; `table` over MCP including them; `render --without-values` for what is committed or deployed.
 
 ## Borrowed from
 
