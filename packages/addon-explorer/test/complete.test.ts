@@ -400,3 +400,29 @@ test('Tab after * says which protected columns it left out, so the reader knows 
   assert.deepEqual(left('SELECT *| FROM dbo.Customers'), [], 'nothing left out');
   assert.equal(left('SELECT Id| FROM dbo.Customers'), undefined, 'no * at the caret');
 });
+
+test('Tab after * holds back where it cannot tell which columns are protected', () => {
+  assert.equal(tab('SELECT x.*| FROM (SELECT 0 AS Id, 0 AS s UNION ALL SELECT Id, Status FROM dbo.Orders) x'), 'SELECT x.Id FROM (SELECT 0 AS Id, 0 AS s UNION ALL SELECT Id, Status FROM dbo.Orders) x', 'Status in a later branch protects s');
+  assert.equal(tab('SELECT x.*| FROM dbo.Orders o CROSS APPLY (SELECT o.Id, o.Status AS s) x'), null, 'a column of the query around it: not known here');
+  assert.equal(tab('WITH r (a, b) AS (SELECT u.*, o.Status FROM dbo.Unmodelled u CROSS JOIN dbo.Orders o) SELECT *| FROM r'), null, 'a * of unknown width: the names cannot be matched to their columns');
+});
+
+test('GROUP BY written out lists what GROUPING reads; COLLATE is not an alias; a comment does not hide a subquery', async () => {
+  assert.equal((await applies('SELECT Status, GROUPING(CustomerId) AS g, COUNT(*) FROM dbo.Orders GROUP BY |'))[0], 'Status, CustomerId');
+  assert.equal((await applies('SELECT Name COLLATE Latin1_General_CI_AS, COUNT(*) FROM dbo.Customers GROUP BY |'))[0], 'Name COLLATE Latin1_General_CI_AS');
+  assert.ok(!(await applies('SELECT Name COLLATE Latin1_General_CI_AS FROM dbo.Customers ORDER BY |', { explicit: true })).includes('Latin1_General_CI_AS'));
+  assert.equal((await applies('SELECT o.Status, (/* count */ SELECT COUNT(*) FROM dbo.Customers) AS n FROM dbo.Orders o GROUP BY |'))[0], undefined);
+});
+
+test('GROUP BY written out: a bare name in a subquery is bound as SQL Server binds it, or nothing is written', async () => {
+  const sub = (where: string) => `SELECT o.Status, (SELECT MAX(c.Email) FROM dbo.Customers c WHERE ${where}) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |`;
+  assert.equal((await applies(sub('c.Id = CustomerId')))[0], 'o.Status, CustomerId', 'Customers has no CustomerId: it is the outer Orders\'');
+  assert.equal((await applies(sub('Email IS NOT NULL')))[0], 'o.Status', 'Email is Customers\'');
+  assert.equal((await applies(sub('Mystery = 1')))[0], undefined, 'neither has it: not sure, so nothing written');
+});
+
+test('ORDER BY after UNION offers the first query\'s names, which the result takes', async () => {
+  const listed = await applies('SELECT Id AS first_id FROM dbo.Orders UNION ALL SELECT Id AS last_id FROM dbo.Orders ORDER BY |', { explicit: true });
+  assert.equal(listed[0], 'first_id');
+  assert.ok(!listed.includes('last_id'));
+});
