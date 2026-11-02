@@ -27,7 +27,7 @@ Strategy: restrained. No gradient, no shadow, no radius.
 
 ## Type
 
-- `--sans`: Archivo, 400 for text, 600 for headings and the wordmark. Body 13px/1.5; `h1` 28px, tracking
+- `--sans`: Archivo, 400 for text, 600 for headings. Body 13px/1.5; `h1` 28px, tracking
   -0.02em; the map's title 20px.
 - `--mono`: Red Hat Mono. Identifiers (table, column, type, default) at 12px, 400. Labels, numbers, table
   heads, buttons, tags and the search placeholder at 10.5px, 500, 0.14em tracking, upper case. Identifiers are
@@ -119,8 +119,11 @@ Strategy: restrained. No gradient, no shadow, no radius.
   in a hairline frame, with "Open the map" to the full one.
 - **Copy group**: the copy button, a select naming the tool (mono caps, hairline, a drawn chevron) and,
   for a tool with a web chat, an "Open …" button, joined edge to edge.
-- **Mark and wordmark**: a database cylinder with the pulse through it, 1.5 stroke in the 24 box; "db" in
-  Red Hat Mono 500 in `--ink-2`, "tour" in Archivo 600 in `--ink`.
+- **Mark and wordmark**: a database cylinder with a signal through it, a round 2 stroke in the 24 box. The
+  wordmark is outlines, not type: "db" bold in `--ink`, "tour" medium in `--ink-2`, one word on one baseline.
+  The mark's ink stands 1.3 times as tall as "db", its corners on the baseline and its round bottom
+  under it. From the owner's drawing of 2 November
+  2026, put on the 24 grid with one ellipse for the top and the bottom.
 - **Tags** (`view`, `notes`): 9.5px mono caps in a hairline outline.
 
 ## Layout

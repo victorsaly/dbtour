@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.9.3 (unreleased)
+## 0.9.4 (unreleased)
+
+- A new logo, from the owner's drawing. The mark is bolder and drawn with a round pen: the database cylinder
+  with a signal through it, put on the 24 grid with one ellipse for its top and its bottom. The wordmark is
+  outlines, "db" bold and "tour" medium and muted, so it looks the same everywhere and needs no font:
+  `brand/logo.svg` is 4 KB, not 80. The mark stands with its corners on the baseline and its round bottom
+  just under it, as the bowls of the letters do. The rail, the favicon, the README, the social image and the
+  plugin's icon all draw it from `mark.ts`.
+
+## 0.9.3 (2 November 2026)
 
 - The SQL editor checks names against the model as you type, as SQL Server's completion add-ins do. A table
   after FROM or JOIN the model does not have, or a column a table it has does not (after its alias or name

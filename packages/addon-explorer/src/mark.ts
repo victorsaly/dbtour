@@ -1,24 +1,58 @@
-// The dbtour mark: a database cylinder with a table's pulse running through it, one geometry at every size.
-// Shared by the page (the header), the favicon that index.ts inlines, and the brand files in brand/.
+// The dbtour mark: a database cylinder with a signal running through it, one geometry at every size, and the
+// wordmark beside it. Shared by the page (the rail), the favicon that index.ts inlines, and the brand files in brand/.
 
-/** The cylinder, in a 24-unit box: the top ellipse and the body closed by the bottom arc. */
-export const markCylinderTop = { cx: 12, cy: 6.5, rx: 8.5, ry: 3 };
-export const markCylinderBody = 'M3.5,6.5 V17.5 A8.5,3 0 0 0 20.5,17.5 V6.5';
-/** The pulse across the body: a plain column, a key, a foreign key. */
-export const markPulse = '3.5,14.5 6.5,14.5 8,11 9.5,14.5 11.5,14.5 13,12 14.5,14.5 16.5,14.5 17.5,13 18.5,14.5 20.5,14.5';
+/** The cylinder, in a 24-unit box: the top ellipse and the body closed by the same ellipse's lower half. */
+export const markCylinderTop = { cx: 12, cy: 5.5, rx: 8.5, ry: 2.5 };
+export const markCylinderBody = 'M3.5,5.5 V18 A8.5,2.5 0 0 0 20.5,18 V5.5';
+/** The signal across the body, wall to wall: two peaks, and it leaves mid-swing because it carries on. */
+export const markPulse = '3.5,16 6.75,12 10.25,16 13.75,12 17.25,16 20.5,14';
+/** What the mark covers of its box with the default pen: x 2.5 to 21.5, y 2 to 21.5. */
+const markInk = { left: 2.5, top: 2, width: 19, height: 19.5 };
 
-export function markSvg(size: number, ink: string, strokeWidth = 1.5): string {
-  const { cx, cy, rx, ry } = markCylinderTop;
+export function markSvg(size: number, ink: string, strokeWidth = 2): string {
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${ink}" stroke-width="${strokeWidth}" stroke-linejoin="miter" stroke-linecap="butt">` +
-    `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"/>` +
-    `<path d="${markCylinderBody}"/>` +
-    `<polyline points="${markPulse}"/>` +
-    `</svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${ink}" ` +
+    `stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${markShapes()}</svg>`
   );
+}
+
+function markShapes(): string {
+  const { cx, cy, rx, ry } = markCylinderTop;
+  return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"/><path d="${markCylinderBody}"/><polyline points="${markPulse}"/>`;
 }
 
 /** For <link rel="icon">: the mark as a data URI, in the ink that reads on both light and dark tabs. */
 export function markDataUri(ink = '#8c8c8c'): string {
   return `data:image/svg+xml,${encodeURIComponent(markSvg(32, ink, 2))}`;
+}
+
+// The wordmark as outlines, so it looks the same wherever it is drawn and needs no font: "db" bold, "tour"
+// medium, set on one baseline (y 48.45) with the space of one word between them.
+export const wordmarkDb =
+  'M17.6 49.22C14.23 49.22 11.22 48.43 8.58 46.85C5.93 45.23 3.84 43.03 2.3 40.26C0.77 37.48 0 34.41 0 31.04C0 27.63 0.77 24.55 2.3 21.82C3.84 19.09 5.93 16.92 8.58 15.3C11.26 13.67 14.25 12.86 17.54 12.86C20.18 12.86 22.53 13.4 24.58 14.46C26.67 15.49 28.31 16.94 29.5 18.82L28.22 20.54V0H36.61V48.45H28.67V41.73L29.57 43.39C28.37 45.27 26.71 46.72 24.58 47.74C22.44 48.73 20.12 49.22 17.6 49.22ZM18.5 41.54C20.42 41.54 22.1 41.09 23.55 40.19C25 39.3 26.13 38.06 26.94 36.48C27.8 34.9 28.22 33.09 28.22 31.04C28.22 29.03 27.8 27.24 26.94 25.66C26.13 24.04 25 22.78 23.55 21.89C22.1 20.99 20.42 20.54 18.5 20.54C16.62 20.54 14.93 21.01 13.44 21.95C11.95 22.85 10.77 24.09 9.92 25.66C9.11 27.2 8.7 28.99 8.7 31.04C8.7 33.09 9.11 34.9 9.92 36.48C10.77 38.06 11.95 39.3 13.44 40.19C14.93 41.09 16.62 41.54 18.5 41.54ZM61.5 49.22C58.98 49.22 56.65 48.73 54.52 47.74C52.43 46.72 50.77 45.27 49.53 43.39L50.36 41.73V48.45H42.49V0H50.87V20.54L49.59 18.82C50.79 16.94 52.41 15.49 54.46 14.46C56.5 13.4 58.87 12.86 61.56 12.86C64.85 12.86 67.81 13.67 70.46 15.3C73.1 16.92 75.19 19.09 76.73 21.82C78.31 24.55 79.1 27.63 79.1 31.04C79.1 34.41 78.33 37.48 76.79 40.26C75.26 43.03 73.17 45.23 70.52 46.85C67.87 48.43 64.87 49.22 61.5 49.22ZM60.54 41.54C62.46 41.54 64.16 41.09 65.66 40.19C67.15 39.3 68.3 38.06 69.11 36.48C69.97 34.9 70.39 33.09 70.39 31.04C70.39 28.99 69.97 27.2 69.11 25.66C68.3 24.09 67.15 22.85 65.66 21.95C64.16 21.01 62.46 20.54 60.54 20.54C58.7 20.54 57.04 20.99 55.54 21.89C54.09 22.78 52.94 24.04 52.09 25.66C51.28 27.24 50.87 29.03 50.87 31.04C50.87 33.09 51.28 34.9 52.09 36.48C52.94 38.06 54.09 39.3 55.54 40.19C57.04 41.09 58.7 41.54 60.54 41.54 Z';
+export const wordmarkTour =
+  'M100.64 48.83C97.01 48.83 94.19 47.81 92.19 45.76C90.18 43.71 89.18 40.83 89.18 37.12V20.35H83.1V13.82H84.06C85.68 13.82 86.94 13.35 87.84 12.42C88.73 11.48 89.18 10.2 89.18 8.58V5.89H96.41V13.82H104.28V20.35H96.41V36.8C96.41 37.99 96.6 39.02 96.99 39.87C97.37 40.68 97.99 41.32 98.84 41.79C99.7 42.22 100.81 42.43 102.17 42.43C102.51 42.43 102.9 42.41 103.32 42.37C103.75 42.33 104.16 42.28 104.54 42.24V48.45C103.94 48.53 103.28 48.62 102.56 48.7C101.83 48.79 101.19 48.83 100.64 48.83ZM125.76 49.22C122.43 49.22 119.38 48.43 116.6 46.85C113.87 45.27 111.7 43.11 110.08 40.38C108.46 37.65 107.64 34.56 107.64 31.1C107.64 27.61 108.46 24.51 110.08 21.82C111.7 19.09 113.87 16.96 116.6 15.42C119.34 13.85 122.39 13.06 125.76 13.06C129.17 13.06 132.22 13.85 134.91 15.42C137.64 16.96 139.79 19.09 141.37 21.82C142.99 24.51 143.8 27.61 143.8 31.1C143.8 34.6 142.99 37.72 141.37 40.45C139.75 43.18 137.58 45.33 134.84 46.91C132.11 48.45 129.08 49.22 125.76 49.22ZM125.76 42.5C127.8 42.5 129.62 42.01 131.2 41.02C132.78 40.04 134.01 38.7 134.91 36.99C135.85 35.24 136.32 33.28 136.32 31.1C136.32 28.93 135.85 26.99 134.91 25.28C134.01 23.57 132.78 22.23 131.2 21.25C129.62 20.27 127.8 19.78 125.76 19.78C123.75 19.78 121.94 20.27 120.32 21.25C118.74 22.23 117.48 23.57 116.54 25.28C115.64 26.99 115.2 28.93 115.2 31.1C115.2 33.28 115.64 35.24 116.54 36.99C117.48 38.7 118.74 40.04 120.32 41.02C121.94 42.01 123.75 42.5 125.76 42.5ZM161.3 49.22C158.69 49.22 156.41 48.64 154.45 47.49C152.49 46.29 150.95 44.65 149.84 42.56C148.77 40.43 148.24 37.97 148.24 35.2V13.82H155.47V34.56C155.47 36.14 155.79 37.53 156.43 38.72C157.07 39.91 157.97 40.85 159.12 41.54C160.27 42.18 161.6 42.5 163.09 42.5C164.63 42.5 165.97 42.15 167.12 41.47C168.27 40.79 169.17 39.83 169.81 38.59C170.49 37.35 170.83 35.9 170.83 34.24V13.82H178V48.45H171.15V41.66L171.92 42.56C171.11 44.69 169.77 46.34 167.89 47.49C166.01 48.64 163.81 49.22 161.3 49.22ZM184.52 48.45V13.82H191.44V20.8L190.8 19.78C191.56 17.51 192.8 15.89 194.51 14.91C196.22 13.89 198.26 13.38 200.65 13.38H202.76V19.97H199.76C197.37 19.97 195.43 20.71 193.93 22.21C192.48 23.66 191.76 25.75 191.76 28.48V48.45H184.52 Z';
+export const wordmarkBox = { width: 202.76, height: 49.22 };
+
+/** The mark scaled to the wordmark: its ink 1.3 times the height of "db". */
+const logoScale = 3.25;
+/** How far the mark's ink reaches below the wordmark: the cylinder's corners on the baseline and its round
+ * bottom under it, as the bowls of the letters dip under theirs. Level bottoms left the mark looking high. */
+const logoDrop = 5;
+/** Between the mark's ink and the "d": a little more than the bowl of the "b" is wide. */
+const logoGap = 14;
+
+/** The mark and the wordmark: "db" at full ink, "tour" muted, the mark in the ink of "db". */
+export function logoSvg(ink: string, muted: string, height = 48): string {
+  const markHeight = markInk.height * logoScale;
+  const wordX = markInk.width * logoScale + logoGap;
+  const wordY = markHeight - logoDrop - wordmarkBox.height;
+  const width = wordX + wordmarkBox.width;
+  const px = (n: number) => Math.round(n * 100) / 100;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round((height * width) / markHeight)}" height="${height}" viewBox="0 0 ${px(width)} ${px(markHeight)}" fill="none">` +
+    `<g transform="translate(${px(-markInk.left * logoScale)} ${px(-markInk.top * logoScale)}) scale(${logoScale})" stroke="${ink}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${markShapes()}</g>` +
+    `<g transform="translate(${px(wordX)} ${px(wordY)})"><path d="${wordmarkDb}" fill="${ink}"/><path d="${wordmarkTour}" fill="${muted}"/></g>` +
+    `</svg>`
+  );
 }
