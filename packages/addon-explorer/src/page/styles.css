@@ -198,24 +198,18 @@ kbd {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
   padding: 18px 16px 6px;
   text-decoration: none;
 }
+/* Set as the logo is: the 22px mark's ink 1.3 times the height of "db", centred, which leaves the cylinder's
+   corners on the baseline and its round bottom just under it. */
 .wordmark {
-  font-size: 16px;
-  letter-spacing: -0.02em;
-}
-/* "db" is the data, set like an identifier; "tour" is the way through it. */
-.wm-db {
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: 15px;
-  letter-spacing: 0;
-  color: var(--ink-2);
+  height: 14px;
+  width: auto;
 }
 .wm-tour {
-  font-weight: 600;
+  fill: var(--ink-2);
 }
 .side-map {
   display: block;
