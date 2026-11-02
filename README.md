@@ -3,9 +3,9 @@
 <img src="https://raw.githubusercontent.com/victorsaly/dbtour/main/brand/logo-light.svg#gh-dark-mode-only" alt="dbtour" width="220">
 <img src="https://raw.githubusercontent.com/victorsaly/dbtour/main/brand/logo.svg#gh-light-mode-only" alt="dbtour" width="220">
 
-**Tour your database and its API.**
+**Schema docs for your database, kept in your repository, for people and agents.**
 
-[![version](https://img.shields.io/badge/version-0.9.5-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.9.6-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -13,7 +13,8 @@
 dbtour reads a database, writes what it finds to one model file in your repository, and renders that file as
 Markdown GitHub shows with diagrams, and as a page developers search, follow relations in and hand to an agent.
 
-SQL Server first. Other databases and the Claude Code skill follow the [plan](PLAN.md).
+It reads the catalogue, never the rows, and an agent gets the same model through `dbtour mcp` and the
+Claude Code plugin ([below](#ask-claude)). SQL Server first; other databases follow the [plan](PLAN.md).
 
 ## Use
 
