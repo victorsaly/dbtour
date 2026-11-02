@@ -167,7 +167,7 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
       <>
         <p className="setup-lead">How dbtour signs in to read the catalogue. It needs no more than VIEW DEFINITION.</p>
         <div className="setup-choices" role="radiogroup" aria-label="Sign in">
-          <Choice checked={form.signIn === 'az'} onChange={() => set({ signIn: 'az' })} title="Microsoft Entra, through az" detail="No password: dbtour signs in as you, through the Azure CLI. For Azure SQL.">
+          <Choice name="sign-in" checked={form.signIn === 'az'} onChange={() => set({ signIn: 'az' })} title="Microsoft Entra, through az" detail="No password: dbtour signs in as you, through the Azure CLI. For Azure SQL.">
             <span className="setup-az">
               <span className={`status is-${az.tone}`}>{az.text}</span>
               {state?.az.state !== 'signed in' && (
@@ -177,7 +177,7 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
               )}
             </span>
           </Choice>
-          <Choice checked={form.signIn === 'login'} onChange={() => set({ signIn: 'login' })} title="A SQL login" detail="A login and its password, kept in this machine's keychain and never written to a file.">
+          <Choice name="sign-in" checked={form.signIn === 'login'} onChange={() => set({ signIn: 'login' })} title="A SQL login" detail="A login and its password, kept in this machine's keychain and never written to a file.">
             {form.signIn === 'login' && (
               <div className="setup-fields">
                 <Field label="Login" value={form.user} onChange={(user) => set({ user })} placeholder="e.g. dbtour_catalogue" />
@@ -221,7 +221,7 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
       <>
         <p className="setup-lead">A reader is a login that can only read (db_datareader alone). With one, this database's page runs your queries; without, it shows the structure.</p>
         <div className="setup-choices" role="radiogroup" aria-label="Reader">
-          <Choice checked={choice === 'create'} onChange={() => pick('create')} title="Make dbtour_reader for me" detail="dbtour runs two statements with your sign-in, after you have read them.">
+          <Choice name="reader" checked={choice === 'create'} onChange={() => pick('create')} title="Make dbtour_reader for me" detail="dbtour runs two statements with your sign-in, after you have read them.">
             {choice === 'create' && plan && (
               <div className="setup-plan">
                 <p>This changes {plan.changes}. It runs:</p>
@@ -230,7 +230,7 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
               </div>
             )}
           </Choice>
-          <Choice checked={choice === 'own'} onChange={() => pick('own')} title="Use a read-only login I have" detail="dbtour signs in with it once, then keeps its password in the keychain.">
+          <Choice name="reader" checked={choice === 'own'} onChange={() => pick('own')} title="Use a read-only login I have" detail="dbtour signs in with it once, then keeps its password in the keychain.">
             {choice === 'own' && (
               <div className="setup-fields">
                 <Field label="Reader's login" value={own.user} onChange={(user) => setOwn((o) => ({ ...o, user }))} />
@@ -238,7 +238,7 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
               </div>
             )}
           </Choice>
-          <Choice checked={choice === 'skip'} onChange={() => pick('skip')} title="Not now" detail={`The page shows the structure and runs no query. dbtour reader ${form.name} --create makes one later.`} />
+          <Choice name="reader" checked={choice === 'skip'} onChange={() => pick('skip')} title="Not now" detail={`The page shows the structure and runs no query. dbtour reader ${form.name} --create makes one later.`} />
         </div>
         <Actions busy={busy}>
           {choice === 'create' && (
@@ -317,8 +317,8 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
                   <span className="no">{String(step).padStart(2, '0')}</span>
                   <h2 className="setup-title">{title}</h2>
                   {step < at && <span className="setup-summary">{stepSummary(step, form, { reader, tables: read?.tables })}</span>}
-                  {/* Before the test saves it, the database and the sign-in can still change. */}
-                  {step < at && at <= 3 && (
+                  {/* Before the test saves it, the database and the sign-in can still change; not while a step runs. */}
+                  {step < at && at <= 3 && !busy && (
                     <button type="button" className="sql-copy setup-change" onClick={() => {
                         setAt(step);
                         setError(undefined);
@@ -408,11 +408,12 @@ function Field({ label, value, onChange, placeholder, help, type = 'text' }: { l
   );
 }
 
-function Choice({ checked, onChange, title, detail, children }: { checked: boolean; onChange: () => void; title: string; detail: string; children?: ReactNode }) {
+/** One of a group's choices; the group's `name` lets the arrow keys move between them, as radios do. */
+function Choice({ name, checked, onChange, title, detail, children }: { name: string; checked: boolean; onChange: () => void; title: string; detail: string; children?: ReactNode }) {
   return (
     <div className={`setup-choice${checked ? ' is-on' : ''}`}>
       <label>
-        <input type="radio" checked={checked} onChange={onChange} />
+        <input type="radio" name={name} checked={checked} onChange={onChange} />
         <span className="setup-choice-title">{title}</span>
         <span className="setup-help">{detail}</span>
       </label>

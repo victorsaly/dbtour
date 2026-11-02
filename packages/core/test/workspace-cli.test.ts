@@ -27,7 +27,7 @@ interface Harness {
   home: string;
 }
 
-function harness(options: { roles?: string[]; exists?: boolean; failTest?: boolean; stdin?: string } = {}): Harness {
+function harness(options: { roles?: string[]; grants?: string[]; rights?: string[]; exists?: boolean; failTest?: boolean; stdin?: string; during?: () => Promise<void> } = {}): Harness {
   const home = join(mkdtempSync(join(tmpdir(), 'dbtour-ws-')), '.dbtour');
   const out: string[] = [];
   const err: string[] = [];
@@ -52,10 +52,18 @@ function harness(options: { roles?: string[]; exists?: boolean; failTest?: boole
       readerState: async (admin, user) => {
         calls.push(`state ${admin} ${user}`);
         if (options.failTest) throw new Error('Login failed for user.');
-        return { exists: options.exists ?? false, roles: options.roles ?? [] };
+        // Once, while the first test waits on the database: what another dbtour does meanwhile.
+        const during = options.during;
+        options.during = undefined;
+        await during?.();
+        return { exists: options.exists ?? false, roles: options.roles ?? [], grants: options.grants ?? [] };
       },
       readerStatements: (user, exists) => [`${exists ? 'ALTER' : 'CREATE'} USER [${user}] WITH PASSWORD = '••••••';`, `ALTER ROLE db_datareader ADD MEMBER [${user}];`],
       createReader: async (admin, user, password, reader) => void calls.push(`create ${admin} ${user} ${password === reader.split(':')[2].split('@')[0] ? 'same password' : 'other password'}`),
+      readerRights: async (reader) => {
+        calls.push(`rights ${reader}`);
+        return options.rights ?? [];
+      },
     },
   };
   const stdin = new PassThrough();
@@ -147,7 +155,7 @@ test('a reader of your own: its password on stdin, tested before it is kept', as
   assert.equal(await main(['reader', 'Shop', '--user', 'ro_login', '--password-stdin'], h.io), 0);
   assert.equal(h.secrets.get('Shop · reader'), 'readerpw');
   assert.equal(settings(h).databases[0].reader, 'ro_login');
-  assert.ok(h.calls.some((c) => c === 'run login:ro_login:readerpw@shop-sql.database.windows.net/Shop SELECT 1 AS signedIn'));
+  assert.ok(h.calls.some((c) => c === 'rights login:ro_login:readerpw@shop-sql.database.windows.net/Shop'));
 });
 
 test('read writes the model and the page into the database\'s own folder, and when', async () => {
@@ -342,9 +350,46 @@ test('the setup page sends a login\'s password once, to the keychain, and never 
     const own = await s.step('reader-use', { name: 'Shop', user: 'ro_login', password: 'readerpw' });
     assert.deepEqual([own.status, own.json.reader], [200, 'ro_login']);
     assert.match((added.json.log as string[]).join('\n'), /Kept the login's password in the keychain as "dbtour · Shop · login"/);
-    assert.ok(h.calls.includes('run login:ro_login:readerpw@shop-sql.database.windows.net/Shop SELECT 1 AS signedIn'));
+    assert.ok(h.calls.includes('rights login:ro_login:readerpw@shop-sql.database.windows.net/Shop'));
     const everything = readFileSync(join(h.home, 'databases.json'), 'utf8') + added.text + own.text + JSON.stringify(await s.meta()) + h.out.join('\n');
     assert.doesNotMatch(everything, /p;w"d|readerpw/);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('a database added while another is being tested is kept: each change is made to the settings as they are then', async () => {
+  // While Shop's test waits on its database, Logs is added in the same home, as another dbtour would.
+  const h: Harness = harness({ during: async () => assert.equal(await main(['add', 'Logs', '--server', 'localhost,1433'], h.io), 0) });
+  assert.equal(await main(shop, h.io), 0);
+  assert.deepEqual(settings(h).databases.map((d: { name: string }) => d.name), ['Logs', 'Shop']);
+});
+
+test('a reader that can do more than read is refused, however it got the right: a role, a grant, a schema of its own', async () => {
+  const granted = harness({ exists: true, roles: ['db_datareader'], grants: ['UPDATE'] });
+  await main(shop, granted.io);
+  assert.equal(await main(['reader', 'Shop', '--create'], granted.io), 1, 'refused before the statements are even shown');
+  assert.match(granted.err.join('\n'), /dbtour_reader has UPDATE[\s\S]*could do more than read/);
+  assert.equal(granted.calls.filter((c) => c.startsWith('create')).length, 0);
+
+  const owner = harness({ stdin: 'ownerpw', rights: ['CONTROL', 'INSERT'] });
+  await main(shop, owner.io);
+  assert.equal(await main(['reader', 'Shop', '--user', 'admin', '--password-stdin'], owner.io), 1);
+  assert.match(owner.err.join('\n'), /admin can do more than read \(CONTROL, INSERT\)[\s\S]*db_datareader alone/);
+  assert.equal(owner.secrets.has('Shop · reader'), false, 'its password is not kept');
+  assert.equal(settings(owner).databases[0].reader, undefined);
+});
+
+test('a database removed and set up again under its name is not read until it is read again', async () => {
+  const h = harness();
+  await main(shop, h.io);
+  await main(['read', 'Shop'], h.io);
+  await main(['remove', 'Shop'], h.io);
+  await main(['add', 'Shop', '--server', 'other-sql.database.windows.net', '--database', 'Shop'], h.io);
+  h.out.length = 0;
+  const s = await served(h);
+  try {
+    assert.deepEqual(s.front.databases.map((d: { name: string; read: boolean }) => [d.name, d.read]), [['Shop', false]], 'the old page is not shown as the new one');
   } finally {
     await s.stop();
   }

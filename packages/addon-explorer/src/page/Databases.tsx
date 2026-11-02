@@ -101,7 +101,8 @@ export function DatabasesHome({ served }: { served: Served }) {
         </p>
         {entries.length > 0 && (
           <nav aria-label="Databases">
-            <a className={`side-map${adding ? '' : ' is-current'}`} href="#" aria-current={adding ? undefined : 'page'}>
+            {/* Loaded again, not a hash: a database the setup added since must be on the list. */}
+            <a className={`side-map${adding ? '' : ' is-current'}`} href="/" aria-current={adding ? undefined : 'page'}>
               All databases
             </a>
             {served.setup && (

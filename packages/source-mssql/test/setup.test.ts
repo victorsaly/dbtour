@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import sql from 'mssql';
-import { bracket, connectionString, extraRoles, readerStatements } from '../src/setup.ts';
+import { bracket, connectionString, extraRoles, readerStatements, writeRights } from '../src/setup.ts';
 
 test('a connection string from where and how: az through Azure\'s default credential, a login with its password intact', () => {
   const az = connectionString({ server: 'shop-sql.database.windows.net', database: 'Shop', signIn: 'az' });
@@ -22,4 +22,12 @@ test('the reader\'s statements: a contained user with db_datareader alone, its p
   // Any role but db_datareader (and public, which every user has) could write.
   assert.deepEqual(extraRoles(['public', 'db_datareader']), []);
   assert.deepEqual(extraRoles(['db_datareader', 'db_owner']), ['db_owner']);
+});
+
+test('what a reader may not hold: any right to write, run code, change the schema or administer, or a schema of its own', () => {
+  assert.deepEqual(writeRights(['CONNECT', 'SELECT', 'VIEW DEFINITION', 'SHOWPLAN', 'VIEW DATABASE STATE', 'REFERENCES']), []);
+  assert.deepEqual(
+    writeRights(['CONNECT', 'SELECT', 'UPDATE', 'INSERT', 'DELETE', 'EXECUTE', 'CONTROL', 'ALTER ANY SCHEMA', 'CREATE TABLE', 'TAKE OWNERSHIP', 'IMPERSONATE', 'OWNERSHIP OF SCHEMA dbo', 'UPDATE']),
+    ['UPDATE', 'INSERT', 'DELETE', 'EXECUTE', 'CONTROL', 'ALTER ANY SCHEMA', 'CREATE TABLE', 'TAKE OWNERSHIP', 'IMPERSONATE', 'OWNERSHIP OF SCHEMA dbo'],
+  );
 });

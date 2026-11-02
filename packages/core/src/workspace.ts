@@ -5,7 +5,7 @@
 // dbtour.yaml project keeps working as it does; this is for a person at their own machine and the agent they
 // work with. Pure but for the file it reads and writes, so it is tested in Node.
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** Where passwords are kept: the system's keychain in use, a map in tests. Nothing in it is ever printed. */
@@ -105,7 +105,45 @@ export function parseWorkspace(text: string, path = workspaceFile): Workspace {
 
 export function writeWorkspace(home: string, workspace: Workspace): void {
   mkdirSync(home, { recursive: true });
-  writeFileSync(join(home, workspaceFile), JSON.stringify(workspace, null, 2) + '\n', { mode: 0o600 });
+  // Written beside it, then put in its place, so a dbtour reading it at that moment reads the old or the new.
+  const file = join(home, workspaceFile);
+  writeFileSync(`${file}.next`, JSON.stringify(workspace, null, 2) + '\n', { mode: 0o600 });
+  renameSync(`${file}.next`, file);
+}
+
+/**
+ * How long a change waits for another dbtour's. A change takes a millisecond, made with nothing awaited between
+ * reading the settings and writing them; a lock held for two seconds was left by a dbtour that stopped mid-change.
+ */
+const lockWaitMs = 2000;
+
+/**
+ * Changes the settings as they are now: read, changed and written under a lock that every dbtour takes, so a
+ * database added or a reader saved by another command, or another step of the page, while this one waited on a
+ * database is kept. `change` may throw to refuse, and nothing is written.
+ */
+export function updateWorkspace(home: string, change: (workspace: Workspace) => Workspace, waitMs = lockWaitMs): Workspace {
+  mkdirSync(home, { recursive: true });
+  const lock = join(home, `${workspaceFile}.lock`);
+  const until = Date.now() + waitMs;
+  for (;;) {
+    try {
+      closeSync(openSync(lock, 'wx'));
+      break;
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'EEXIST') throw error;
+      if (Date.now() > until) throw new Error(`Another dbtour is changing the settings, or one stopped while it did and left ${lock}: if no other dbtour is running, delete it, then run it again`, { cause: error });
+      // A short sleep without a promise: the change must stay one synchronous step.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+  try {
+    const next = change(readWorkspace(home));
+    writeWorkspace(home, next);
+    return next;
+  } finally {
+    rmSync(lock, { force: true });
+  }
 }
 
 /**

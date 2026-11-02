@@ -649,6 +649,11 @@ test('with nothing set up, the home walks through the five steps to the database
     await page.getByRole('button', { name: 'Next' }).click();
 
     await page.locator('.setup-step.is-current', { hasText: 'Signed in to az as ann@example.com' }).waitFor();
+    // One group, so the arrow keys move between the choices.
+    await page.getByRole('radio', { name: /Microsoft Entra/ }).focus();
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.getByRole('radio', { name: /A SQL login/ }).isChecked(), true);
+    await page.keyboard.press('ArrowUp');
     assert.match((await page.locator('.setup-step').first().textContent()) ?? '', /Shop on shop\.example/);
     await page.getByRole('button', { name: 'Next' }).click();
 
@@ -680,6 +685,7 @@ test('with nothing set up, the home walks through the five steps to the database
     await page.locator('.database-entry', { hasText: 'Logs' }).getByRole('button', { name: 'Read it' }).click();
     await page.waitForURL(/\/db\/Logs\/$/);
     await page.goto(`${server.url}/`);
+    assert.equal(await page.locator('.side').getByRole('link', { name: 'All databases' }).getAttribute('href'), '/', 'the list is loaded again');
     await page.locator('main').getByRole('link', { name: 'Add a database' }).click();
     await page.locator('h1', { hasText: 'Add a database' }).waitFor();
     assert.deepEqual(errors, []);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -10,6 +10,7 @@ import {
   parseWorkspace,
   pickDatabase,
   readWorkspace,
+  updateWorkspace,
   secretAccount,
   valueProblem,
   workspaceFile,
@@ -65,4 +66,20 @@ test('a password dbtour makes meets SQL Server\'s complexity rule and is never t
   const a = newPassword();
   assert.match(a, /^Aa1-[0-9a-f]{48}$/);
   assert.notEqual(a, newPassword());
+});
+
+test('a change is made to the settings as they are when it is written, never to a copy read before', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dbtour-update-'));
+  const shop = { name: 'Shop', type: 'mssql', server: 's', database: 'Shop', signIn: 'az' as const };
+  writeWorkspace(home, { databases: [shop] });
+  const before = readWorkspace(home);
+  writeWorkspace(home, { databases: [...before.databases, { ...shop, name: 'Logs' }] });
+  updateWorkspace(home, (w) => ({ databases: w.databases.map((d) => (d.name === 'Shop' ? { ...d, reader: 'dbtour_reader' } : d)) }));
+  assert.deepEqual(readWorkspace(home).databases.map((d) => [d.name, d.reader]), [['Shop', 'dbtour_reader'], ['Logs', undefined]]);
+  assert.equal(existsSync(join(home, 'databases.json.lock')), false, 'the lock is let go');
+  assert.throws(() => updateWorkspace(home, () => { throw new Error('Shop is set up already'); }), /set up already/);
+  assert.equal(existsSync(join(home, 'databases.json.lock')), false, 'and let go when the change refuses');
+  // Another dbtour holding the lock: waited for, then named, so a lock left by one that crashed can be removed.
+  writeFileSync(join(home, 'databases.json.lock'), '');
+  assert.throws(() => updateWorkspace(home, (w) => w, 30), /databases\.json\.lock[\s\S]*delete it/);
 });

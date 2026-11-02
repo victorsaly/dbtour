@@ -18,12 +18,17 @@ export type Run = (config: SourceConfig, sql: string, options: RunOptions) => Pr
 export interface Setup {
   /** The connection string for where the database is and how dbtour signs in. */
   connectionString: (target: Target) => string;
-  /** Whether a user exists in the database, and its roles, through the admin's connection. */
-  readerState: (admin: string, user: string) => Promise<{ exists: boolean; roles: string[] }>;
+  /**
+   * Whether a user exists in the database, its roles, and what it was granted or owns that a reader may not
+   * have (a right to write, run code or change the schema), through the admin's connection.
+   */
+  readerState: (admin: string, user: string) => Promise<{ exists: boolean; roles: string[]; grants: string[] }>;
   /** The statements that make a user the reader, as shown before they run (password hidden). */
   readerStatements: (user: string, exists: boolean) => string[];
   /** Runs them with the admin's connection and a password dbtour made, then signs in as the reader. */
   createReader: (admin: string, user: string, password: string, readerConnection: string) => Promise<void>;
+  /** Signed in as a reader: what it can do beyond reading, from whatever role, grant or ownership; none for a reader. */
+  readerRights: (readerConnection: string) => Promise<string[]>;
 }
 
 export interface Source {
@@ -50,11 +55,11 @@ export async function loadSource(source: SourceConfig, importer: Importer = (s) 
   }
   const extract = (loaded as { extract?: unknown } | null)?.extract;
   if (typeof extract !== 'function') throw new Error(`${name} does not export extract(config), so it is not a dbtour source`);
-  const { run, connectionString, readerState, readerStatements, createReader } = loaded as Partial<Record<string, unknown>>;
+  const { run, connectionString, readerState, readerStatements, createReader, readerRights } = loaded as Partial<Record<string, unknown>>;
   const found: Source = { extract: extract as Extract };
   if (typeof run === 'function') found.run = run as Run;
-  if ([connectionString, readerState, readerStatements, createReader].every((f) => typeof f === 'function')) {
-    found.setup = { connectionString, readerState, readerStatements, createReader } as Setup;
+  if ([connectionString, readerState, readerStatements, createReader, readerRights].every((f) => typeof f === 'function')) {
+    found.setup = { connectionString, readerState, readerStatements, createReader, readerRights } as Setup;
   }
   return found;
 }

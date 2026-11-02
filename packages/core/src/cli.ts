@@ -26,7 +26,7 @@ import {
   secretAccount,
   valueProblem,
   workspaceHome,
-  writeWorkspace,
+  updateWorkspace,
   type SecretStore,
   type WorkspaceDatabase,
 } from './workspace.ts';
@@ -542,7 +542,6 @@ async function addDatabase(io: Io, name: string, options: Omit<AddOptions, 'pass
   if (problem) throw new Error(`${problem}, then run it again`);
   if (options.signIn !== 'az' && options.signIn !== 'login') throw new Error(`--sign-in is az or login, not ${options.signIn}`);
   const home = homeOf(io);
-  const workspace = readWorkspace(home);
   const entry: WorkspaceDatabase = { name, type: options.type, server: options.server!, database: options.database ?? name, signIn: options.signIn };
   if (entry.signIn === 'login') {
     const userProblem = valueProblem('login', options.user);
@@ -561,7 +560,11 @@ async function addDatabase(io: Io, name: string, options: Omit<AddOptions, 'pass
     const az = entry.signIn === 'az' ? ' (with az, run az login in a terminal if it is signed out)' : '';
     throw new Error(`${name} did not answer: ${error instanceof Error ? error.message : String(error)} Check the server, the database and the sign-in${az}; nothing was saved`, { cause: error });
   }
-  writeWorkspace(home, { databases: [...workspace.databases, entry] });
+  // Checked again as it is saved: another dbtour may have set up this name while the database was asked.
+  updateWorkspace(home, (workspace) => {
+    if (workspace.databases.some((d) => d.name === name)) throw new Error(`${name} was set up by another dbtour meanwhile: pick another name, or dbtour remove ${name} first`);
+    return { databases: [...workspace.databases, entry] };
+  });
   return { entry, exists: state.exists };
 }
 
@@ -604,14 +607,15 @@ async function useReader(io: Io, name: string, user: string, password: string): 
   const problem = valueProblem('login', user);
   if (problem) throw new Error(problem);
   const home = homeOf(io);
-  const workspace = readWorkspace(home);
-  const entry = pickDatabase(workspace, name);
+  const entry = pickDatabase(readWorkspace(home), name);
   const { source, setup } = await setupOf(io, entry);
   const connection = setup.connectionString({ server: entry.server, database: entry.database, signIn: 'login', user, password });
   if (!source.run) throw missing(`${sourceModuleName({ type: entry.type, name })} cannot run queries: update it to this version of dbtour`);
-  await source.run({ type: entry.type, name, connection }, 'SELECT 1 AS signedIn', { limit: 1, timeoutMs: defaultTimeoutMs });
+  // Signed in as it, it says what it can do: a login that works is not yet one that only reads.
+  const rights = await setup.readerRights(connection);
+  if (rights.length) throw new Error(`${user} can do more than read (${rights.join(', ')}): use a login with db_datareader alone, or --create to have dbtour make one`);
   await (await secretsOf(io)).set(secretAccount(name, 'reader'), password);
-  writeWorkspace(home, { databases: workspace.databases.map((d) => (d.name === name ? { ...d, reader: user } : d)) });
+  updateWorkspace(home, (w) => ({ databases: w.databases.map((d) => (d.name === name ? { ...d, reader: user } : d)) }));
 }
 
 interface ReaderPlan {
@@ -638,6 +642,8 @@ async function planReader(io: Io, name: string): Promise<ReaderPlan> {
   const state = await setup.readerState(admin, readerLogin);
   const more = state.roles.filter((r) => r !== 'db_datareader' && r !== 'public');
   if (more.length) throw new Error(`${readerLogin} already has ${more.join(', ')}, so it could do more than read: remove those roles from it, or use --user with a login of your own`);
+  // A role is one way to write; a grant to the user itself, or a schema it owns, is another, and ALTER USER keeps both.
+  if (state.grants.length) throw new Error(`${readerLogin} has ${state.grants.join(', ')}, so it could do more than read: revoke it, or use --user with a login of your own`);
   const changes = `${entry.database} on ${entry.server}, signed in ${entry.signIn === 'az' ? 'with az' : `as ${entry.user}`}`;
   return { name, entry, setup, admin, changes, statements: setup.readerStatements(readerLogin, state.exists), account: `dbtour · ${secretAccount(name, 'reader')}` };
 }
@@ -648,8 +654,7 @@ async function createReader(io: Io, { name, entry, setup, admin }: ReaderPlan): 
   const readerConn = setup.connectionString({ server: entry.server, database: entry.database, signIn: 'login', user: readerLogin, password });
   await setup.createReader(admin, readerLogin, password, readerConn);
   await (await secretsOf(io)).set(secretAccount(name, 'reader'), password);
-  const home = homeOf(io);
-  writeWorkspace(home, { databases: readWorkspace(home).databases.map((d) => (d.name === name ? { ...d, reader: readerLogin } : d)) });
+  updateWorkspace(homeOf(io), (w) => ({ databases: w.databases.map((d) => (d.name === name ? { ...d, reader: readerLogin } : d)) }));
 }
 
 async function read(io: Io, name: string | undefined): Promise<number> {
@@ -657,10 +662,8 @@ async function read(io: Io, name: string | undefined): Promise<number> {
   const extracted = await extract(project, '');
   if (extracted !== 0) return extracted;
   const rendered = await render(project);
-  const home = homeOf(io);
-  const workspace = readWorkspace(home);
   const at = new Date().toISOString();
-  writeWorkspace(home, { databases: workspace.databases.map((d) => (d.name === project.config.sources[0].name ? { ...d, readAt: at } : d)) });
+  updateWorkspace(homeOf(io), (w) => ({ databases: w.databases.map((d) => (d.name === project.config.sources[0].name ? { ...d, readAt: at } : d)) }));
   return rendered;
 }
 
@@ -684,7 +687,7 @@ async function remove(io: Io, name: string | undefined): Promise<number> {
   const secrets = await secretsOf(io);
   await secrets.remove(secretAccount(name, 'login'));
   await secrets.remove(secretAccount(name, 'reader'));
-  writeWorkspace(home, { databases: workspace.databases.filter((d) => d.name !== name) });
+  updateWorkspace(home, (w) => ({ databases: w.databases.filter((d) => d.name !== name) }));
   io.log(`Removed ${name} and its passwords. Its folder, with any notes, stays at ${join(home, folderOf(name))}.`);
   if (entry.reader) io.log(`The reader is still in the database: to drop it, run DROP USER [${entry.reader.replace(/]/g, ']]')}]; in ${entry.database} on ${entry.server}.`);
   return 0;
@@ -693,7 +696,7 @@ async function remove(io: Io, name: string | undefined): Promise<number> {
 /** What the home says of a database, from its settings and the model its last read wrote: never a secret. */
 function servedDatabase(home: string, entry: WorkspaceDatabase): ServedDatabase {
   const folder = join(home, folderOf(entry.name));
-  const served: ServedDatabase = { name: entry.name, driver: entry.type, server: entry.server, database: entry.database, reader: entry.reader !== undefined, read: existsSync(join(folder, 'index.html')) };
+  const served: ServedDatabase = { name: entry.name, driver: entry.type, server: entry.server, database: entry.database, reader: entry.reader !== undefined, read: entry.readAt !== undefined && existsSync(join(folder, 'index.html')) };
   if (entry.readAt) served.readAt = entry.readAt;
   try {
     const model = JSON.parse(readFileSync(join(folder, modelFile), 'utf8')) as Model;

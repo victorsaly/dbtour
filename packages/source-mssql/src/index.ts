@@ -5,16 +5,17 @@ import { readFileSync } from 'node:fs';
 import sql from 'mssql';
 import { maxResultBytes, type Database, type QueryResult, type RunOptions, type SourceConfig } from 'dbtour';
 import { mapRecordsets, RowCollector, toRecordsets } from './map.ts';
-import { bracket, extraRoles, readerStatements } from './setup.ts';
+import { extraRoles, grantsQuery, readerStatements, rightsQuery, writeRights } from './setup.ts';
 
 export { mapRecordsets, RowCollector, sizeOf, toRecordsets, formatType } from './map.ts';
 export { connectionString, readerStatements } from './setup.ts';
 
 /**
- * Whether `user` is already a user of the database the admin connection is in, and its roles: what setup
- * shows before it creates the reader, and how it refuses a login that could do more than read.
+ * Whether `user` is already a user of the database the admin connection is in, its roles, and what it was granted
+ * or owns that a reader may not have: what setup shows before it creates the reader, and how it refuses a user
+ * that could do more than read.
  */
-export async function readerState(admin: string, user: string): Promise<{ exists: boolean; roles: string[] }> {
+export async function readerState(admin: string, user: string): Promise<{ exists: boolean; roles: string[]; grants: string[] }> {
   const pool = await new sql.ConnectionPool(admin).connect();
   try {
     const roles = await pool.request().input('user', sql.NVarChar, user).query(
@@ -23,7 +24,12 @@ export async function readerState(admin: string, user: string): Promise<{ exists
        WHERE m.member_principal_id = DATABASE_PRINCIPAL_ID(@user)`,
     );
     const id = await pool.request().input('user', sql.NVarChar, user).query('SELECT DATABASE_PRINCIPAL_ID(@user) AS id');
-    return { exists: id.recordset[0].id !== null, roles: roles.recordset.map((r: { name: string }) => r.name) };
+    const grants = await pool.request().input('user', sql.NVarChar, user).query(grantsQuery);
+    return {
+      exists: id.recordset[0].id !== null,
+      roles: roles.recordset.map((r: { name: string }) => r.name),
+      grants: writeRights(grants.recordset.map((r: { name: string }) => r.name)),
+    };
   } finally {
     await pool.close();
   }
@@ -39,19 +45,27 @@ export async function readerState(admin: string, user: string): Promise<{ exists
 export async function createReader(admin: string, user: string, password: string, readerConnection: string): Promise<void> {
   if (!/^[A-Za-z0-9-]{20,}$/.test(password)) throw new Error('The reader\'s password must be one dbtour made: run it again');
   const state = await readerState(admin, user);
-  const more = extraRoles(state.roles);
-  if (more.length) throw new Error(`${user} already has ${more.join(', ')}, so it could do more than read: pick another reader name, or remove those roles, then run it again`);
+  const more = [...extraRoles(state.roles), ...state.grants];
+  if (more.length) throw new Error(`${user} already has ${more.join(', ')}, so it could do more than read: pick another reader name, or remove those, then run it again`);
   const pool = await new sql.ConnectionPool(admin).connect();
   try {
     for (const statement of readerStatements(user, state.exists, password)) await pool.request().batch(statement);
   } finally {
     await pool.close();
   }
-  const reader = await new sql.ConnectionPool(readerConnection).connect();
+  // Signed in as the reader, it is asked once more what it can do: what the admin saw is not all a login can hold.
+  const rights = await readerRights(readerConnection);
+  if (rights.length) throw new Error(`${user} signs in, but can do more than read (${rights.join(', ')}): remove those from it; dbtour has not kept it as the reader`);
+}
+
+/** Signed in with `readerConnection`: what that login can do beyond reading, from any role, grant or ownership. */
+export async function readerRights(readerConnection: string): Promise<string[]> {
+  const pool = await new sql.ConnectionPool(readerConnection).connect();
   try {
-    await reader.request().query(`SELECT 1 AS signedIn /* ${bracket(user)} */`);
+    const result = await pool.request().query(rightsQuery);
+    return writeRights(result.recordset.map((r: { name: string }) => r.name));
   } finally {
-    await reader.close();
+    await pool.close();
   }
 }
 
