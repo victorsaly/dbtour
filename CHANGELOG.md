@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.10.1 (unreleased)
+## 0.10.2 (unreleased)
+
+- Tab after `*` over a CTE or a subquery no longer writes a protected column the editor could not see
+  through, from the review of 0.10.1. A protected column that a later UNION branch puts at a place the
+  first query leaves unnamed stays protected under the names given after the CTE's own. A CTE that reads
+  from one whose columns are not sure is not sure either. A column in parentheses, `(Status)`, is still that
+  column. `VALUES (…)` with names after its alias is never written out, as what each column reads is not
+  traced.
+- GROUP BY written out lists what GROUPING and GROUPING_ID read whole (`YEAR(CreatedAt)`), not the columns
+  inside it, which SQL Server would refuse.
+
+## 0.10.1 (2 November 2026)
 
 - The SQL editor's autocomplete knows a CTE's and a subquery's columns: the names its select list gives them
   (an alias, written as a name or a string, or the column's own name), the names after the CTE's own or the

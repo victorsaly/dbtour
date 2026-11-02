@@ -737,13 +737,14 @@ function ctesAt(scopes: Cte[], pos: number): Map<string, Cte> {
 
 /** A CTE's columns: the names its select list gives, or those after its own name, which rename them in turn. */
 function cteColumns(state: EditorState, cte: Cte, index: Map<string, Known>): DerivedColumn[] {
-  return renamed(outputsOf(state, cte.body, index, 'CTE').columns, cte.columns, 'CTE');
+  return renamed(outputsOf(state, cte.body, index, 'CTE'), cte.columns, 'CTE');
 }
 
 /** A query's columns by place, as the names given after a CTE's name or a subquery's alias rename them, or by their own. */
-function renamed(read: (DerivedColumn | undefined)[], names: string[] | undefined, kind: 'CTE' | 'subquery'): DerivedColumn[] {
-  if (!names) return read.filter((c) => c !== undefined);
-  return names.map((label, i) => ({ ...(read[i] ?? { type: 'property', detail: `${kind} column` }), label }));
+function renamed(read: Outputs, names: string[] | undefined, kind: 'CTE' | 'subquery'): DerivedColumn[] {
+  if (!names) return read.columns.filter((c) => c !== undefined);
+  // A place the first query leaves unnamed is still protected when a later branch passes on a protected column there.
+  return names.map((label, i) => ({ ...(read.columns[i] ?? { type: 'property', detail: `${kind} column` }), label, ...(read.protectedAt.has(i) ? { protected: true } : {}) }));
 }
 
 /**
@@ -762,8 +763,10 @@ function derivedOf(state: EditorState, item: FromItem, index: Map<string, Known>
   }
   if (item.body) {
     const read = outputsOf(state, item.body, index, 'subquery');
-    const children = renamed(read.columns, item.columns, 'subquery');
-    return { ref: `subquery:${item.name.toLowerCase()}`, suggestions: { self: { label: item.name, type: 'type', detail: 'subquery' }, children }, derived: true, complete: !read.unsure && (Boolean(item.columns) || !read.unnamed) };
+    const children = renamed(read, item.columns, 'subquery');
+    // VALUES (…) has columns too, named after its alias, but what each reads is not traced: never written out.
+    const complete = isSubquery(state, item.body) && !read.unsure && (Boolean(item.columns) || !read.unnamed);
+    return { ref: `subquery:${item.name.toLowerCase()}`, suggestions: { self: { label: item.name, type: 'type', detail: 'subquery' }, children }, derived: true, complete };
   }
   return undefined;
 }
@@ -782,18 +785,20 @@ function outputsOf(state: EditorState, body: Node, index: Map<string, Known>, ki
   const known = memoOf(state);
   if (known.has(key)) return known.get(key) as Outputs;
   // While it is read, a query that reads itself (a CTE's own name in its FROM) finds nothing sure there.
-  known.set(key, { columns: [], unnamed: false, unsure: true });
+  known.set(key, { columns: [], protectedAt: new Set(), unnamed: false, unsure: true });
   const { segments } = queryAround(state, body, body.from, index);
   const branches = segments.map((segment) => branchOutputs(state, queryAround(state, body, segment[0]?.from ?? body.from, index), index, kind));
-  const [first, ...rest] = branches;
-  const columns = first.columns.map((c, i) => (c && !c.protected && rest.some((b) => b.columns[i]?.protected) ? { ...c, protected: true } : c));
-  const outputs: Outputs = { columns, unnamed: first.unnamed, unsure: branches.some((b) => b.unsure) };
+  const protectedAt = new Set(branches.flatMap((b) => [...b.protectedAt]));
+  const columns = branches[0].columns.map((c, i) => (c && protectedAt.has(i) ? { ...c, protected: true } : c));
+  const outputs: Outputs = { columns, protectedAt, unnamed: branches[0].unnamed, unsure: branches.some((b) => b.unsure) };
   known.set(key, outputs);
   return outputs;
 }
 
 interface Outputs {
   columns: (DerivedColumn | undefined)[];
+  /** The places that hold a protected column, named or not. */
+  protectedAt: Set<number>;
   unnamed: boolean;
   unsure: boolean;
 }
@@ -816,37 +821,46 @@ function branchOutputs(state: EditorState, { segment, items }: { segment: Node[]
     return columnsOf(item).filter((c) => !hidden.has(c.label));
   };
   const named = (name: string) => items.find((item) => item.name.toLowerCase() === name.toLowerCase());
+  let unsure = false;
   const sourceOf = (path: string[]): DerivedColumn | undefined => {
     const last = path[path.length - 1].toLowerCase();
     const from = path.length > 1 ? [named(path[path.length - 2])].filter((i) => i !== undefined) : items;
     for (const item of from) {
       const found = columnsOf(item).find((c) => c.label.toLowerCase() === last);
-      if (found) return found;
+      if (!found) continue;
+      // Read from a CTE or a subquery that is not sure itself: neither is this.
+      if (!item.known && !derivedOf(state, item, index)?.complete) unsure = true;
+      return found;
     }
     return undefined;
   };
   const columns: (DerivedColumn | undefined)[] = [];
+  // The places that hold a protected column, an unnamed one too.
+  const protectedAt = new Set<number>();
+  const add = (column: DerivedColumn | undefined, isProtected = column?.protected) => {
+    if (isProtected) protectedAt.add(columns.length);
+    columns.push(column);
+  };
   let unnamed = false;
-  let unsure = false;
   for (const item of selectItemsOf(state, segment)) {
     if (item.star) {
       const covered = item.star.qualifier === undefined ? items : [named(item.star.qualifier)].filter((i) => i !== undefined);
       if (!covered.length || covered.some((from) => !from.known && !derivedOf(state, from, index)?.complete)) unsure = true;
-      for (const from of covered) columns.push(...starOf(from));
+      for (const from of covered) for (const column of starOf(from)) add(column);
       continue;
     }
     const source = item.path ? sourceOf(item.path) : undefined;
     if (item.path && !source) unsure = true;
     if (!item.name) {
       unnamed = true;
-      columns.push(undefined);
+      add(undefined, source?.protected);
       continue;
     }
     // A column read as it is, renamed or not, is its source's: what it is, and protected when that is. One
     // computed from it is a new column.
-    columns.push({ ...(source ?? { type: 'property', detail: `${kind} column` }), label: item.name });
+    add({ ...(source ?? { type: 'property', detail: `${kind} column` }), label: item.name });
   }
-  return { columns, unnamed, unsure };
+  return { columns, protectedAt, unnamed, unsure };
 }
 
 /** A box on the screen, as CodeMirror measures the list, the option, its description and the room there is. */
@@ -988,7 +1002,12 @@ function selectItems(state: EditorState, segment: Node[]): SelectItem[] {
     else if ((isSimpleName(group[0]) || group[0]?.name === 'String') && group[lead + 1]?.name === 'Operator' && text(group[lead + 1]) === '=') [tokens, alias] = [group.slice(lead + 2), [0, lead]];
     // A name after COLLATE is the collation's, not an alias.
     else if (tail > 0 && (isSimpleName(group[last]) || group[last]?.name === 'String') && group[tail - 1]?.name !== 'Operator' && upper(group[tail - 1]) !== 'COLLATE') [tokens, alias] = [group.slice(0, tail), [tail, last]];
-    const only = tokens.length === 1 ? tokens[0] : undefined;
+    // A column in parentheses, (Status), is still that column.
+    let only = tokens.length === 1 ? tokens[0] : undefined;
+    while (only?.name === 'Parens') {
+      const inner = tokensOf(only);
+      only = inner.length === 1 ? inner[0] : undefined;
+    }
     const path = only && isName(only) ? pathOf(only, text) : undefined;
     const column = path && path[path.length - 1] ? path : undefined;
     // CodeMirror reads alias.* as a name ending in a dot, then *.
@@ -1022,7 +1041,17 @@ function selectItems(state: EditorState, segment: Node[]): SelectItem[] {
         }
         if (n.name === 'Keyword' && upper(node) === 'OVER') window = true;
         else if (next?.name === 'Parens' && upper(next.nextSibling) === 'OVER') return;
-        else if (groupingFunctions.has(upper(node)) && next?.name === 'Parens') aggregate = true;
+        else if (groupingFunctions.has(upper(node)) && next?.name === 'Parens') {
+          // Each argument is grouped by as written, YEAR(CreatedAt) whole; what it reads is not listed again.
+          aggregate = true;
+          within.push(next);
+          const args: Node[][] = [[]];
+          for (const t of tokensOf(next)) {
+            if (isComma(t, text)) args.push([]);
+            else args[args.length - 1].push(t);
+          }
+          for (const arg of args) if (arg.length) outside.push(state.sliceDoc(arg[0].from, arg[arg.length - 1].to));
+        }
         else if (aggregates.has(upper(node)) && next?.name === 'Parens') {
           aggregate = true;
           within.push(next);
