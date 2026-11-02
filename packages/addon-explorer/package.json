@@ -1,7 +1,7 @@
 {
   "name": "dbtour-addon-explorer",
   "version": "0.9.4",
-  "description": "The dbtour page: search, table view and neighbourhood diagrams in one HTML file that opens without a server.",
+  "description": "The dbtour page: your schema as one HTML file that opens without a server, with search, an entry per table, relation maps and a SQL editor that checks names against the model.",
   "type": "module",
   "license": "MIT",
   "author": "Victor Saly",
@@ -31,10 +31,11 @@
   "keywords": [
     "dbtour",
     "database",
+    "schema",
     "documentation",
     "erd",
-    "schema",
-    "explorer"
+    "data-dictionary",
+    "sql-editor"
   ],
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.4",
