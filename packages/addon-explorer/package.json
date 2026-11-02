@@ -4,7 +4,14 @@
   "description": "The dbtour page: your schema as one HTML file that opens without a server, with search, an entry per table, relation maps and a SQL editor that checks names against the model.",
   "type": "module",
   "license": "MIT",
-  "author": "Victor Saly",
+  "author": {
+    "name": "Victor Saly",
+    "url": "https://github.com/victorsaly"
+  },
+  "homepage": "https://github.com/victorsaly/dbtour#readme",
+  "bugs": {
+    "url": "https://github.com/victorsaly/dbtour/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/victorsaly/dbtour.git",
@@ -37,6 +44,9 @@
     "data-dictionary",
     "sql-editor"
   ],
+  "peerDependencies": {
+    "dbtour": "0.9.4"
+  },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.4",
     "@codemirror/commands": "^6.11.1",

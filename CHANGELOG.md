@@ -12,6 +12,10 @@
   pages were blank), and the descriptions say what dbtour does, schema docs from the catalogue as Markdown, a
   page and an MCP server, where they promised an API source that does not exist yet. Keywords a search would
   use: sql-server, mcp, data-dictionary.
+- Each package's npm page links to the issues and the author, and its tarball carries the MIT licence (none
+  did: npm packs a licence only from the package's own folder). The SQL Server source and the page name the
+  core they were built with as a peer, so npm installs it or says the versions differ; the source imported
+  it without declaring it.
 
 ## 0.9.3 (2 November 2026)
 
