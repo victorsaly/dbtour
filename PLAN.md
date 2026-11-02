@@ -125,9 +125,16 @@ sources:
   table over the limits: a lookup has a few hundred rows and is narrow, so the limits are in rows and in
   bytes, named and explained where they are defined. The stats' count is an estimate, so the reader counts
   again before reading.
+- **Refused when the protection could not be read.** A missing label proves nothing when the login could not
+  read labels: the database's `unread` then names what is missing (`VIEW ANY SENSITIVITY CLASSIFICATION`),
+  and no table of that database has its values read until the extract's login can see what protects them.
+  The refusal says which permission to grant.
 - **Kept beside the model, not in it**: `values.json` in the `out` folder, with the moment each table was
-  read. `schema.json` still holds no row, and an owner who wants the values on their machine but not in the
-  repository or the deployed page leaves that one file out.
+  read. `schema.json` still holds no row.
+- **Private means rendered without them.** The page is one self-contained file and the Markdown has the
+  values too, so leaving `values.json` out after a render would still publish the rows. `dbtour render
+  --without-values` writes the page and the Markdown from the model alone, for a commit or a deploy, and
+  the values stay on the owner's machine, on the served page and over MCP.
 - **Shown as data, with its date**: on the lookup's entry as a table of its rows, marked as read from the
   database on that day, and on each column that references it, where a value is shown with its meaning.
   Search finds a value and leads to its table. The Markdown has them on the lookup's page.
@@ -269,8 +276,9 @@ shop window, and nothing goes on the page before it is released.
     the kind of a table; then `dbtour script` for SQL Server's extended properties, and `check` naming notes
     the database now repeats. The skill learns to fill the gaps and stage what it finds.
 13. **Values the owner chooses to keep**: `values` on a source, read through its reader into `values.json`,
-    refused for protected or oversized tables; the rows on the lookup's entry and beside each column that
-    references it, with the day they were read; search over them; `table` over MCP including them.
+    refused for protected or oversized tables and wherever the protection could not be read; the rows on
+    the lookup's entry and beside each column that references it, with the day they were read; search over
+    them; `table` over MCP including them; `render --without-values` for what is committed or deployed.
 
 ## Borrowed from
 
