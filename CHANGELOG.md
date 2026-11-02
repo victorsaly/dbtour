@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.4 (unreleased)
+## 0.9.5 (unreleased)
 
 - The SQL editor's autocomplete knows a CTE's and a subquery's columns: the names its select list gives them
   (an alias, written as a name or a string, or the column's own name), the names after the CTE's own or the
@@ -24,6 +24,15 @@
   wants at the caret, and where it comes in the list. It went from first in 67% of them and in the first
   three in 70%, to 98% and 100%; the test fails if a change lowers either. The one case not first is
   `FROM Ord|`, where OrderLines comes before Orders, as CodeMirror orders names that match as well.
+
+## 0.9.4 (2 November 2026)
+
+- A new logo, from the owner's drawing. The mark is bolder and drawn with a round pen: the database cylinder
+  with a signal through it, put on the 24 grid with one ellipse for its top and its bottom. The wordmark is
+  outlines, "db" bold and "tour" medium and muted, so it looks the same everywhere and needs no font:
+  `brand/logo.svg` is 4 KB, not 80. The mark stands with its corners on the baseline and its round bottom
+  just under it, as the bowls of the letters do. The rail, the favicon, the README, the social image and the
+  plugin's icon all draw it from `mark.ts`.
 
 ## 0.9.3 (2 November 2026)
 

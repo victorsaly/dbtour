@@ -17,7 +17,7 @@ import { sqlTokens } from '../src/page/sql.ts';
 import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, parseServed, railStatus, statusOf } from '../src/page/served.ts';
 import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
-import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
+import { logoSvg, markSvg, markDataUri, markPulse, wordmarkDb, wordmarkTour } from '../src/mark.ts';
 
 import { scope } from 'dbtour/model';
 import { twoDatabases } from '../../core/test/fixtures/two.ts';
@@ -259,10 +259,24 @@ test('the mark is one geometry at every size and a favicon-safe data URI', () =>
   const big = markSvg(256, '#fff', 1);
   assert.match(small, /width="16" height="16" viewBox="0 0 24 24"/);
   assert.match(big, /stroke="#fff" stroke-width="1"/);
+  assert.match(small, /stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/, 'drawn with a round pen');
   assert.ok(small.includes(markPulse) && big.includes(markPulse));
   assert.match(small, /<ellipse /, 'the top of the cylinder');
   assert.match(markDataUri(), /^data:image\/svg\+xml,%3Csvg/);
   assert.doesNotMatch(markDataUri(), /[<>"]/);
+});
+
+test('the logo is the mark and the outlined wordmark, needing no font', () => {
+  const logo = logoSvg('#111', '#777');
+  assert.match(logo, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="\d+" height="\d+" viewBox="0 0 [\d.]+ [\d.]+"/);
+  assert.ok(logo.includes(markPulse), 'the same mark');
+  assert.ok(logo.includes(`<path d="${wordmarkDb}" fill="#111"/>`), '"db" at full ink');
+  assert.ok(logo.includes(`<path d="${wordmarkTour}" fill="#777"/>`), '"tour" muted');
+  assert.doesNotMatch(logo, /font|<text|<style/);
+  for (const word of [wordmarkDb, wordmarkTour]) {
+    assert.match(word, /^M[\d.]+ [\d.]+/);
+    assert.doesNotMatch(word, /[a-z]|\d\.\d{3}/, 'absolute commands, two decimals at most');
+  }
 });
 
 test('the prompt frames the tables and includes each one as Markdown', () => {
