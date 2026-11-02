@@ -627,8 +627,8 @@ test('with nothing set up, the home walks through the five steps to the database
     if (step === 'read') {
       mkdirSync(join(root, name), { recursive: true });
       writeFileSync(join(root, name, 'index.html'), render(model)['index.html']);
-      Object.assign(databases[0], { read: true, tables: 6 });
-      return { name, tables: 6, lines: ['Wrote 9 files to databases/Shop.'] };
+      Object.assign(databases.find((d) => d.name === name)!, { read: true, tables: 6 });
+      return { name, tables: 6, log: ['Wrote 9 files to databases/Shop.'] };
     }
     throw new Error(`no step ${step}`);
   };
@@ -655,10 +655,17 @@ test('with nothing set up, the home walks through the five steps to the database
     await page.getByRole('button', { name: 'Test and save' }).click();
     await page.locator('.setup-step.is-current', { hasText: 'CREATE USER [dbtour_reader]' }).waitFor();
     assert.equal(await current(), 'Reader');
+    assert.match((await page.locator('.side-status').getAttribute('class')) ?? '', /is-idle/);
     await page.getByRole('button', { name: 'Run these on Shop' }).click();
+    await page.locator('.side-status.is-live').waitFor();
 
     await page.locator('.setup-step.is-current .setup-title', { hasText: 'Read' }).waitFor();
     await page.getByRole('button', { name: 'Read Shop' }).click();
+    await page.locator('.setup-log li', { hasText: 'Wrote 9 files to databases/Shop.' }).waitFor();
+    const logged = await page.locator('.setup-log li').allTextContents();
+    assert.match(logged[0], /^\d\d:\d\d:\d\d.*Asking dbtour serve/);
+    assert.ok(logged.some((l) => /Signed in to az as ann@example\.com/.test(l)));
+    assert.ok(logged.some((l) => /Signing in to Shop on shop\.example · \d+\sms/.test(l)), 'a step ends with how long it took');
     await page.getByRole('link', { name: 'Open Shop' }).click();
     await page.locator('.switcher').waitFor();
     assert.equal(new URL(page.url()).pathname, '/db/Shop/');
@@ -667,6 +674,12 @@ test('with nothing set up, the home walks through the five steps to the database
     // With a database set up, the home lists it and offers another.
     await page.goto(`${server.url}/`);
     await page.locator('h1', { hasText: 'Databases' }).waitFor();
+    // A database the setup saved but did not read is read from the home.
+    databases.push({ name: 'Logs', driver: 'mssql', server: 'logs.example', database: 'Logs', reader: false, read: false });
+    await page.reload();
+    await page.locator('.database-entry', { hasText: 'Logs' }).getByRole('button', { name: 'Read it' }).click();
+    await page.waitForURL(/\/db\/Logs\/$/);
+    await page.goto(`${server.url}/`);
     await page.locator('main').getByRole('link', { name: 'Add a database' }).click();
     await page.locator('h1', { hasText: 'Add a database' }).waitFor();
     assert.deepEqual(errors, []);

@@ -68,6 +68,17 @@ export function stepSummary(step: number, form: SetupForm, done: { reader?: stri
   }
 }
 
+/** A log line's time: the clock on this machine, to the second. */
+export function clock(at: Date): string {
+  return at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+}
+
+/** How long a step took: milliseconds under a second, then seconds to a tenth. */
+export function took(ms: number): string {
+  // A no-break space, so a narrow log never leaves the unit on a line of its own.
+  return ms < 1000 ? `${Math.round(ms)}\u00a0ms` : `${(ms / 1000).toFixed(1)}\u00a0s`;
+}
+
 /** The sign-in step's line about az, and its dot: green when signed in, red when signed out, hollow without az. */
 export function azLine(az: AzState | undefined): { tone: Tone; text: string } {
   if (az === undefined) return { tone: 'idle', text: 'Asking az who is signed in…' };

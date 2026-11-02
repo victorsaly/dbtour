@@ -1842,6 +1842,17 @@ table.columns tr.is-pointed td {
   font-size: 11px;
   color: var(--ink-2);
 }
+.database-read {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+.database-read .setup-error {
+  margin: 0;
+}
 .databases-hint {
   margin-top: 16px;
   padding: 0;
@@ -2007,12 +2018,39 @@ table.columns tr.is-pointed td {
   margin: 0;
   font-size: 14px;
 }
-.setup-lines {
-  margin: 6px 0 0;
+/* The log beside the steps: each line its time, its dot (grey doing, green done, red refused) and what. */
+.setup-log ol {
+  margin: 0;
   padding: 0;
   list-style: none;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+.setup-log li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 6px 0;
+  border-bottom: var(--hair) solid var(--line);
+  font: 11px/1.5 var(--mono);
+}
+.setup-log li.is-detail {
+  padding-left: 14px;
+}
+.setup-log li .status::before {
+  margin-right: 0;
+}
+/* Under its time and dot, the whole width: a server's name breaks at its dots, not inside a word. */
+.setup-log-text {
+  grid-column: 1 / -1;
+  overflow-wrap: break-word;
+}
+.setup-log li.is-idle .setup-log-text {
   color: var(--ink-2);
-  font: 11px/1.6 var(--mono);
+}
+.setup-log li.is-failed .setup-log-text {
+  color: var(--ink);
 }
 @media (max-width: 800px) {
   .setup-head {
