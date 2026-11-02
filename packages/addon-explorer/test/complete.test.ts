@@ -342,3 +342,23 @@ test('GROUP BY written out has the columns an aggregating expression reads outsi
   assert.equal((await applies('SELECT CASE WHEN COUNT(*) > 1 THEN o.Status END FROM dbo.Orders o GROUP BY |'))[0], 'o.Status');
   assert.equal((await applies('SELECT Status, status, COUNT(*) FROM dbo.Orders GROUP BY |'))[0], 'Status', 'once');
 });
+
+test('in a self-join, each alias is ranked by its own columns in the select list', async () => {
+  const sql = 'SELECT b.Status, a.CustomerId FROM dbo.Orders a JOIN dbo.Orders b ON b.Id = a.Id ORDER BY ';
+  assert.equal((await applies(`${sql}b.|`, { explicit: true }))[0], 'Status');
+  assert.equal((await applies(`${sql}a.|`, { explicit: true }))[0], 'CustomerId');
+});
+
+test('a select list ends where its query\'s next clause or UNION begins, FROM or not', async () => {
+  assert.equal((await applies('SELECT 1 AS n ORDER BY |', { explicit: true }))[0], 'n');
+  assert.deepEqual(await applies('WITH r AS (SELECT 1 AS n UNION ALL SELECT 2) SELECT r.| FROM r', { explicit: true }), ['n']);
+  assert.equal((await applies("SELECT CustomerId, STRING_AGG(Status, ',') WITHIN GROUP (ORDER BY CreatedAt) AS s FROM dbo.Orders ORDER BY |", { explicit: true }))[0], 's', 'WITHIN GROUP is the aggregate\'s, not a clause');
+});
+
+test('GROUP BY written out: a subquery\'s own aggregates and tables are its own; WITHIN GROUP is the aggregate\'s; a window\'s inputs are grouped', async () => {
+  assert.equal((await applies('SELECT o.Status, (SELECT COUNT(*) FROM dbo.Customers) AS n FROM dbo.Orders o GROUP BY |'))[0], undefined, 'the outer query does not aggregate');
+  assert.equal((await applies('SELECT o.Status, (SELECT MAX(c.Email) FROM dbo.Customers c WHERE c.Id = o.CustomerId) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |'))[0], 'o.Status, o.CustomerId', 'a correlated subquery\'s outer column is grouped');
+  assert.equal((await applies("SELECT CustomerId, STRING_AGG(Status, ',') WITHIN GROUP (ORDER BY CreatedAt) FROM dbo.Orders GROUP BY |"))[0], 'CustomerId');
+  assert.equal((await applies('SELECT Status, COUNT(*), ROW_NUMBER() OVER (ORDER BY CustomerId) FROM dbo.Orders GROUP BY |'))[0], 'Status, CustomerId');
+  assert.equal((await applies('SELECT Status, SUM(SUM(Total)) OVER (PARTITION BY Status) FROM dbo.Orders GROUP BY |'))[0], 'Status', 'an aggregate inside a window is still one');
+});

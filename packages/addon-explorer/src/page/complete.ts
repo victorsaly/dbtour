@@ -54,6 +54,8 @@ const aggregates = new Set(
   ('AVG CHECKSUM_AGG COUNT COUNT_BIG GROUPING GROUPING_ID MAX MIN STDEV STDEVP STRING_AGG SUM VAR VARP ' +
     'APPROX_COUNT_DISTINCT APPROX_PERCENTILE_CONT APPROX_PERCENTILE_DISC').split(' '),
 );
+// Where a select list ends: its query's next clause, or a UNION, with FROM or without.
+const selectEnds = new Set(['FROM', 'INTO', 'WHERE', 'GROUP', 'HAVING', 'ORDER', 'UNION', 'EXCEPT', 'INTERSECT', 'OPTION', 'FOR']);
 // An ORDER BY alias says what it names, cut to this many characters: the list's descriptions are one line.
 const detailLongest = 40;
 
@@ -279,7 +281,9 @@ function columns(context: CompletionContext, reading: Reading, model: Model): Co
   }
   if (reading.dotted) {
     const known = reading.dotted.known;
-    const table = reading.scope.find((s) => s.depth === 0 && s.known === known);
+    // The alias written before the dot: in a self-join two aliases name the same table.
+    const written = reading.qualifier?.length === 1 ? reading.qualifier[0].toLowerCase() : undefined;
+    const table = reading.scope.find((s) => s.depth === 0 && s.known === known && (written === undefined || s.name.toLowerCase() === written));
     const options = known.suggestions.children.map((c, i) => leading(column(c, i, ownColumnBoost, '', 0, known), reading.by, table, c.label));
     return { from: reading.dotted.from, options, validFor: /^\w*$/ };
   }
@@ -873,10 +877,14 @@ function selectItems(state: EditorState, segment: Node[]): SelectItem[] {
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
   const start = segment.findIndex((t) => t.name === 'Keyword' && text(t).toUpperCase() === 'SELECT');
   if (start < 0) return [];
-  const end = segment.findIndex((t, i) => i > start && t.name === 'Keyword' && text(t).toUpperCase() === 'FROM');
+  const word = (t: Node | undefined) => (t?.name === 'Keyword' ? text(t).toUpperCase() : '');
+  const upper = (t: Node | null | undefined) => (t ? text(t).toUpperCase() : '');
+  // GROUP after WITHIN is an ordered aggregate's (STRING_AGG(…) WITHIN GROUP (ORDER BY …)), not the clause.
+  const end = segment.findIndex((t, i) => i > start && selectEnds.has(word(t)) && upper(segment[i - 1]) !== 'WITHIN');
+  // The tables the query names, for a subquery in the select list that reads them.
+  const outer = new Set(fromItems(segment, text, new Map()).map((item) => item.name.toLowerCase()));
   // The select list's items, split at its commas (a function's are inside its parentheses).
   // DISTINCT, ALL and TOP (n) [PERCENT] [WITH TIES] come before the first item, not in it.
-  const word = (t: Node | undefined) => (t?.name === 'Keyword' ? text(t).toUpperCase() : '');
   let first = start + 1;
   if (word(segment[first]) === 'DISTINCT' || word(segment[first]) === 'ALL') first++;
   if (word(segment[first]) === 'TOP') {
@@ -913,12 +921,16 @@ function selectItems(state: EditorState, segment: Node[]): SelectItem[] {
     const column = path && path[path.length - 1] ? path : undefined;
     // CodeMirror reads alias.* as a name ending in a dot, then *.
     const star = only && text(only) === '*' ? {} : tokens.length === 2 && tokens[0].name === 'CompositeIdentifier' && text(tokens[0]).trimEnd().endsWith('.') && text(tokens[1]) === '*' ? { qualifier: pathOf(tokens[0], text).pop() } : undefined;
-    // The columns it reads outside an aggregate's parentheses (a function's name is not one), and whether it
-    // aggregates, or is a window's (OVER), which GROUP BY does not list.
+    // The columns it reads outside an aggregate (a function's name is not one), and whether it aggregates, is
+    // a window's or holds a subquery: GROUP BY can list none of those whole, only the columns it reads outside.
+    // A window function reads its inputs after the rows are grouped, so they are grouped by; an aggregate's
+    // own, and those after its WITHIN GROUP, are not. A subquery's aggregates and tables are its own; a column
+    // of the outer query it reads is grouped by.
     const outside: string[] = [];
     const within: Node[] = [];
     let aggregate = false;
     let window = false;
+    let subquery = false;
     const from = tokens[0]?.from ?? 0;
     const to = tokens[tokens.length - 1]?.to ?? 0;
     treeOf(state).iterate({
@@ -926,13 +938,21 @@ function selectItems(state: EditorState, segment: Node[]): SelectItem[] {
       to,
       enter: (n) => {
         if (n.from < from || n.to > to) return;
-        const next = n.node.nextSibling;
-        const upper = state.sliceDoc(n.from, n.to).toUpperCase();
-        if (n.name === 'Keyword' && upper === 'OVER') window = true;
-        else if (aggregates.has(upper) && next?.name === 'Parens') {
+        const node = n.node;
+        const next = node.nextSibling;
+        if (n.name === 'Parens' && upper(children(node).find((c) => c.name !== '(')) === 'SELECT') {
+          subquery = true;
+          outside.push(...outerColumns(state, node, outer));
+          return false;
+        }
+        if (n.name === 'Keyword' && upper(node) === 'OVER') window = true;
+        else if (next?.name === 'Parens' && upper(next.nextSibling) === 'OVER') return;
+        else if (aggregates.has(upper(node)) && next?.name === 'Parens') {
           aggregate = true;
           within.push(next);
-        } else if (isName(n.node)) {
+          const ordered = next.nextSibling?.nextSibling?.nextSibling;
+          if (upper(next.nextSibling) === 'WITHIN' && upper(next.nextSibling?.nextSibling) === 'GROUP' && ordered?.name === 'Parens') within.push(ordered);
+        } else if (isName(node)) {
           if (next?.name !== 'Parens' && !within.some((p) => p.from <= n.from && n.to <= p.to)) outside.push(state.sliceDoc(n.from, n.to));
           // A dotted name's parts are not names of their own.
           return false;
@@ -945,12 +965,34 @@ function selectItems(state: EditorState, segment: Node[]): SelectItem[] {
       path: column,
       name: alias && group[alias[0]] ? aliasName(state.sliceDoc(group[alias[0]].from, group[alias[1]].to)) : column?.[column.length - 1],
       aliased: alias !== undefined,
-      aggregate: aggregate && !window,
-      groups: window || star ? [] : aggregate ? outside : outside.length ? [whole] : [],
+      aggregate,
+      groups: star ? [] : aggregate || window || subquery ? outside : outside.length ? [whole] : [],
       star,
       tokens,
     };
   });
+}
+
+/**
+ * The outer query's columns a subquery reads, as written there: `o.CustomerId` in `(SELECT … WHERE c.Id =
+ * o.CustomerId)`, where o is a table of the outer query and not one of the subquery's own.
+ */
+function outerColumns(state: EditorState, subquery: Node, outer: Set<string>): string[] {
+  const text = (n: Node) => state.sliceDoc(n.from, n.to);
+  const own = new Set(fromItems(tokensOf(subquery), text, new Map()).map((item) => item.name.toLowerCase()));
+  const out: string[] = [];
+  treeOf(state).iterate({
+    from: subquery.from,
+    to: subquery.to,
+    enter: (n) => {
+      if (n.from < subquery.from || n.to > subquery.to || n.name !== 'CompositeIdentifier') return;
+      const parts = pathOf(n.node, text);
+      const table = parts[0]?.toLowerCase();
+      if (parts.length === 2 && outer.has(table) && !own.has(table) && n.node.nextSibling?.name !== 'Parens') out.push(text(n.node));
+      return false;
+    },
+  });
+  return out;
 }
 
 /**

@@ -11,9 +11,11 @@
   itself has none. After FROM, a CTE that has the columns the select list names comes first, as a table does.
 - After `GROUP BY`, in a query that aggregates, the first suggestion writes out what its select list does
   not aggregate, as written there (`c.Email, o.Status`, `YEAR(CreatedAt)`), and the columns an aggregating
-  item reads outside its aggregate (`SUM(Total) + CustomerId`); a constant or a window function is not
-  listed. In GROUP BY and ORDER BY, the columns the select list names come first, in its order, after an
-  alias and a dot too, and not one the clause has already, qualified or not; in ORDER BY the names the select list gives (`SUM(Total) AS spent`) come
+  item reads outside its aggregate (`SUM(Total) + CustomerId`), outside an ordered aggregate's WITHIN GROUP,
+  as a window function's input, or as the outer column a subquery reads; a constant, a window function or a
+  subquery is not listed whole, and a subquery's own aggregate does not make its query aggregate. In GROUP BY and ORDER BY, the columns the select list names come first, in its order, after an
+  alias and a dot too (each alias of a self-join its own), and not one the clause has already, qualified or
+  not; in ORDER BY the names the select list gives (`SUM(Total) AS spent`) come
   before those, as it is the one clause that can read them.
 - A ranking bench holds the autocomplete to the reader: 54 half-written queries, each with what a reader
   wants at the caret, and where it comes in the list. It went from first in 67% of them and in the first
