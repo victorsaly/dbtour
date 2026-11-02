@@ -1,6 +1,24 @@
 # Changelog
 
-## 0.9.3 (unreleased)
+## 0.9.4 (unreleased)
+
+- The SQL editor's autocomplete knows a CTE's and a subquery's columns: the names its select list gives them
+  (an alias, or the column's own name), the names after the CTE's own when it lists them (`WITH r (a, b) AS`),
+  and for `*` or `alias.*` the columns of what it reads. After `r.` they are all that is offered; bare, they
+  come with the other tables' columns. One read as it is says what its source says (`int · primary key`); an
+  expression says it is a CTE or subquery column. A CTE read from another is followed; one that reads only
+  itself has none. After FROM, a CTE that has the columns the select list names comes first, as a table does.
+- After `GROUP BY`, in a query that aggregates, the first suggestion writes out what its select list does
+  not aggregate, as written there (`c.Email, o.Status`, `YEAR(CreatedAt)`); a constant or a window function
+  is not listed. In GROUP BY and ORDER BY, the columns the select list names come first, in its order, and
+  not one the clause has already; in ORDER BY the names the select list gives (`SUM(Total) AS spent`) come
+  before those, as it is the one clause that can read them.
+- A ranking bench holds the autocomplete to the reader: 54 half-written queries, each with what a reader
+  wants at the caret, and where it comes in the list. It went from first in 67% of them and in the first
+  three in 70%, to 98% and 100%; the test fails if a change lowers either. The one case not first is
+  `FROM Ord|`, where OrderLines comes before Orders, as CodeMirror orders names that match as well.
+
+## 0.9.3 (2 November 2026)
 
 - The SQL editor checks names against the model as you type, as SQL Server's completion add-ins do. A table
   after FROM or JOIN the model does not have, or a column a table it has does not (after its alias or name

@@ -83,8 +83,8 @@ const cases: Case[] = [
 
 // The share of cases whose suggestion comes first, and in the first three. Raise these when a change lifts the
 // score; a change that lowers them is a worse autocomplete, whatever its own case says.
-const firstFloor = 0.66;
-const topThreeFloor = 0.7;
+const firstFloor = 0.98;
+const topThreeFloor = 1;
 const topThree = 3;
 
 test('the suggestion a reader wants comes first, or near it', async (t) => {
