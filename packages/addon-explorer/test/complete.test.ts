@@ -316,3 +316,29 @@ test('in GROUP BY and ORDER BY, what the select list names comes first; in ORDER
   assert.equal((await applies('SELECT Status, CustomerId, COUNT(*) FROM dbo.Orders GROUP BY Status, |', { explicit: true }))[0], 'CustomerId', 'not one grouped by already');
   assert.ok(!(await applies('SELECT Email AS mail FROM dbo.Customers WHERE |', { explicit: true })).includes('mail'), 'nor WHERE');
 });
+
+test('a column the clause has, qualified or not, is not offered again first; after an alias and a dot, the select list still leads', async () => {
+  assert.equal((await applies('SELECT o.Status, o.CustomerId, COUNT(*) FROM dbo.Orders o GROUP BY Status, |', { explicit: true }))[0], 'CustomerId');
+  assert.equal((await applies('SELECT Status, CustomerId, COUNT(*) FROM dbo.Orders o GROUP BY o.Status, |', { explicit: true }))[0], 'CustomerId');
+  assert.deepEqual((await applies('SELECT o.Status, o.CustomerId FROM dbo.Orders o ORDER BY o.|', { explicit: true })).slice(0, 3), ['Status', 'CustomerId', 'Id']);
+  assert.equal((await applies('SELECT o.Status, o.CustomerId, COUNT(*) FROM dbo.Orders o GROUP BY o.Status, o.|', { explicit: true }))[0], 'CustomerId');
+});
+
+test('names given after a CTE or a subquery rename its columns by place, an unnamed one counted', async () => {
+  const listed = await suggest('WITH r (a, b) AS (SELECT 1, Id FROM dbo.Orders) SELECT r.| FROM r', { explicit: true });
+  assert.deepEqual(listed.map((s) => [s.apply, s.detail]), [['a', 'CTE column'], ['b', 'int · primary key']]);
+  assert.deepEqual(await applies('SELECT x.| FROM (SELECT Id, Email FROM dbo.Customers) AS x (customerId, mail)', { explicit: true }), ['customerId', 'mail']);
+});
+
+test('an alias written as a string is the name it spells', async () => {
+  assert.equal((await applies("SELECT Total AS 'order total' FROM dbo.Orders ORDER BY |", { explicit: true }))[0], '[order total]');
+  assert.equal((await applies("SELECT Total 'it''s' FROM dbo.Orders ORDER BY |", { explicit: true }))[0], "[it's]");
+  assert.equal((await applies("SELECT 'n' = COUNT(*) FROM dbo.Orders ORDER BY |", { explicit: true }))[0], 'n');
+  assert.deepEqual(await applies("WITH r AS (SELECT Id AS 'key' FROM dbo.Orders) SELECT r.| FROM r", { explicit: true }), ['[key]']);
+});
+
+test('GROUP BY written out has the columns an aggregating expression reads outside its aggregate', async () => {
+  assert.equal((await applies('SELECT Status, SUM(Total) + CustomerId AS adjusted FROM dbo.Orders GROUP BY |'))[0], 'Status, CustomerId');
+  assert.equal((await applies('SELECT CASE WHEN COUNT(*) > 1 THEN o.Status END FROM dbo.Orders o GROUP BY |'))[0], 'o.Status');
+  assert.equal((await applies('SELECT Status, status, COUNT(*) FROM dbo.Orders GROUP BY |'))[0], 'Status', 'once');
+});
