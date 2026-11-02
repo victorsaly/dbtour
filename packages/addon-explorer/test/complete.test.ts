@@ -183,7 +183,9 @@ test('a table that has its alias already is written without another', async () =
 
 test('Tab writes no * that would lose or expose columns', () => {
   const derived = 'FROM dbo.Products p CROSS JOIN (SELECT 1 AS Extra) x';
-  assert.equal(tab(`SELECT *| ${derived}`), null, 'Extra is not in the model: written out, it would be lost');
+  assert.equal(tab(`SELECT *| ${derived}`), `SELECT p.Id, p.Sku, p.Price, x.Extra ${derived}`, 'Extra is named in the subquery\'s select list');
+  const unknown = 'FROM dbo.Products p CROSS JOIN (SELECT * FROM dbo.Nope) x';
+  assert.equal(tab(`SELECT *| ${unknown}`), null, 'what dbo.Nope returns is not known: written out, it would be lost');
   assert.equal(tab(`SELECT p.*| ${derived}`), `SELECT p.Id, p.Sku, p.Price ${derived}`, 'p.* covers Products alone');
   const locked = describe(shop());
   for (const c of locked.databases[0].schemas[0].tables.find((t) => t.name === 'Products')!.columns) c.masked = 'default()';
@@ -247,8 +249,8 @@ test('* expands to what SELECT * returns: no hidden column, every table in FROM,
   assert.equal(tab(`SELECT *| ${comma}`), `SELECT p.Id, p.Sku, p.Price, ol.OrderId, ol.ProductId, ol.Quantity, c.Id, c.Email, c.Name ${comma}`, 'a table after a comma that follows ON');
   assert.equal(tab('SELECT*| FROM dbo.Products'), 'SELECT Id, Sku, Price FROM dbo.Products', 'a space after SELECT when * had none');
   assert.equal(tab('SELECT DISTINCT*| FROM dbo.Products'), 'SELECT DISTINCT Id, Sku, Price FROM dbo.Products');
-  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT *| FROM Products'), null, 'a CTE named like a table is not that table');
-  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT p.*| FROM Products p'), null);
+  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT *| FROM Products'), 'WITH Products AS (SELECT 1 AS Extra) SELECT Extra FROM Products', 'a CTE named like a table is not that table');
+  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT p.*| FROM Products p'), 'WITH Products AS (SELECT 1 AS Extra) SELECT p.Extra FROM Products p');
 });
 
 test('a space after the schema\'s dot is still the schema: the table is written once', async () => {
@@ -361,4 +363,21 @@ test('GROUP BY written out: a subquery\'s own aggregates and tables are its own;
   assert.equal((await applies("SELECT CustomerId, STRING_AGG(Status, ',') WITHIN GROUP (ORDER BY CreatedAt) FROM dbo.Orders GROUP BY |"))[0], 'CustomerId');
   assert.equal((await applies('SELECT Status, COUNT(*), ROW_NUMBER() OVER (ORDER BY CustomerId) FROM dbo.Orders GROUP BY |'))[0], 'Status, CustomerId');
   assert.equal((await applies('SELECT Status, SUM(SUM(Total)) OVER (PARTITION BY Status) FROM dbo.Orders GROUP BY |'))[0], 'Status', 'an aggregate inside a window is still one');
+});
+
+test('Tab after * writes a subquery\'s or a CTE\'s columns when its select list names every one', () => {
+  const sub = 'FROM (SELECT Id, Email AS mail FROM dbo.Customers) x';
+  assert.equal(tab(`SELECT x.*| ${sub}`), `SELECT x.Id, x.mail ${sub}`);
+  assert.equal(tab(`SELECT *| ${sub}`), `SELECT Id, mail ${sub}`);
+  assert.equal(tab('WITH r AS (SELECT * FROM dbo.Customers) SELECT *| FROM r'), 'WITH r AS (SELECT * FROM dbo.Customers) SELECT Id, Email, Name FROM r', 'its own * over a table the model knows');
+  assert.equal(tab('WITH r (a, b) AS (SELECT 1, Id FROM dbo.Orders) SELECT *| FROM r'), 'WITH r (a, b) AS (SELECT 1, Id FROM dbo.Orders) SELECT a, b FROM r', 'names given after its own');
+  assert.equal(tab('SELECT x.*| FROM (SELECT Id, 1 FROM dbo.Customers) x'), null, 'an unnamed column: not every one is known');
+  assert.equal(tab('SELECT x.*| FROM (SELECT * FROM dbo.Nope) x'), null, 'a table the model does not know');
+  assert.equal(tab('SELECT *| FROM (SELECT 1 AS a) x JOIN dbo.Nope n ON 1 = 1'), null, 'beside a table the model does not know');
+});
+
+test('a protected column a subquery passes on as it is stays left out by Tab', () => {
+  const sub = 'FROM (SELECT o.Id, o.Status, UPPER(o.Status) AS loud FROM dbo.Orders o) x';
+  assert.equal(tab(`SELECT x.*| ${sub}`), `SELECT x.Id, x.loud ${sub}`, 'Status is masked in the described model');
+  assert.equal(tab('SELECT x.*| FROM (SELECT o.Id, o.Status AS s FROM dbo.Orders o) x'), 'SELECT x.Id FROM (SELECT o.Id, o.Status AS s FROM dbo.Orders o) x', 'renamed, it is still Status');
 });

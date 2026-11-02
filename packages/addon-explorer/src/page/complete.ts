@@ -136,6 +136,13 @@ export interface Known {
   suggestions: TableSuggestions;
   /** A CTE or a subquery, its columns read from its select list: not the model's, so not the check's. */
   derived?: boolean;
+  /** A CTE or a subquery whose select list names every column it returns, so * over it can be written out. */
+  complete?: boolean;
+}
+
+/** A CTE's or a subquery's column: what autocomplete says of it, and whether it passes on a protected column. */
+interface DerivedColumn extends Suggestion {
+  protected?: boolean;
 }
 
 /** A table the query reads at some level: how the query names it there (its alias, or its name) and how deep. */
@@ -446,19 +453,23 @@ interface Expansion {
  */
 function expansions(reading: Reading, model: Model): Expansion[] {
   const star = reading.star;
-  // A bare * over a subquery or a table the model does not know covers columns that cannot be written here.
+  // A bare * over a table the model does not know, or a subquery whose columns it cannot all name, covers
+  // columns that cannot be written here.
   if (!star || (!star.qualifier && reading.unknownOwn)) return [];
   const own = reading.scope.filter((s) => s.depth === 0);
   const covered = star.qualifier ? reading.scope.filter((s) => s.name.toLowerCase() === star.qualifier!.toLowerCase()).slice(0, 1) : own;
-  // A CTE's or a subquery's columns are what its select list names, which may not be all it returns.
-  if (covered.some((s) => s.known.derived)) return [];
+  if (covered.some((s) => s.known.derived && !s.known.complete)) return [];
   const qualify = Boolean(star.qualifier) || covered.length > 1;
   // What SELECT * returns: a column the database hides from it is not written either.
-  const columns = covered.flatMap((s) => (findTable(model, s.known.ref)?.table.columns ?? []).filter((c) => !c.hidden).map((c) => ({ column: c, table: s })));
+  const columns = covered.flatMap((s) =>
+    s.known.derived
+      ? s.known.suggestions.children.map((c) => ({ name: c.label, protected: Boolean((c as DerivedColumn).protected), table: s }))
+      : (findTable(model, s.known.ref)?.table.columns ?? []).filter((c) => !c.hidden).map((c) => ({ name: c.name, protected: isProtected(c), table: s })),
+  );
   if (!columns.length) return [];
-  const write = (list: typeof columns) => (star.spaced ? '' : ' ') + list.map(({ column, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(column.name)).join(', ');
-  const open = columns.filter(({ column }) => !isProtected(column));
-  const left = columns.filter(({ column }) => isProtected(column)).map(({ column }) => column.name);
+  const write = (list: typeof columns) => (star.spaced ? '' : ' ') + list.map(({ name, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(name)).join(', ');
+  const open = columns.filter((c) => !c.protected);
+  const left = columns.filter((c) => c.protected).map((c) => c.name);
   const all = { text: write(columns), count: columns.length, detail: 'every column', exposes: left.length > 0 };
   if (!left.length) return [all];
   if (!open.length) return [{ ...all, detail: 'every column, masked, encrypted or labelled' }];
@@ -585,7 +596,7 @@ export function readAt(state: EditorState, pos: number, index: Map<string, Known
       }
       reading.star = starAt(state, pos, segment, text);
       reading.aliased = (items.find((item) => item.at === nameFrom)?.ends.length ?? 0) > 1;
-      reading.unknownOwn = items.some((item) => !item.known);
+      reading.unknownOwn = items.some((item) => !item.known && !derivedOf(state, item, index)?.complete);
       if (prevWord === 'ON') {
         // The table this ON is for is the last one named; when the model does not know it, or it is a
         // subquery, there is no key to offer, and an earlier join's condition would leave it unconstrained.
@@ -710,12 +721,12 @@ function ctesAt(scopes: Cte[], pos: number): Map<string, Cte> {
 }
 
 /** A CTE's columns: the names its select list gives, or those after its own name, which rename them in turn. */
-function cteColumns(state: EditorState, cte: Cte, index: Map<string, Known>): Suggestion[] {
-  return renamed(outputsOf(state, cte.body, index, 'CTE'), cte.columns, 'CTE');
+function cteColumns(state: EditorState, cte: Cte, index: Map<string, Known>): DerivedColumn[] {
+  return renamed(outputsOf(state, cte.body, index, 'CTE').columns, cte.columns, 'CTE');
 }
 
 /** A query's columns by place, as the names given after a CTE's name or a subquery's alias rename them, or by their own. */
-function renamed(read: (Suggestion | undefined)[], names: string[] | undefined, kind: 'CTE' | 'subquery'): Suggestion[] {
+function renamed(read: (DerivedColumn | undefined)[], names: string[] | undefined, kind: 'CTE' | 'subquery'): DerivedColumn[] {
   if (!names) return read.filter((c) => c !== undefined);
   return names.map((label, i) => ({ ...(read[i] ?? { type: 'property', detail: `${kind} column` }), label }));
 }
@@ -727,8 +738,16 @@ function renamed(read: (Suggestion | undefined)[], names: string[] | undefined, 
 function derivedOf(state: EditorState, item: FromItem, index: Map<string, Known>): Known | undefined {
   if (!item.name) return undefined;
   const cte = item.cte ? ctesAt(cteScopes(state), item.at).get(item.path[0].toLowerCase()) : undefined;
-  if (cte) return { ref: `cte:${cte.name}`, suggestions: { self: { label: cte.written, type: 'type', detail: 'CTE' }, children: cteColumns(state, cte, index) }, derived: true };
-  if (item.body) return { ref: `subquery:${item.name.toLowerCase()}`, suggestions: { self: { label: item.name, type: 'type', detail: 'subquery' }, children: renamed(outputsOf(state, item.body, index, 'subquery'), item.columns, 'subquery') }, derived: true };
+  // Names given after it say every column there is; else its select list must name each.
+  if (cte) {
+    const complete = Boolean(cte.columns) || outputsOf(state, cte.body, index, 'CTE').complete;
+    return { ref: `cte:${cte.name}`, suggestions: { self: { label: cte.written, type: 'type', detail: 'CTE' }, children: cteColumns(state, cte, index) }, derived: true, complete };
+  }
+  if (item.body) {
+    const read = outputsOf(state, item.body, index, 'subquery');
+    const children = renamed(read.columns, item.columns, 'subquery');
+    return { ref: `subquery:${item.name.toLowerCase()}`, suggestions: { self: { label: item.name, type: 'type', detail: 'subquery' }, children }, derived: true, complete: Boolean(item.columns) || read.complete };
+  }
   return undefined;
 }
 
@@ -736,25 +755,35 @@ function derivedOf(state: EditorState, item: FromItem, index: Map<string, Known>
  * The columns a query in parentheses returns, in order: each item of its select list by the name it gives, or
  * none when it gives none, its place kept for names given after; for * and alias.*, the columns of what it
  * covers. A column read as it is says what its source says (its type, its key); an expression says what it is
- * a column of. Its first query only: a UNION's branches take its names.
+ * a column of, and one passed on as it is is protected when its source is. Its first query only: a UNION's
+ * branches take its names. Complete when every column it returns is named: no unnamed item, and every * over
+ * a table the model knows or a CTE or subquery that is complete itself.
  */
-function outputsOf(state: EditorState, body: Node, index: Map<string, Known>, kind: 'CTE' | 'subquery'): (Suggestion | undefined)[] {
+function outputsOf(state: EditorState, body: Node, index: Map<string, Known>, kind: 'CTE' | 'subquery'): { columns: (DerivedColumn | undefined)[]; complete: boolean } {
+  type Outputs = { columns: (DerivedColumn | undefined)[]; complete: boolean };
   const key = `outputs:${body.from}`;
   const known = memoOf(state);
-  if (known.has(key)) return known.get(key) as (Suggestion | undefined)[];
+  if (known.has(key)) return known.get(key) as Outputs;
   // While it is read, a query that reads itself (a CTE's own name in its FROM) finds no columns there.
-  known.set(key, []);
+  known.set(key, { columns: [], complete: false });
   const { segment, items } = queryAround(state, body, body.from, index);
   const model = setupOf(state)?.model;
-  const columnsOf = (item: FromItem): Suggestion[] => (item.known ? item.known.suggestions.children : (derivedOf(state, item, index)?.suggestions.children ?? []));
+  const tableOf = (item: FromItem) => (item.known && model ? findTable(model, item.known.ref)?.table : undefined);
+  const columnsOf = (item: FromItem): DerivedColumn[] => {
+    if (!item.known) return derivedOf(state, item, index)?.suggestions.children ?? [];
+    const table = tableOf(item);
+    return item.known.suggestions.children.map((c) => {
+      const column = table?.columns.find((t) => t.name === c.label);
+      return column && isProtected(column) ? { ...c, protected: true } : c;
+    });
+  };
   // What SELECT * returns: a column the database hides from it is not one.
-  const starOf = (item: FromItem): Suggestion[] => {
-    const table = item.known && model ? findTable(model, item.known.ref)?.table : undefined;
-    const hidden = new Set(table?.columns.filter((c) => c.hidden).map((c) => c.name));
+  const starOf = (item: FromItem): DerivedColumn[] => {
+    const hidden = new Set(tableOf(item)?.columns.filter((c) => c.hidden).map((c) => c.name));
     return columnsOf(item).filter((c) => !hidden.has(c.label));
   };
   const named = (name: string) => items.find((item) => item.name.toLowerCase() === name.toLowerCase());
-  const sourceOf = (path: string[]): Suggestion | undefined => {
+  const sourceOf = (path: string[]): DerivedColumn | undefined => {
     const last = path[path.length - 1].toLowerCase();
     const from = path.length > 1 ? [named(path[path.length - 2])].filter((i) => i !== undefined) : items;
     for (const item of from) {
@@ -763,22 +792,28 @@ function outputsOf(state: EditorState, body: Node, index: Map<string, Known>, ki
     }
     return undefined;
   };
-  const out: (Suggestion | undefined)[] = [];
+  const out: (DerivedColumn | undefined)[] = [];
+  let complete = true;
   for (const item of selectItemsOf(state, segment)) {
     if (item.star) {
       const covered = item.star.qualifier === undefined ? items : [named(item.star.qualifier)].filter((i) => i !== undefined);
+      if (!covered.length || covered.some((from) => !from.known && !derivedOf(state, from, index)?.complete)) complete = false;
       for (const from of covered) out.push(...starOf(from));
       continue;
     }
     if (!item.name) {
+      complete = false;
       out.push(undefined);
       continue;
     }
     const source = item.path ? sourceOf(item.path) : undefined;
+    // A column read as it is, renamed or not, is its source's: what it is, and protected when that is. One
+    // computed from it is a new column.
     out.push({ ...(source ?? { type: 'property', detail: `${kind} column` }), label: item.name });
   }
-  known.set(key, out);
-  return out;
+  const outputs: Outputs = { columns: out, complete };
+  known.set(key, outputs);
+  return outputs;
 }
 
 /** A box on the screen, as CodeMirror measures the list, the option, its description and the room there is. */
