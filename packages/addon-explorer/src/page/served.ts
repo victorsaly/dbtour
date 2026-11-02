@@ -1,11 +1,30 @@
 // The page opened through dbtour serve: what the server put in it (a token, and which sources have a reader),
 // which source the editor's queries run through, and a result cell as text. Pure, so it is tested in Node;
 // the fetch itself is the editor's.
+import { driverName, formatBytes } from 'dbtour/markdown';
 import { checkQuery } from 'dbtour/sql';
+
+/** A database set up on this machine, as dbtour serve lists it on its home: no secret. */
+export interface ServedDatabase {
+  name: string;
+  driver: string;
+  server: string;
+  database: string;
+  reader: boolean;
+  read: boolean;
+  tables?: number;
+  bytes?: number;
+  readAt?: string;
+}
 
 export interface Served {
   token: string;
   sources: { name: string; reader: boolean }[];
+  /** Served from the home of several databases: all of them, and the one this page is. */
+  databases?: ServedDatabase[];
+  current?: string;
+  /** The home can set up a database: its steps are posted to /api/setup/. */
+  setup?: boolean;
 }
 
 /** What dbtour serve wrote into the page's meta tag; nothing when opened from a file or a deployed site. */
@@ -14,7 +33,11 @@ export function parseServed(content: string | null | undefined): Served | undefi
   try {
     const value = JSON.parse(content) as Partial<Served>;
     if (typeof value.token !== 'string' || value.token === '' || !Array.isArray(value.sources)) return undefined;
-    return { token: value.token, sources: value.sources.filter((s) => typeof s?.name === 'string').map((s) => ({ name: s.name, reader: s.reader === true })) };
+    const served: Served = { token: value.token, sources: value.sources.filter((s) => typeof s?.name === 'string').map((s) => ({ name: s.name, reader: s.reader === true })) };
+    if (Array.isArray(value.databases) && value.databases.every((d) => typeof d?.name === 'string' && typeof d?.server === 'string')) served.databases = value.databases;
+    if (typeof value.current === 'string') served.current = value.current;
+    if (value.setup === true) served.setup = true;
+    return served;
   } catch {
     return undefined;
   }
@@ -92,4 +115,24 @@ export function cellText(value: unknown): { text: string; isNull: boolean } {
   const raw = typeof value === 'object' ? JSON.stringify(value) : String(value);
   const line = raw.replace(/\r?\n/g, '↵');
   return { text: line.length > cellShown ? `${line.slice(0, cellShown)}…` : line, isNull: false };
+}
+
+/** A database's page on the home dbtour serve gives several. */
+export function databaseHref(name: string): string {
+  return `/db/${encodeURIComponent(name)}/`;
+}
+
+/**
+ * The home's entries: a number, the name, a link when its page is written, its dot (green when it has a reader
+ * and can run queries) and its facts; one not read yet says the command that reads it.
+ */
+export function databaseEntries(databases: ServedDatabase[]): { number: string; name: string; href: string | undefined; tone: Tone; status: string; facts: string[] }[] {
+  return databases.map((d, i) => {
+    const facts = [driverName(d.driver), `${d.database} on ${d.server}`];
+    if (d.read && d.tables !== undefined) facts.push(`${d.tables} ${d.tables === 1 ? 'table' : 'tables'}`);
+    if (d.read && d.bytes !== undefined) facts.push(formatBytes(d.bytes));
+    if (d.read && d.readAt) facts.push(`read ${new Date(d.readAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`);
+    if (!d.read) facts.push(`not read yet: dbtour read ${d.name}`);
+    return { number: String(i + 1).padStart(3, '0'), name: d.name, href: d.read ? databaseHref(d.name) : undefined, tone: d.reader ? 'live' : 'idle', status: d.reader ? 'reader' : 'no reader', facts };
+  });
 }

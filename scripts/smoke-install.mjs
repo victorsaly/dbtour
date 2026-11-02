@@ -13,7 +13,7 @@ const run = (command, args, cwd) => execFileSync(command, args, { cwd, stdio: ['
 
 // Pack each package into the scratch folder; prepack builds dist/ on the way.
 const tarballs = [];
-for (const pkg of ['core', 'source-mssql', 'addon-explorer']) {
+for (const pkg of ['core', 'keychain', 'source-mssql', 'addon-explorer']) {
   const out = run('npm', ['pack', '--pack-destination', scratch, '--silent'], join(repo, 'packages', pkg)).trim();
   tarballs.push(join(scratch, out.split('\n').pop()));
 }
@@ -45,4 +45,9 @@ const answers = execFileSync('npx', ['dbtour', 'mcp'], {
 }).toString().trim().split('\n').map((line) => JSON.parse(line));
 if (!answers[1]?.result?.content?.[0]?.text?.includes('# dbo.Orders')) throw new Error(`dbtour mcp did not answer with the table:\n${JSON.stringify(answers, null, 2)}`);
 
-console.log(`Installed ${tarballs.length} tarballs into ${project}; dbtour --help, render and mcp work.`);
+// The keychain package loads its prebuilt binary for this system; list, with nothing set up, says what to do.
+run('node', ['--input-type=module', '-e', "const { store } = await import('dbtour-keychain'); if (typeof store.get !== 'function') process.exit(1);"], project);
+const listed = execFileSync('npx', ['dbtour', 'list'], { cwd: project, env: { ...process.env, DBTOUR_HOME: join(scratch, 'home') }, stdio: ['ignore', 'pipe', 'inherit'] }).toString();
+if (!listed.includes('No database is set up yet')) throw new Error(`dbtour list did not say none is set up:\n${listed}`);
+
+console.log(`Installed ${tarballs.length} tarballs into ${project}; dbtour --help, render, mcp and list work, and the keychain loads.`);

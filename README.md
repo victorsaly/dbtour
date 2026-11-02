@@ -5,7 +5,7 @@
 
 **Schema docs for your database, kept in your repository, for people and agents.**
 
-[![version](https://img.shields.io/badge/version-0.9.5-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.10.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -16,7 +16,20 @@ Markdown GitHub shows with diagrams, and as a page developers search, follow rel
 It reads the catalogue, never the rows, and an agent gets the same model through `dbtour mcp` and the
 Claude Code plugin ([below](#ask-claude)). SQL Server first; other databases follow the [plan](PLAN.md).
 
-## Use
+## Start in one line
+
+To look at a database on your own machine, with nothing installed and nothing to learn first:
+
+```bash
+npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p dbtour-keychain dbtour serve
+```
+
+Your browser opens on a page that sets the database up in five steps: where it is, how dbtour signs in (Entra
+through `az`, or a login whose password goes to the system's keychain), a test, a read-only login for queries
+if you want one, and the read. Then its page opens. Run the same line again to come back to it, or to add
+another. [Your databases, without a project](#your-databases-without-a-project) says what it keeps where.
+
+## Use it in a project
 
 ```bash
 npm install --save-dev dbtour dbtour-source-mssql dbtour-addon-explorer
@@ -165,6 +178,31 @@ many, how long it took and through which reader. The dot beside it is the last r
 answered, red failed, with why. Auto-run, off until you tick it, runs the query each time you pause typing,
 and never a half-written one. The server answers only its own page, which carries a token it is given when
 served, and only on this machine.
+
+## Your databases, without a project
+
+The one line above serves a home of the databases set up on your machine, each with its page, and the setup of
+another. Settings go to `~/.dbtour` (`DBTOUR_HOME` elsewhere) with no secret in them, a folder per database
+holds its model and its page, and passwords go to the system's keychain (macOS Keychain, Windows Credential
+Manager, the Secret Service on Linux), never to a file. Nothing is saved until the database answers, and the
+read-only login is made only once you have read its two statements and pressed the button that runs them.
+
+The same from a terminal, for an agent or a script:
+
+```bash
+npm install -g dbtour dbtour-source-mssql dbtour-addon-explorer dbtour-keychain
+dbtour add Shop --server shop-sql.database.windows.net   # signs in with az; tested before it is saved
+dbtour reader Shop --create                              # shows what it would run; --confirm Shop runs it
+dbtour read Shop                                         # its model and its page
+dbtour serve                                             # the home, at http://127.0.0.1:4321
+```
+
+A login signs in with `--sign-in login --user <login> --password-stdin`: the password comes only on stdin, and
+`--password` is refused, as a command line ends up in shell history and an agent's log. `dbtour reader --create`
+makes `dbtour_reader` with `db_datareader` alone and a password nobody sees, once you confirm by naming the
+database again. With several databases set up, `sql`, `mcp` and `serve --database` must name one; dbtour never
+picks for you. `dbtour list` shows them, and `dbtour remove` forgets one and its passwords. The home lists each
+database with a green dot when it has a reader, and each database's page has the others in its rail.
 
 ## Develop
 

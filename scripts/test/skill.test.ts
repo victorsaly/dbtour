@@ -2,9 +2,13 @@
 // the server's, the commands are the command's, and every version is the packages' version.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parse } from 'yaml';
 import { main } from '../../packages/core/src/cli.ts';
+// Never the machine's own ~/.dbtour: a folder of the test's, empty.
+process.env.DBTOUR_HOME = mkdtempSync(join(tmpdir(), 'dbtour-home-'));
 import { queryTool, toolList } from '../../packages/core/src/mcp.ts';
 
 const root = new URL('../../', import.meta.url);

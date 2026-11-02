@@ -26,7 +26,7 @@ const changelog = `# Changelog
 - Nor this.
 `;
 
-const names = { core: 'dbtour', 'source-mssql': 'dbtour-source-mssql', 'addon-explorer': 'dbtour-addon-explorer' };
+const names = { core: 'dbtour', keychain: 'dbtour-keychain', 'source-mssql': 'dbtour-source-mssql', 'addon-explorer': 'dbtour-addon-explorer' };
 
 /** A repository at 0.2.2 whose main is pushed to a bare origin, with stub npm and gh on the PATH. */
 function repository({ published = [] as string[], registryDown = false, publishFails = '' } = {}) {
@@ -127,7 +127,7 @@ test('--check on a commit after the tag says at_tag=false, and how to publish fr
 });
 
 test('--check says unpublished=false once npm has every package, and unknown when npm cannot be asked', () => {
-  const done = tagged({ published: ['dbtour@0.2.2', 'dbtour-source-mssql@0.2.2', 'dbtour-addon-explorer@0.2.2'] });
+  const done = tagged({ published: ['dbtour@0.2.2', 'dbtour-keychain@0.2.2', 'dbtour-source-mssql@0.2.2', 'dbtour-addon-explorer@0.2.2'] });
   assert.equal(done.release('--check').status, 0);
   assert.match(readFileSync(join(done.root, 'output'), 'utf8'), /^unpublished=false$/m);
   const down = tagged({ registryDown: true });
@@ -149,7 +149,7 @@ test('--publish on a new version tags, releases and publishes, and exits 0', () 
   assert.equal(result.status, 0, result.stderr);
   assert.match(repo.git('ls-remote', '--tags', 'origin'), /refs\/tags\/v0\.2\.2/);
   assert.match(repo.called(), /^gh release create v0\.2\.2/m);
-  assert.equal(publishes(repo.called()), 'packages/core packages/source-mssql packages/addon-explorer');
+  assert.equal(publishes(repo.called()), 'packages/core packages/keychain packages/source-mssql packages/addon-explorer');
 });
 
 test('--publish on a version the workflow already tagged publishes it, without a second release', () => {
@@ -157,7 +157,7 @@ test('--publish on a version the workflow already tagged publishes it, without a
   const result = repo.release('--publish');
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(repo.called(), /^gh /m);
-  assert.equal(publishes(repo.called()), 'packages/core packages/source-mssql packages/addon-explorer');
+  assert.equal(publishes(repo.called()), 'packages/core packages/keychain packages/source-mssql packages/addon-explorer');
 });
 
 test('--publish on a tagged version refuses when the checkout is not that tag', () => {
@@ -181,12 +181,12 @@ test('--publish after a publish that stopped part way publishes only the package
   const repo = tagged({ published: ['dbtour@0.2.2'] });
   const result = repo.release('--publish');
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(publishes(repo.called()), 'packages/source-mssql packages/addon-explorer');
+  assert.equal(publishes(repo.called()), 'packages/keychain packages/source-mssql packages/addon-explorer');
   assert.match(result.stdout, /dbtour@0\.2\.2 is on npm already/);
 });
 
 test('--publish when npm has every package is nothing to do: exit 3', () => {
-  const repo = tagged({ published: ['dbtour@0.2.2', 'dbtour-source-mssql@0.2.2', 'dbtour-addon-explorer@0.2.2'] });
+  const repo = tagged({ published: ['dbtour@0.2.2', 'dbtour-keychain@0.2.2', 'dbtour-source-mssql@0.2.2', 'dbtour-addon-explorer@0.2.2'] });
   const result = repo.release('--publish');
   assert.equal(result.status, 3);
   assert.equal(publishes(repo.called()), '');
