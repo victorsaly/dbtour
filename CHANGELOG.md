@@ -27,6 +27,12 @@
   `db_datareader` alone, and exits 3; with `--confirm <name>` it runs them with the admin's sign-in, makes a
   password nobody sees, keeps it in the keychain and signs in once to check. A login that holds any other role
   is refused. `--user <login> --password-stdin` uses a reader you have.
+- A reader is checked for what it can do, not only that it signs in: signed in as it, SQL Server is asked for
+  its effective permissions from any role, every grant to it or a role it is in, and any schema it owns, and
+  a login that can write, run code, change the schema or administer is refused, its password not kept. An
+  existing `dbtour_reader` with a direct grant or a schema of its own is refused before `ALTER USER` would
+  keep them. Changes to `databases.json` are made under a lock, to the file as it is, so two at once both
+  stay.
 - With several databases set up, `sql`, `mcp` and `serve` take `--database <name>` and refuse to guess.
   `dbtour serve` with none named and no `dbtour.yaml` serves a home of every database, each page at
   `/db/<name>/` with its queries run through its own reader; the settings file is never served.
