@@ -8,6 +8,10 @@
   `brand/logo.svg` is 4 KB, not 80. The mark stands with its corners on the baseline and its round bottom
   just under it, as the bowls of the letters do. The rail, the favicon, the README, the social image and the
   plugin's icon all draw it from `mark.ts`.
+- Clearer for someone meeting dbtour for the first time. Each npm package has a README of its own (the npm
+  pages were blank), and the descriptions say what dbtour does, schema docs from the catalogue as Markdown, a
+  page and an MCP server, where they promised an API source that does not exist yet. Keywords a search would
+  use: sql-server, mcp, data-dictionary.
 
 ## 0.9.3 (2 November 2026)
 

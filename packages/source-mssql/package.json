@@ -1,7 +1,7 @@
 {
   "name": "dbtour-source-mssql",
   "version": "0.9.4",
-  "description": "SQL Server source for dbtour: tables, views, columns, keys, relations, indexes, descriptions.",
+  "description": "SQL Server source for dbtour: tables, views, keys, relations, indexes, row counts and extended properties, read from the catalogue with VIEW DEFINITION alone, never the rows.",
   "type": "module",
   "license": "MIT",
   "author": "Victor Saly",
@@ -27,9 +27,12 @@
   },
   "keywords": [
     "dbtour",
-    "mssql",
     "sql-server",
-    "schema"
+    "mssql",
+    "azure-sql",
+    "schema",
+    "extended-properties",
+    "data-dictionary"
   ],
   "dependencies": {
     "mssql": "^12.7.13"

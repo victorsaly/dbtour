@@ -1,12 +1,12 @@
 {
   "name": "dbtour",
-  "description": "dbtour: tour your database and its API, as an agent skill and an MCP server.",
+  "description": "dbtour: schema docs for your database, as an agent skill and an MCP server.",
   "owner": { "name": "Victor Saly", "url": "https://github.com/victorsaly" },
   "plugins": [
     {
       "name": "dbtour",
       "source": "./",
-      "description": "Tour your database and its API: the structure as Markdown, a page and an MCP server, so an agent finds the table, reads it and writes SQL from the real names without reading a row.",
+      "description": "Schema docs for your database as Markdown, a page and an MCP server, so an agent finds the table, reads it and writes SQL from the real names without reading a row.",
       "category": "development",
       "tags": ["database", "schema", "documentation", "sql-server", "mcp"]
     }
