@@ -1,13 +1,9 @@
 # Changelog
 
-## 0.9.4 (unreleased)
+## 0.9.5 (unreleased)
 
-- A new logo, from the owner's drawing. The mark is bolder and drawn with a round pen: the database cylinder
-  with a signal through it, put on the 24 grid with one ellipse for its top and its bottom. The wordmark is
-  outlines, "db" bold and "tour" medium and muted, so it looks the same everywhere and needs no font:
-  `brand/logo.svg` is 4 KB, not 80. The mark stands with its corners on the baseline and its round bottom
-  just under it, as the bowls of the letters do. The rail, the favicon, the README, the social image and the
-  plugin's icon all draw it from `mark.ts`.
+The npm pages, which 0.9.4 was meant to carry: its pull request merged before these were pushed.
+
 - Clearer for someone meeting dbtour for the first time. Each npm package has a README of its own (the npm
   pages were blank), and the descriptions say what dbtour does, schema docs from the catalogue as Markdown, a
   page and an MCP server, where they promised an API source that does not exist yet. Keywords a search would
@@ -17,6 +13,14 @@
   core they were built with as a peer, so npm installs it or says the versions differ; the source imported
   it without declaring it.
 
+## 0.9.4 (2 November 2026)
+
+- A new logo, from the owner's drawing. The mark is bolder and drawn with a round pen: the database cylinder
+  with a signal through it, put on the 24 grid with one ellipse for its top and its bottom. The wordmark is
+  outlines, "db" bold and "tour" medium and muted, so it looks the same everywhere and needs no font:
+  `brand/logo.svg` is 4 KB, not 80. The mark stands with its corners on the baseline and its round bottom
+  just under it, as the bowls of the letters do. The rail, the favicon, the README, the social image and the
+  plugin's icon all draw it from `mark.ts`.
 ## 0.9.3 (2 November 2026)
 
 - The SQL editor checks names against the model as you type, as SQL Server's completion add-ins do. A table

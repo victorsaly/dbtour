@@ -1,6 +1,6 @@
 {
   "name": "dbtour",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "Schema docs for your database as Markdown, a page and an MCP server, so an agent finds the table, reads it and writes SQL from the real names without reading a row.",
   "icon": "brand/mark.png",
   "author": { "name": "Victor Saly", "url": "https://github.com/victorsaly" },
