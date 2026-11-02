@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { request } from 'node:http';
 import { PassThrough } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -68,6 +69,7 @@ function harness(options: { roles?: string[]; exists?: boolean; failTest?: boole
     stdin,
     load: async () => source,
     loadAddon: async () => ({ render: (model: Model) => ({ 'index.html': `<title>${model.databases[0]?.name ?? 'home'}</title>` }) }),
+    az: async () => ({ state: 'signed in', user: 'ann@example.com' }),
   };
   return { io, out, err, calls, secrets, home };
 }
@@ -216,5 +218,116 @@ test('serve with databases set up and no dbtour.yaml here serves the home, and e
   } finally {
     stop();
     assert.equal(await serving, 0);
+  }
+});
+
+/** dbtour serve, started for a test: its address, its token, the setup's steps posted as the page posts them, and stop. */
+async function served(h: Harness, opened: string[] = []) {
+  let stop!: () => void;
+  const stopped = new Promise<void>((done) => (stop = done));
+  const serving = main(['serve', '--port', '0'], { ...h.io, stop: stopped, open: (url) => void opened.push(url) });
+  for (let waited = 0; !h.out.some((l) => l.startsWith('Serving')); waited += 20) {
+    if (waited > 5000) assert.fail(`serve did not start: ${[...h.out, ...h.err].join(' / ')}`);
+    await new Promise((next) => setTimeout(next, 20));
+  }
+  const url = /at (http:\/\/\S+)/.exec(h.out.find((l) => l.startsWith('Serving'))!)![1];
+  const meta = (html: string) => JSON.parse(/<meta name="dbtour-serve" content="([^"]*)">/.exec(html)![1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+  const front = meta(await (await fetch(`${url}/`)).text());
+  const step = (name: string, input: Record<string, unknown>) =>
+    new Promise<{ status: number; json: Record<string, unknown>; text: string }>((done, fail) => {
+      const headers = { host: new URL(url).host, origin: url, 'content-type': 'application/json', 'x-dbtour-token': front.token };
+      const req = request(`${url}/api/setup/${name}`, { method: 'POST', headers }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          done({ status: res.statusCode ?? 0, json: JSON.parse(text), text });
+        });
+      });
+      req.on('error', fail);
+      req.end(JSON.stringify(input));
+    });
+  return {
+    url,
+    front,
+    step,
+    meta: async () => meta(await (await fetch(`${url}/`)).text()),
+    stop: async () => {
+      stop();
+      assert.equal(await serving, 0);
+    },
+  };
+}
+
+const where = { name: 'Shop', type: 'mssql', server: 'shop-sql.database.windows.net', database: 'Shop' };
+
+test('serve with nothing set up opens the home in the browser, and its setup takes a database from nothing to its page', async () => {
+  const h = harness();
+  const opened: string[] = [];
+  const s = await served(h, opened);
+  try {
+    assert.deepEqual([s.front.databases, s.front.setup, opened], [[], true, [s.url + '/']]);
+    assert.match(h.out.join('\n'), /Nothing is set up yet: the page at http:\/\/127\.0\.0\.1:\d+\/ walks you through it/);
+
+    const state = await s.step('state', {});
+    assert.deepEqual(state.json, { kinds: [{ type: 'mssql', name: 'SQL Server', installed: true }], keychain: true, az: { state: 'signed in', user: 'ann@example.com' }, names: [] });
+
+    // 1, the database: checked here before anything connects.
+    assert.equal((await s.step('check', where)).status, 200);
+    const bad = await s.step('check', { ...where, name: '1 Shop' });
+    assert.equal(bad.status, 422);
+    assert.match(String(bad.json.error), /name/);
+    assert.equal((await s.step('check', { ...where, server: 'x;Password=y' })).status, 422);
+    assert.equal(h.calls.length, 0, 'nothing connected yet');
+
+    // 2 and 3, the sign-in and its test: saved only once the database answers.
+    const added = await s.step('add', { ...where, signIn: 'az' });
+    assert.deepEqual([added.status, added.json], [200, { name: 'Shop', signIn: 'az', reader: { user: 'dbtour_reader', exists: false } }]);
+    assert.equal(settings(h).databases[0].name, 'Shop');
+    assert.equal((await s.step('check', where)).status, 422, 'the name is taken now');
+
+    // 4, the reader: shown first, made only when the page names the database again.
+    const plan = await s.step('reader-plan', { name: 'Shop' });
+    assert.deepEqual(plan.json, {
+      user: 'dbtour_reader',
+      changes: 'Shop on shop-sql.database.windows.net, signed in with az',
+      statements: ["CREATE USER [dbtour_reader] WITH PASSWORD = '••••••';", 'ALTER ROLE db_datareader ADD MEMBER [dbtour_reader];'],
+      account: 'dbtour · Shop · reader',
+    });
+    const unconfirmed = await s.step('reader-create', { name: 'Shop' });
+    assert.equal(unconfirmed.status, 422);
+    assert.equal(h.calls.filter((c) => c.startsWith('create')).length, 0);
+    const made = await s.step('reader-create', { name: 'Shop', confirm: 'Shop' });
+    assert.deepEqual([made.status, made.json], [200, { name: 'Shop', reader: 'dbtour_reader' }]);
+    assert.doesNotMatch(made.text, new RegExp(h.secrets.get('Shop · reader')!));
+
+    // 5, the read: the model and its page, and the home lists it.
+    const read = await s.step('read', { name: 'Shop' });
+    assert.deepEqual([read.status, read.json.name, read.json.tables], [200, 'Shop', 6]);
+    const now = await s.meta();
+    assert.deepEqual(now.databases.map((d: { name: string; read: boolean; reader: boolean }) => [d.name, d.read, d.reader]), [['Shop', true, true]]);
+    assert.equal((await s.step('nonsense', {})).status, 404);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('the setup page sends a login\'s password once, to the keychain, and never gets it back', async () => {
+  const h = harness();
+  const s = await served(h);
+  try {
+    const none = await s.step('add', { ...where, signIn: 'login', user: 'ann' });
+    assert.equal(none.status, 422);
+    assert.match(String(none.json.error), /password/);
+    const added = await s.step('add', { ...where, signIn: 'login', user: 'ann', password: 'p;w"d' });
+    assert.equal(added.status, 200);
+    assert.deepEqual([...h.secrets], [['Shop · login', 'p;w"d']]);
+    const own = await s.step('reader-use', { name: 'Shop', user: 'ro_login', password: 'readerpw' });
+    assert.deepEqual([own.status, own.json], [200, { name: 'Shop', reader: 'ro_login' }]);
+    assert.ok(h.calls.includes('run login:ro_login:readerpw@shop-sql.database.windows.net/Shop SELECT 1 AS signedIn'));
+    const everything = readFileSync(join(h.home, 'databases.json'), 'utf8') + added.text + own.text + JSON.stringify(await s.meta()) + h.out.join('\n');
+    assert.doesNotMatch(everything, /p;w"d|readerpw/);
+  } finally {
+    await s.stop();
   }
 });

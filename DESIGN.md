@@ -117,6 +117,15 @@ Strategy: restrained. No gradient, no shadow, no radius.
   the others as hairline rows with their dots, the current one with a 2px red inset like the current entry.
   Chosen by the owner on 1 November 2026 from three layouts. A database has no colour block: a block is a
   schema.
+- **Setup** (`Setup.tsx`, `setup.ts`): "Add a database", shaped like an entry. Five steps in a hairline list,
+  each a mono number and a mono-caps title; the current step's number is red and its title ink, a done one
+  folds to its line in body type (with Change until the test saves it), a later one waits in grey. Fields
+  are a mono-caps label over a 1px `--line-strong` box, as the search is, with a grey hint under it;
+  placeholders start "e.g." so they are not taken for values. A choice is a row with a radio; the chosen one
+  carries the 2px red inset and opens its fields. Each step's primary button shows its red block from the
+  start; while a step runs, its button gives way to a grey status that says what it is doing, and a refusal
+  is a red dot ("Not yet") with the reason. The reader's statements are shown in a hairline box, mono, before
+  the button that runs them. Chosen by the owner on 1 November 2026 with the home's layout.
 - **Facts**: four mono-caps labels with 20px mono values, in two columns, each over a hairline: columns,
   keys, references, referenced by. Every entry shows the same four in the same place.
 - **Map nodes**: 240px wide, a 34px head with block, number and name, 22px rows, 6px padding; sizes

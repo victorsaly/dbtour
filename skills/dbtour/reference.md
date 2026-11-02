@@ -44,6 +44,10 @@ Without a `dbtour.yaml`, dbtour keeps databases in `~/.dbtour` (`DBTOUR_HOME` el
 with no secret in it, a folder per database for its model, notes and page, and every password in the system's
 keychain under "dbtour · <name> · login" or "· reader". `dbtour-keychain` must be installed beside `dbtour`.
 
+A person starts with one line, `npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p
+dbtour-keychain dbtour serve`: it opens the home, whose setup does what the commands below do in five steps
+(database, sign-in, test, reader, read), the reader's statements shown before a button runs them.
+
 | Command | What it does |
 |---|---|
 | `npx dbtour add <name> --server <host> [--database <on the server>]` | Tests the connection, then saves it. Signs in with `az` unless `--sign-in login --user <login> --password-stdin`; the password comes only on stdin. `--password` is refused. |

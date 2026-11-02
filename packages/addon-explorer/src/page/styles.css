@@ -1847,3 +1847,185 @@ table.columns tr.is-pointed td {
   padding: 0;
   border: 0;
 }
+
+/* Adding a database: an entry of five numbered steps. The current one's number is red and its title ink; a
+   done one folds to its line; a later one waits in grey. */
+.setup-steps {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--hair) solid var(--line);
+}
+.setup-step {
+  border-bottom: var(--hair) solid var(--line);
+}
+.setup-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 0;
+}
+.setup-head .no {
+  width: 28px;
+  flex: none;
+}
+.setup-title {
+  flex: none;
+}
+.setup-step.is-current .no {
+  color: var(--red);
+}
+.setup-step.is-current .setup-title,
+.setup-step.is-done .setup-title {
+  color: var(--ink);
+}
+.setup-summary {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.setup-change {
+  margin-left: auto;
+}
+.setup-body {
+  padding: 0 0 22px 40px;
+}
+.setup-lead {
+  margin: 0 0 16px;
+  max-width: 70ch;
+  font-size: 14px;
+}
+.setup-fields {
+  display: grid;
+  gap: 14px;
+  max-width: 520px;
+}
+.setup-field {
+  display: grid;
+  gap: 5px;
+}
+.setup-field input {
+  width: 100%;
+  padding: 9px 12px;
+  border: var(--hair) solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  appearance: none;
+}
+.setup-field input::placeholder {
+  color: var(--ink-2);
+}
+.setup-field input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.setup-value {
+  font-size: 14px;
+}
+.setup-help {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.setup-help.is-problem {
+  color: var(--ink);
+}
+.setup-choices {
+  max-width: 640px;
+  border-top: var(--hair) solid var(--line);
+}
+.setup-choice {
+  padding: 12px 0 12px 12px;
+  border-bottom: var(--hair) solid var(--line);
+}
+.setup-choice.is-on {
+  box-shadow: inset 2px 0 0 var(--red);
+}
+.setup-choice > label {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 8px;
+  cursor: pointer;
+}
+.setup-choice > label input {
+  grid-row: span 2;
+  margin: 3px 0 0;
+  accent-color: var(--ink);
+}
+.setup-choice-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.setup-choice > :not(label) {
+  margin: 12px 0 0 28px;
+}
+/* An account name keeps its own case inside the caps of a status line. */
+.setup-az .status {
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+.setup-az {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.setup-plan p {
+  margin: 0;
+}
+.setup-sql {
+  margin: 8px 0;
+  padding: 10px 12px;
+  outline: var(--hair) solid var(--line);
+  font: 12px/1.6 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.setup-actions {
+  align-items: center;
+  min-height: 36px;
+}
+/* The step's primary button carries the red block on its trailing edge from the start. */
+.button.setup-go::after {
+  transform: scaleX(1);
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.setup-error {
+  margin: 14px 0 0;
+  max-width: 70ch;
+}
+.setup-error .status {
+  margin-right: 6px;
+}
+.setup-done {
+  margin-top: 24px;
+}
+.setup-done p {
+  margin: 0;
+  font-size: 14px;
+}
+.setup-lines {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font: 11px/1.6 var(--mono);
+}
+@media (max-width: 800px) {
+  .setup-head {
+    flex-wrap: wrap;
+  }
+  .setup-summary {
+    flex-basis: 100%;
+    padding-left: 40px;
+  }
+  .setup-change {
+    margin-left: 40px;
+  }
+  .setup-body {
+    padding-left: 0;
+  }
+}

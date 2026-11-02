@@ -2,7 +2,18 @@
 
 ## 0.10.0 (unreleased)
 
-- Databases set up on your own machine, the first half of the plan's sixth milestone. Without a
+- Start in one line, with nothing installed: `npx -y -p dbtour -p dbtour-source-mssql -p
+  dbtour-addon-explorer -p dbtour-keychain dbtour serve` opens the browser on a page that sets a database up
+  in five numbered steps, the plan's sixth milestone. 1 Database: where it is, and the name dbtour gives it
+  (the database's own, made fit for a folder). 2 Sign in: Entra through `az`, the page saying who `az` is
+  signed in as, or a login whose password is sent once to dbtour serve and kept in the keychain. 3 Test: it
+  is saved only if it answers. 4 Reader: the two statements that make `dbtour_reader`, shown before a button
+  runs them, a read-only login you have, or not now. 5 Read: the catalogue, then a link to its page. A done
+  step folds to its line, the current step's number is red, and until the test saves it the database and
+  the sign-in can still change. Each step is what the commands below do, under their rules, posted to
+  `/api/setup/<step>` with the session's token from this server's own page (its Origin required); nothing it
+  answers holds a password. `dbtour serve` opens the browser when started at a terminal (`--no-open` not to).
+- Databases set up on your own machine. Without a
   `dbtour.yaml`, `dbtour add <name> --server <host>` tests a connection and saves it in `~/.dbtour`
   (`DBTOUR_HOME` elsewhere): a settings file with no secret in it, and a folder per database for its model,
   notes and page. `dbtour read <name>` writes them, `dbtour list` shows every database without a secret, and
@@ -20,10 +31,11 @@
   `dbtour serve` with none named and no `dbtour.yaml` serves a home of every database, each page at
   `/db/<name>/` with its queries run through its own reader; the settings file is never served.
 - The page: the home lists the databases as numbered entries with their facts and a dot, green when it has a
-  reader; a database's rail lists the others to switch to. No colour block marks a database: a block is a
+  reader, and "Add a database"; with none, it is the setup. A database's rail lists the others to switch to. No colour block marks a database: a block is a
   schema.
 - The skill teaches an agent the same rules: name the database, prefer `az`, never put a password in a
-  command, and show the reader's statements to the person before confirming them.
+  command, and show the reader's statements to the person before confirming them. For a person at their
+  machine, it offers the one line and the page first.
 
 ## 0.9.5 (unreleased)
 
