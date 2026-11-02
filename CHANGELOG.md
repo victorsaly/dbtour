@@ -1,6 +1,42 @@
 # Changelog
 
-## 0.9.2 (unreleased)
+## 0.9.3 (unreleased)
+
+- The SQL editor checks names against the model as you type, as SQL Server's completion add-ins do. A table
+  after FROM or JOIN the model does not have, or a column a table it has does not (after its alias or name
+  and a dot), gets a red wavy line. Pointed at, it says what dbtour knows and what to do ("If it is new, run
+  dbtour extract again"), and offers the nearest name the model has as a fix: `dbo.Ordrs` → `dbo.Orders`,
+  `o.Totl` → `Total`. A warning, not an error, as the model can be older than the database. A CTE, a
+  temporary table, a variable, a function, a subquery, another database or a schema the model has not read
+  (sys, say) is left alone, quoted or not (`[#t]`). A CTE or subquery named like a model table is the CTE,
+  for the check and for completion; a table hint in parentheses (`dbo.Orders (NOLOCK)`) is not taken for a
+  function; a fix quotes every part that needs it (`[Order Data].Invoices`), and a column written with a
+  doubled quote (`"a""b"`) is read as T-SQL reads it.
+- Suggestions follow the shape of the statement. Where a table goes (after FROM, JOIN, APPLY or a comma in
+  FROM) the list opens as the space is typed, with only tables, their schemas and the query's CTEs, no
+  keyword or function; the tables that have the columns the select list names come first (`SELECT Email
+  FROM ` puts Customers first). After a table and its alias, only what can follow it (WHERE, JOIN, ON, ORDER,
+  GROUP…), no table, and ON first after a JOIN.
+- Fixed, from the reviews of 0.9.2 and this release: Tab after * leaves out a column the database hides from
+  SELECT * (a temporal table's HIDDEN period columns), which the SQL Server source now reads as `hidden` and
+  the docs show in the Key cell; it covers a table after a comma that follows an ON, and writes the space a
+  `SELECT*` lacked. `FROM dbo. Cust` completes to the table once. Each query reads its own tables when
+  statements have no semicolon between them, and a CTE stands for its name only in its own statement and its
+  UNION branches. A column's alias, written with AS, without it or as `alias = expression`, does not rank
+  the tables.
+- A long query is checked to its end and quickly: the reader asks CodeMirror for the whole tree (it parses a
+  new document only so far, the rest in the background), and reads each statement once per change, not once
+  per name checked; 2,000 qualified names took 1.6 s and now take 20 ms. DISTINCT, ALL and TOP before the
+  first column no longer hide it from the table ranking.
+- Tab or Enter pressed while CodeMirror is still refreshing the list for the last letter typed (it takes no
+  pick for 75 ms after the list changes, nor while its sources answer) takes the suggestion as soon as it can,
+  instead of leaving the editor or typing a new line. Typing on drops it. The browser test presses at once,
+  so it holds the editor to that; it had failed on GitHub's slower Mac runner.
+- On a phone, a suggestion's description goes under or over the list, never over the suggestions after the
+  chosen one; CodeMirror put it just under the chosen one. The description and the check's box are drawn
+  like the list, in a hairline box.
+
+## 0.9.2 (1 November 2026)
 
 - The SQL editor does more of what SQL Server's completion add-ins do, written for dbtour (SQL Prompt is
   closed source, so nothing is taken from it). Tab after * in the select list writes the columns of the

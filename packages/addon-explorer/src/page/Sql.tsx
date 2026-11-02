@@ -7,11 +7,13 @@ import { acceptCompletion, autocompletion, completionKeymap, pickedCompletion, s
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { foldGutter, syntaxHighlighting } from '@codemirror/language';
 import { MSSQL, sql } from '@codemirror/lang-sql';
+import { linter } from '@codemirror/lint';
 import { EditorState } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
 import type { Model } from 'dbtour/model';
 import { CopyButton } from './Copy.tsx';
-import { expandStar, pickOf, sqlSupport } from './complete.ts';
+import { unknownNames } from './check.ts';
+import { expandStar, infoPlacement, pickOf, sqlSupport } from './complete.ts';
 import { formatQuery } from './format.ts';
 import { sqlPrompt } from './query.ts';
 import { sqlHighlighter, sqlTokens } from './sql.ts';
@@ -122,6 +124,39 @@ function countUse(key: string): void {
     // A browser that refuses storage still completes; it learns only until the page closes.
   }
 }
+
+/**
+ * A pick asked for while CodeMirror cannot take it yet: it refuses one for 75 ms after the list changes, and
+ * while its sources answer the last key typed, and Tab would then leave the editor and Enter type a new line.
+ * The key is kept and the pick made as soon as it can be: tried every 25 ms, a frame and a half, for at most a
+ * second, longer than any source here takes. Typing on, or the list closing, drops it.
+ */
+const pickRetryMs = 25;
+const pickPatienceMs = 1000;
+
+/** Whether a suggestion list is on show: CodeMirror's own answer hides one it is refreshing, the page does not. */
+function listShown(view: EditorView): boolean {
+  return Boolean(view.dom.querySelector('.cm-tooltip-autocomplete'));
+}
+
+function pickNowOrSoon(view: EditorView): boolean {
+  if (acceptCompletion(view)) return true;
+  if (!listShown(view)) return false;
+  const doc = view.state.doc;
+  const until = Date.now() + pickPatienceMs;
+  const retry = () => {
+    if (!view.dom.isConnected || view.state.doc !== doc || !listShown(view) || Date.now() > until) return;
+    if (!acceptCompletion(view)) setTimeout(retry, pickRetryMs);
+  };
+  setTimeout(retry, pickRetryMs);
+  return true;
+}
+
+/**
+ * How long typing pauses before names are checked against the model: soon enough to see as one stops, not
+ * so soon that a name half typed is underlined.
+ */
+const checkPauseMs = 400;
 
 /** The query laid out, in place, undoable; one Format cannot read is left as it is. */
 function format(view: EditorView): boolean {
@@ -268,10 +303,12 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
           keymap.of([
             { key: 'Mod-Enter', run: () => (run.current(), true) },
             { key: 'Ctrl-Enter', run: () => (run.current(), true) },
+            // Enter takes the suggestion even while CodeMirror refreshes the list; with none open, a new line.
+            { key: 'Enter', run: pickNowOrSoon },
             {
               key: 'Tab',
               run: (v) => {
-                if (acceptCompletion(v)) return true;
+                if (pickNowOrSoon(v)) return true;
                 const spec = expandStar(v.state);
                 if (spec) v.dispatch(spec);
                 return Boolean(spec);
@@ -286,7 +323,10 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
           // What belongs at the caret: columns in scope, conditions after ON, joins after JOIN (complete.ts).
           sqlSupport(model, database, (key) => used()[key] ?? 0),
           // Words only, no icons: the catalogue draws no glyph it does not explain.
-          autocompletion({ icons: false }),
+          // A description beside the list, or under it on a phone, never over the suggestions (complete.ts).
+          autocompletion({ icons: false, positionInfo: (_view, list, option, info, space) => infoPlacement(list, option, info, space) }),
+          // A name the model does not have, underlined as it is typed, with the nearest it has (check.ts).
+          linter((v) => unknownNames(v.state), { delay: checkPauseMs }),
           syntaxHighlighting(sqlHighlighter),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ 'aria-label': 'SQL query' }),
@@ -376,7 +416,8 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
       {ran.result && <Result result={ran.result} stale={Boolean(ran.running || ran.error)} />}
       <p className="sql-hint">
         Ctrl+Space suggests what fits where the caret is, and Tab or Enter takes it. Tab after * writes the columns; ssf, st100,
-        scf, cte and wex write the start of a query; Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y formats it.
+        scf, cte and wex write the start of a query; Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y formats it. A red wavy line marks a name
+        the model does not have; point at it for the nearest it has.
       </p>
       <p className="sql-hint">
         {connection.state === 'ready' && (

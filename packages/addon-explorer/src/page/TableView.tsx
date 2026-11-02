@@ -200,7 +200,9 @@ export function TableView({ model, cat, tableRef, column }: Props) {
                 <td className="mono">{col.name}</td>
                 <td className="mono type">
                   {col.type}
-                  {(col.sparse || col.collation) && <span className="cell-note">{[col.sparse ? 'sparse' : '', col.collation ? `collation ${col.collation}` : ''].filter(Boolean).join(' · ')}</span>}
+                  {(col.sparse || col.hidden || col.collation) && (
+                    <span className="cell-note">{[col.sparse ? 'sparse' : '', col.hidden ? 'hidden' : '', col.collation ? `collation ${col.collation}` : ''].filter(Boolean).join(' · ')}</span>
+                  )}
                 </td>
                 <td className="muted">{col.nullable ? 'yes' : ''}</td>
                 <td className="mono">{col.default !== undefined && <SqlInline code={col.default} />}</td>

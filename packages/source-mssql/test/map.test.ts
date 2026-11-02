@@ -192,6 +192,8 @@ test('columns: collation only where it differs, identity seed, sparse, masking, 
   assert.deepEqual(email.sensitivity, { label: 'Confidential', informationType: 'Contact Info', rank: 'medium' });
   assert.equal(customers.columns.find((c) => c.name === 'Notes')!.collation, undefined, 'the database default is not repeated');
   assert.equal(customers.columns.find((c) => c.name === 'Notes')!.sparse, true);
+  assert.equal(customers.columns.find((c) => c.name === 'Notes')!.hidden, true, 'left out of SELECT *');
+  assert.equal(email.hidden, undefined);
   assert.deepEqual([customers.columns[0].identitySeed, customers.columns[0].identityIncrement], ['1', '1']);
   assert.deepEqual(findTable(model, 'dbo.Orders')!.table.columns.find((c) => c.name === 'Net')!.encrypted, { type: 'deterministic', key: 'CEK_Auto1' });
   assert.equal(database.unread, undefined, 'the labels were read');

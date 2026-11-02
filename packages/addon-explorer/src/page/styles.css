@@ -1582,6 +1582,43 @@ table.columns tr.is-pointed td {
 .cm-completionDetail {
   color: var(--ink-2);
 }
+/* A suggestion's description: the same hairline box, beside the list, or under or over it on a phone. */
+.cm-tooltip.cm-completionInfo {
+  background: var(--bg);
+  border: var(--hair) solid var(--line-strong);
+  color: var(--ink);
+  font-size: 12px;
+}
+.cm-completionInfo.cm-completionInfo-under {
+  left: 0;
+}
+/* A name the model does not have: a red wavy line, the page's one mark for it, defined under the editor.
+   Pointed at, the same hairline box says what dbtour knows, and a fix is a button in it. */
+.cm-lintRange.cm-lintRange-warning {
+  background-image: none;
+  text-decoration: underline wavy var(--red);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+/* The check's message is a section of CodeMirror's hover box, so the box is drawn, and kept to a readable
+   width, there. */
+.cm-tooltip.cm-tooltip-hover {
+  background: var(--bg);
+  border: var(--hair) solid var(--line-strong);
+  color: var(--ink);
+  font-size: 12px;
+  max-width: min(480px, calc(100vw - 32px));
+}
+.cm-tooltip-lint .cm-diagnostic-warning {
+  border-left: 2px solid var(--red);
+}
+.cm-tooltip-lint .cm-diagnosticAction {
+  background: transparent;
+  border: var(--hair) solid var(--line-strong);
+  border-radius: 0;
+  color: var(--ink);
+  font-family: var(--mono);
+}
 
 /* A status, the editor's beside "T-SQL" or the rail's: hollow not connected; grey connected and nothing to
    say yet; green the database answers (a reader in the rail, the last run in the editor); red it failed.

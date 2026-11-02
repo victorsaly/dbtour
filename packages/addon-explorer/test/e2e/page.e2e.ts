@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Locator } from 'playwright-core';
 import { scope, type Model } from 'dbtour/model';
 import { render } from '../../src/index.ts';
 import { startServer } from '../../../core/src/serve.ts';
@@ -15,10 +15,18 @@ import { describe } from '../../../core/test/fixtures/described.ts';
 import { twoDatabases } from '../../../core/test/fixtures/two.ts';
 
 /**
- * CodeMirror ignores Enter for 75 ms after the completion list changes (its interactionDelay), so a key pressed
- * at once types a new line; a reader is never that quick, a test is.
+ * The text a locator settles on: a pick asked for while CodeMirror refreshes its list is made a moment later,
+ * so the editor is read once it says what is expected, or after five seconds, whatever it says then.
  */
-const completionSettleMs = 100;
+async function textOf(locator: Locator, expected: string | RegExp): Promise<string> {
+  const until = Date.now() + 5000;
+  let text = (await locator.textContent()) ?? '';
+  while (!(typeof expected === 'string' ? text === expected : expected.test(text)) && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    text = (await locator.textContent()) ?? '';
+  }
+  return text;
+}
 
 /** Evaluated in the page, where the DOM is; written as text because this file is typed for Node. */
 const nodeCount = (n: number): string => `document.querySelectorAll('.react-flow__node').length === ${n}`;
@@ -339,14 +347,14 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await options.first().waitFor();
     assert.match((await options.allTextContents()).join(' '), /OrderLines/);
     await page.keyboard.press('Enter');
-    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines AS ol$/);
+    assert.match(await textOf(editor, /FROM dbo\.OrderLines AS ol$/), /FROM dbo\.OrderLines AS ol$/);
 
     // In WHERE, the columns of the table the query reads come first, before keywords like QUOTENAME.
     await page.keyboard.type(' WHERE Qu');
     await options.first().waitFor();
     assert.match((await options.first().textContent()) ?? '', /^Quantity/);
     await page.keyboard.press('Enter');
-    assert.match((await editor.textContent()) ?? '', /FROM dbo\.OrderLines AS ol WHERE Quantity$/);
+    assert.match(await textOf(editor, /FROM dbo\.OrderLines AS ol WHERE Quantity$/), /FROM dbo\.OrderLines AS ol WHERE Quantity$/);
 
     // The draft is kept in the browser, and Reset goes back to the starter.
     await page.reload();
@@ -374,12 +382,13 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await options.first().waitFor();
     assert.match((await options.first().textContent()) ?? '', /^ssf/);
     await page.keyboard.press('Enter');
+    assert.equal(await textOf(sqlEditor, 'SELECT * FROM '), 'SELECT * FROM ');
     await options.first().waitFor();
     await page.keyboard.type('Cust');
     await options.filter({ hasText: /^Customers/ }).first().waitFor();
-    await page.waitForTimeout(completionSettleMs);
+    // At once, while CodeMirror may still be refreshing the list for the last letter: the pick waits for it.
     await page.keyboard.press('Tab');
-    assert.equal(await sqlEditor.textContent(), 'SELECT * FROM dbo.Customers AS c', 'Tab takes the suggestion, as Enter does');
+    assert.equal(await textOf(sqlEditor, 'SELECT * FROM dbo.Customers AS c'), 'SELECT * FROM dbo.Customers AS c', 'Tab takes the suggestion, as Enter does');
     await page.keyboard.press('Home');
     for (let i = 0; i < 'SELECT *'.length; i++) await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Tab');
@@ -388,6 +397,52 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await page.locator('.sql-page button', { hasText: 'Format' }).click();
     assert.deepEqual(await page.locator('.sql-page .cm-line').allTextContents(), ['SELECT', '  Id,', '  Email,', '  Name', 'FROM', '  dbo.Customers AS c']);
 
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('on a phone, a suggestion\'s description sits clear of the list, and a name the model lacks is underlined', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  try {
+    const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+    const file = join(mkdtempSync(join(tmpdir(), 'dbtour-page-')), 'index.html');
+    writeFileSync(file, render(model)['index.html']);
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${pathToFileURL(file).href}#sql`);
+    const editor = page.locator('.sql-page .cm-content');
+    await editor.waitFor();
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    // The whole table list, wide with each table's schema and rows, leaves no room beside it on a phone.
+    await page.keyboard.type('SELECT * FROM ');
+    await page.keyboard.press('Control+Space');
+    const info = page.locator('.cm-completionInfo', { hasText: 'One row per account.' });
+    await info.waitFor();
+    const list = (await page.locator('.cm-tooltip-autocomplete > ul').boundingBox())!;
+    const box = (await info.boundingBox())!;
+    const overlaps = box.x < list.x + list.width && list.x < box.x + box.width && box.y < list.y + list.height && list.y < box.y + box.height;
+    assert.ok(!overlaps, `the description (${JSON.stringify(box)}) covers no suggestion (${JSON.stringify(list)})`);
+
+    // A table the model does not have: a red wavy line, and on it what dbtour knows and what to do.
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('SELECT * FROM dbo.Ordrs');
+    const marked = page.locator('.sql-page .cm-lintRange-warning');
+    await marked.waitFor();
+    assert.equal(await marked.textContent(), 'dbo.Ordrs');
+    await marked.hover();
+    await page.locator('.cm-tooltip-lint', { hasText: 'Did you mean dbo.Orders?' }).waitFor();
+    await page.locator('.cm-tooltip-lint button', { hasText: 'dbo.Orders' }).click();
+    assert.equal(await editor.textContent(), 'SELECT * FROM dbo.Orders');
+    await page.waitForFunction("!document.querySelector('.sql-page .cm-lintRange-warning')");
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

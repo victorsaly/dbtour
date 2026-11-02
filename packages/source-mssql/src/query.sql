@@ -75,6 +75,8 @@ SELECT s.[name] AS [schema],
        CAST(ep.[value] AS nvarchar(max)) AS [description],
        c.collation_name AS [collation],
        c.is_sparse AS [sparse],
+       -- COLUMNPROPERTY, not sys.columns.is_hidden: before SQL Server 2016 it answers NULL, the column would fail.
+       CAST(COLUMNPROPERTY(c.object_id, c.[name], 'IsHidden') AS bit) AS [hidden],
        CAST(idc.seed_value AS nvarchar(40)) AS [identitySeed],
        CAST(idc.increment_value AS nvarchar(40)) AS [identityIncrement]
 FROM sys.columns c

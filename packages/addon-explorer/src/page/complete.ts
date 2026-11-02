@@ -7,7 +7,7 @@
 // is counted, and comes first among equals. Pure, so the cases in test/complete.test.ts run it as the editor does.
 import { snippet, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from '@codemirror/autocomplete';
 import { keywordCompletionSource, MSSQL, schemaCompletionSource, SQLDialect, type SQLNamespace } from '@codemirror/lang-sql';
-import { LanguageSupport, syntaxTree } from '@codemirror/language';
+import { ensureSyntaxTree, LanguageSupport, syntaxTree } from '@codemirror/language';
 import { Facet, type EditorState, type Extension, type TransactionSpec } from '@codemirror/state';
 import { findTable, localRef, relationsOf, tableRef, type Model } from 'dbtour/model';
 import { aliasFor, completionSchema, isProtected, joinCompletions, quoteName, quoteRef, type TableSuggestions } from './query.ts';
@@ -27,6 +27,15 @@ const outerColumnBoost = 1;
 const writtenOutBoost = 99;
 // After FROM, a schema is a step towards a table: listed after the tables, before the keywords.
 const schemaBoost = -0.5;
+// A table that has every column the select list names comes a point above one that has none, a part for
+// some: the same scale as a pick, so a better typed match still leads.
+const tableFitBoost = 1;
+// After a table and its alias, the words that can follow it; ON leads after a JOIN, where it is due.
+const afterTableWords = new Set([
+  'AS', 'WITH', 'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'OUTER', 'APPLY', 'ON', 'AND', 'OR',
+  'GROUP', 'ORDER', 'HAVING', 'UNION', 'EXCEPT', 'INTERSECT', 'OPTION', 'FOR', 'SET', 'OUTPUT', 'PIVOT', 'UNPIVOT',
+]);
+const onBoost = 1;
 // A snippet's name is a made-up word: it leads only once typed whole, below a keyword that matches as well.
 const snippetBoost = -2;
 // What was picked before: a tenth a pick, at most nine tenths, so it orders equals (and an outer column never
@@ -59,18 +68,49 @@ export const snippets: Snippet[] = [
   { name: 'wex', template: 'WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${condition})' },
 ];
 
-/** What expandStar needs from the editor's state: the model, and the tables by their names. */
-interface Setup {
+/** What expandStar and the check need from the editor's state: the model, its database, the tables by name. */
+export interface Setup {
   model: Model;
+  databaseName: string;
+  defaultSchema: string;
   index: Map<string, Known>;
 }
 
 const setup = Facet.define<Setup, Setup | undefined>({ combine: (values) => values[0] });
 
+/** The model and database the editor completes from, for the check (check.ts) to hold the query to. */
+export function setupOf(state: EditorState): Setup | undefined {
+  return state.facet(setup);
+}
+
 type Node = ReturnType<typeof syntaxTree>['topNode'];
+type Tree = ReturnType<typeof syntaxTree>;
+
+// CodeMirror parses a new document only so far, and the rest in the background; asked for the whole, it is
+// given this long to finish, a few frames, enough for a long query, and what it has by then is read.
+const parseBudgetMs = 50;
+const trees = new WeakMap<EditorState, Tree>();
+
+// What one state's query is read into, kept for the next reference in the same state: the check asks about
+// every qualified name, and reading the statement again for each made a long query's check quadratic.
+const memo = new WeakMap<EditorState, Map<string, unknown>>();
+
+function cached<T>(state: EditorState, key: string, make: () => T): T {
+  let known = memo.get(state);
+  if (!known) memo.set(state, (known = new Map()));
+  if (!known.has(key)) known.set(key, make());
+  return known.get(key) as T;
+}
+
+/** The query's syntax tree to its end, parsed once per state: the check and the reader read all of it. */
+export function treeOf(state: EditorState): Tree {
+  let tree = trees.get(state);
+  if (!tree) trees.set(state, (tree = ensureSyntaxTree(state, state.doc.length, parseBudgetMs) ?? syntaxTree(state)));
+  return tree;
+}
 
 /** A table of the model, by its ref, its name in this database's SQL, and what autocomplete says of it. */
-interface Known {
+export interface Known {
   ref: string;
   suggestions: TableSuggestions;
 }
@@ -84,7 +124,7 @@ interface InScope {
 }
 
 /** What is at the caret, read once and shared by the sources the editor asks. */
-interface Reading {
+export interface Reading {
   /** In a string or a comment: nothing is offered. */
   quiet: boolean;
   /** In a [quoted name]: CodeMirror's schema completion quotes what it offers; the columns here do not. */
@@ -99,12 +139,16 @@ interface Reading {
   aliasable: boolean;
   /** The names before a dot at the caret, as written: a schema, say, or an alias. */
   qualifier?: string[];
-  /** A * the select list ends with at the caret, and the table it is qualified with. */
-  star?: { from: number; qualifier?: string };
+  /** A * the select list ends with at the caret, the table it is qualified with, and whether a word touches it. */
+  star?: { from: number; qualifier?: string; spaced: boolean };
   /** Every name the query gives a table, at every level, in lower case: a new alias must be none of them. */
   taken: Set<string>;
   /** The table being written at the caret has its alias already, after it: `FROM Cust| AS c`. */
   aliased: boolean;
+  /** Just after a table and its alias, where a clause or a join goes: after a JOIN with no ON yet, ON is due. */
+  afterTable?: { joining: boolean };
+  /** The columns the select list names, in lower case: the tables that have them fit the query. */
+  selected: string[];
   /** The caret's own query reads a table the model does not know, or a subquery: * covers columns not known here. */
   unknownOwn: boolean;
   /** Just after ON: the table being joined, and the ones before it it can join to. */
@@ -117,7 +161,8 @@ const tableStarts = new Set(['FROM', 'JOIN', 'APPLY', 'INTO', 'UPDATE']);
 const aliasStarts = new Set(['FROM', 'JOIN', 'APPLY']);
 // The clauses a * can be read in: only in SELECT's is it every column.
 const clauses = new Set(['SELECT', 'FROM', 'WHERE', 'GROUP', 'ORDER', 'HAVING', 'ON', 'SET', 'JOIN', 'VALUES']);
-const fromEnds = new Set(['WHERE', 'GROUP', 'ORDER', 'HAVING', 'ON', 'SET', 'UNION', 'EXCEPT', 'INTERSECT', 'OPTION', 'VALUES', 'OUTPUT']);
+// ON is not one: FROM a JOIN b ON …, c goes on with c.
+const fromEnds = new Set(['WHERE', 'GROUP', 'ORDER', 'HAVING', 'SET', 'UNION', 'EXCEPT', 'INTERSECT', 'OPTION', 'VALUES', 'OUTPUT']);
 // Keywords that begin a statement, or a branch of a UNION: each has its own FROM, so its own scope.
 const queryStarts = new Set(['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE']);
 
@@ -142,19 +187,29 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
   const keywords = keywordCompletionSource(tsql, true);
   const names = schemaCompletionSource({ dialect: tsql, schema: schema as unknown as SQLNamespace, defaultSchema });
   const sources: CompletionSource[] = [
-    (context) => (read(context).afterDot || read(context).dotted || read(context).star ? null : keywords(context)),
+    (context) => {
+      const at = read(context);
+      // Where a table goes, no keyword; after one, only what can follow it.
+      if (at.afterDot || at.dotted || at.star || (at.tableSpot && at.aliasable && !at.quoted)) return null;
+      const result = keywords(context) as CompletionResult | null;
+      if (!result || !at.afterTable) return result;
+      const joining = at.afterTable.joining;
+      const options = result.options.filter((o) => afterTableWords.has(o.label)).map((o) => (joining && o.label === 'ON' ? { ...o, boost: (o.boost ?? 0) + onBoost } : o));
+      return { ...result, options };
+    },
     // Where a table takes an alias, the tables come from here, written with one; in a [quoted name], from
     // CodeMirror's own, which quotes what it offers.
     (context) => {
       const at = read(context);
-      return at.quiet || at.dotted || at.star || (at.tableSpot && at.aliasable && !at.quoted) ? null : names(context);
+      return at.quiet || at.dotted || at.star || at.afterTable || (at.tableSpot && at.aliasable && !at.quoted) ? null : names(context);
     },
     (context) => withRanks(columns(context, read(context), model), ranked),
     (context) => withRanks(tables(context, read(context), model, index), ranked),
     (context) => withRanks(snippetsAt(context, read(context)), ranked),
     (context) => withRanks(joins(context, read(context), model, databaseName), ranked),
   ];
-  return [setup.of({ model, index }), new LanguageSupport(tsql.language, sources.map((autocomplete) => tsql.language.data.of({ autocomplete })))];
+  const databaseNameHere = (model.databases.find((d) => d.name === databaseName) ?? model.databases[0])?.name ?? '';
+  return [setup.of({ model, databaseName: databaseNameHere, defaultSchema, index }), new LanguageSupport(tsql.language, sources.map((autocomplete) => tsql.language.data.of({ autocomplete })))];
 }
 
 function withRanks(result: CompletionResult | null, ranked: (options: Keyed[]) => Keyed[]): CompletionResult | null {
@@ -252,10 +307,15 @@ function conditions(model: Model, joined: InScope, earlier: InScope[]): Completi
  */
 function tables(context: CompletionContext, reading: Reading, model: Model, index: Map<string, Known>): CompletionResult | null {
   if (reading.quiet || reading.quoted || reading.dotted || !reading.tableSpot || !reading.aliasable) return null;
+  // Open as soon as the space after FROM or JOIN is typed: a table is all that can come there.
   const word = context.matchBefore(/\w*$/)!;
-  if (!word.text && !context.explicit && !reading.qualifier) return null;
   const schema = reading.qualifier?.[reading.qualifier.length - 1]?.toLowerCase();
   const options: Keyed[] = [];
+  const fit = (columns: string[]) => {
+    if (!reading.selected.length) return 0;
+    const have = new Set(columns.map((c) => c.toLowerCase()));
+    return (reading.selected.filter((c) => have.has(c)).length / reading.selected.length) * tableFitBoost;
+  };
   const schemas = new Set<string>();
   for (const known of new Set(index.values())) {
     const local = localRef(model, known.ref);
@@ -269,7 +329,14 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
       key: `table:${known.ref}`,
       detail: `${schemaName} · ${table.detail}`,
       apply: reading.aliased ? name : `${name} AS ${aliasFor(table.label, new Set(reading.taken))}`,
+      boost: fit(known.suggestions.children.map((c) => c.label)),
     });
+  }
+  // The query's own CTEs, where it can read them as tables.
+  if (schema === undefined) {
+    for (const cte of ctesAt(cteScopes(context.state), context.pos).values()) {
+      options.push({ label: cte, type: 'type', detail: 'CTE', apply: reading.aliased ? quoteName(cte) : `${quoteName(cte)} AS ${aliasFor(cte, new Set(reading.taken))}` });
+    }
   }
   // The schemas, to go on with a dot, after the tables and before the keywords.
   if (schema === undefined) for (const name of schemas) options.push({ label: name, type: 'type', detail: 'schema', boost: schemaBoost });
@@ -317,9 +384,10 @@ function expansions(reading: Reading, model: Model): Expansion[] {
   const own = reading.scope.filter((s) => s.depth === 0);
   const covered = star.qualifier ? reading.scope.filter((s) => s.name.toLowerCase() === star.qualifier!.toLowerCase()).slice(0, 1) : own;
   const qualify = Boolean(star.qualifier) || covered.length > 1;
-  const columns = covered.flatMap((s) => (findTable(model, s.known.ref)?.table.columns ?? []).map((c) => ({ column: c, table: s })));
+  // What SELECT * returns: a column the database hides from it is not written either.
+  const columns = covered.flatMap((s) => (findTable(model, s.known.ref)?.table.columns ?? []).filter((c) => !c.hidden).map((c) => ({ column: c, table: s })));
   if (!columns.length) return [];
-  const write = (list: typeof columns) => list.map(({ column, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(column.name)).join(', ');
+  const write = (list: typeof columns) => (star.spaced ? '' : ' ') + list.map(({ column, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(column.name)).join(', ');
   const open = columns.filter(({ column }) => !isProtected(column));
   const left = columns.filter(({ column }) => isProtected(column)).map(({ column }) => column.name);
   const all = { text: write(columns), count: columns.length, detail: 'every column', exposes: left.length > 0 };
@@ -362,7 +430,11 @@ function knownTables(model: Model, databaseName: string | undefined): Map<string
   return index;
 }
 
-function readAt(state: EditorState, pos: number, index: Map<string, Known>): Reading {
+/**
+ * What is at `pos`: the place, the tables in scope there, and the table a name-and-dot before it names. The
+ * check, which needs only the last, says `place: false`, and the place (what fits there) is not worked out.
+ */
+export function readAt(state: EditorState, pos: number, index: Map<string, Known>, { place = true }: { place?: boolean } = {}): Reading {
   const reading: Reading = {
     quiet: false,
     quoted: false,
@@ -371,43 +443,53 @@ function readAt(state: EditorState, pos: number, index: Map<string, Known>): Rea
     aliasable: false,
     taken: new Set(),
     aliased: false,
+    selected: [],
     unknownOwn: false,
     scope: [],
   };
-  const tree = syntaxTree(state);
+  const tree = treeOf(state);
   const here = tree.resolveInner(pos, -1);
   if (/^(String|LineComment|BlockComment)$/.test(here.name) && here.from < pos) return { ...reading, quiet: true };
   reading.quoted = here.name === 'QuotedIdentifier' && here.from < pos;
 
-  // The statement and the parentheses around the caret, innermost first.
+  // The statement and the parentheses around the caret, innermost first: up from the token at it, or, in
+  // the space after an open statement or parenthesis, which no token holds, down from the top.
   const levels: Node[] = [];
-  for (let node: Node | null = tree.topNode; node; ) {
-    let inner: Node | null = null;
-    for (let child: Node | null = node.firstChild; child && child.from < pos; child = child.nextSibling) {
-      if ((child.name === 'Statement' || child.name === 'Parens') && (pos < child.to || isOpen(child))) inner = child;
+  const around = (n: Node) => (n.name === 'Statement' || n.name === 'Parens') && n.from < pos && (pos < n.to || isOpen(n));
+  for (let n: Node | null = here; n; n = n.parent) if (around(n)) levels.push(n);
+  if (levels[levels.length - 1]?.name !== 'Statement') {
+    levels.length = 0;
+    for (let node: Node | null = tree.topNode; node; ) {
+      let inner: Node | null = null;
+      for (let child: Node | null = node.firstChild; child && child.from < pos; child = child.nextSibling) if (around(child)) inner = child;
+      if (inner) levels.unshift(inner);
+      node = inner;
     }
-    if (inner) levels.unshift(inner);
-    node = inner;
   }
 
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
   const word = /\w*$/.exec(state.sliceDoc(Math.max(0, pos - 250), pos))![0];
   const wordFrom = pos - word.length;
   // After name-and-dot, the place is read from before the name: FROM billing.| is still where a table goes.
-  const qualified = /((?:(?:\[(?:[^\]]|\]\])*\]|"[^"]*"|\w+)\.)+)\w*$/.exec(state.sliceDoc(Math.max(0, pos - 250), pos));
+  // T-SQL allows space around the dot: dbo. Customers is still dbo's.
+  const qualified = /((?:(?:\[(?:[^\]]|\]\])*\]|"[^"]*"|\w+)\s*\.\s*)+)\w*$/.exec(state.sliceDoc(Math.max(0, pos - 250), pos));
   const nameFrom = qualified ? wordFrom - qualified[1].length : wordFrom;
   let anchor = wordFrom;
   // Names a query nearer the caret binds: an outer table of the same name is hidden by it, as in SQL.
   const bound = new Set<string>();
+  // Names bound to a CTE, a subquery or a table the model does not know: a dot after one names no model table.
+  const boundElsewhere = new Set<string>();
   levels.forEach((level, depth) => {
-    // Comments are not the query: a table and its alias read the same with one between them.
-    const tokens = children(level).filter((t) => !/^(\(|\)|LineComment|BlockComment)$/.test(t.name));
-    const segment = segmentAround(tokens, anchor, text);
-    const items = fromItems(segment, text, index);
-    for (const item of items) if (item.known && !bound.has(item.name.toLowerCase())) reading.scope.push({ name: item.name, known: item.known, depth });
+    const { segment, items } = queryAround(state, level, anchor, index);
+    for (const item of items) {
+      const name = item.name.toLowerCase();
+      if (bound.has(name)) continue;
+      if (item.known) reading.scope.push({ name: item.name, known: item.known, depth });
+      else boundElsewhere.add(name);
+    }
     for (const item of items) bound.add(item.name.toLowerCase());
     for (const item of items) if (item.name) reading.taken.add(item.name.toLowerCase());
-    if (depth === 0) {
+    if (depth === 0 && place) {
       const before = segment.filter((t) => t.to <= nameFrom);
       const prev = before[before.length - 1];
       const prevWord = prev?.name === 'Keyword' ? text(prev).toUpperCase() : '';
@@ -415,6 +497,11 @@ function readAt(state: EditorState, pos: number, index: Map<string, Known>): Rea
       const named = tableStarts.has(prevWord) || (isComma(prev, text) && inFrom);
       reading.tableSpot = named || items.some((item) => item.ends.includes(prev?.to ?? -1));
       reading.aliasable = named && (aliasStarts.has(prevWord) || isComma(prev, text));
+      if (reading.tableSpot && !named) {
+        const start = [...before].reverse().find((t) => t.name === 'Keyword' && (tableStarts.has(text(t).toUpperCase()) || text(t).toUpperCase() === 'ON'));
+        reading.afterTable = { joining: start !== undefined && text(start).toUpperCase() === 'JOIN' };
+      }
+      reading.selected = cached(state, `selected:${segment[0]?.from}`, () => selectedColumns(segment, text));
       reading.star = starAt(state, pos, segment, text);
       reading.aliased = (items.find((item) => item.at === nameFrom)?.ends.length ?? 0) > 1;
       reading.unknownOwn = items.some((item) => !item.known);
@@ -436,7 +523,8 @@ function readAt(state: EditorState, pos: number, index: Map<string, Known>): Rea
     const parts = (qualified[1].match(/\[(?:[^\]]|\]\])*\]|"[^"]*"|\w+/g) ?? []).map(unquote);
     reading.qualifier = parts;
     const named = parts.length === 1 ? reading.scope.find((s) => s.name.toLowerCase() === parts[0].toLowerCase())?.known : undefined;
-    const known = named ?? index.get(parts.join('.').toLowerCase());
+    const elsewhere = parts.length === 1 && boundElsewhere.has(parts[0].toLowerCase());
+    const known = named ?? (elsewhere ? undefined : index.get(parts.join('.').toLowerCase()));
     if (known) reading.dotted = { known, from: wordFrom };
   }
   return reading;
@@ -457,7 +545,111 @@ function starAt(state: EditorState, pos: number, segment: Node[], text: (n: Node
   const prevWord = prev?.name === 'Keyword' ? text(prev).toUpperCase() : '';
   const afterTop = (prev?.name === 'Parens' || prev?.name === 'Number') && text(before[before.length - 2] ?? prev).toUpperCase() === 'TOP';
   if (!(prevWord === 'SELECT' || prevWord === 'DISTINCT' || prevWord === 'ALL' || isComma(prev, text) || afterTop)) return undefined;
-  return { from, qualifier: found[1] === undefined ? undefined : unquote(found[1]) };
+  // SELECT* is valid; written out, the columns need the space the * did not.
+  const spaced = !/\w$/.test(state.sliceDoc(Math.max(0, from - 1), from));
+  return { from, qualifier: found[1] === undefined ? undefined : unquote(found[1]), spaced };
+}
+
+/** A statement's or a parenthesis' own tokens. Comments are not the query: a table and its alias read the same with one between them. */
+function tokensOf(level: Node): Node[] {
+  return children(level).filter((t) => !/^(\(|\)|LineComment|BlockComment)$/.test(t.name));
+}
+
+/** Every table the query names, at every level, as written: what the check holds to the model. */
+export function namesInQuery(state: EditorState, index: Map<string, Known>): FromItem[] {
+  const text = (n: Node) => state.sliceDoc(n.from, n.to);
+  const items: FromItem[] = [];
+  const scopes = cteScopes(state);
+  treeOf(state).iterate({
+    enter: (ref) => {
+      if (ref.name === 'Statement' || ref.name === 'Parens') items.push(...fromItems(tokensOf(ref.node), text, index, (name, at) => ctesAt(scopes, at).has(name)));
+    },
+  });
+  return items;
+}
+
+/** A name the query's WITH gives, in lower case and as written, and the stretch of the query it stands in. */
+interface Cte {
+  name: string;
+  written: string;
+  from: number;
+  to: number;
+}
+
+// Keywords before a SELECT that joins the query before it, rather than starting one of its own.
+const branchJoins = new Set(['UNION', 'ALL', 'EXCEPT', 'INTERSECT']);
+
+/**
+ * The names each WITH gives: WITH name AS (…), name (a, b) AS (…). Each stands in its own query, from the WITH
+ * to the next query that is not one of its UNION branches; a table so named there is the CTE, not the model's.
+ */
+function cteScopes(state: EditorState): Cte[] {
+  return cached(state, 'ctes', () => readCteScopes(state));
+}
+
+function readCteScopes(state: EditorState): Cte[] {
+  const text = (n: Node) => state.sliceDoc(n.from, n.to);
+  const scopes: Cte[] = [];
+  const word = (t: Node | undefined) => (t?.name === 'Keyword' ? text(t).toUpperCase() : '');
+  for (let statement = treeOf(state).topNode.firstChild; statement; statement = statement.nextSibling) {
+    if (statement.name !== 'Statement') continue;
+    const tokens = tokensOf(statement);
+    tokens.forEach((t, w) => {
+      if (word(t) !== 'WITH' || !(tokens[w + 1]?.name === 'Identifier' || tokens[w + 1]?.name === 'QuotedIdentifier')) return;
+      const names: string[] = [];
+      let i = w + 1;
+      for (;;) {
+        const name = tokens[i];
+        if (!(name?.name === 'Identifier' || name?.name === 'QuotedIdentifier')) break;
+        const as = tokens[i + 1]?.name === 'Parens' ? i + 2 : i + 1;
+        if (word(tokens[as]) !== 'AS' || tokens[as + 1]?.name !== 'Parens') break;
+        names.push(unquote(text(name)));
+        i = as + 2;
+        if (!isComma(tokens[i], text)) break;
+        i++;
+      }
+      // The query the WITH belongs to starts at i; the next one that is not its UNION branch ends it.
+      const next = tokens.findIndex((u, k) => k > i && queryStarts.has(word(u)) && !branchJoins.has(word(tokens[k - 1])));
+      const to = next < 0 ? statement!.to : tokens[next].from;
+      for (const name of names) scopes.push({ name: name.toLowerCase(), written: name, from: t.from, to });
+    });
+  }
+  return scopes;
+}
+
+/** The CTEs that stand at `pos`, by name in lower case, each to its name as written. */
+function ctesAt(scopes: Cte[], pos: number): Map<string, string> {
+  return new Map(scopes.filter((c) => c.from <= pos && pos <= c.to).map((c) => [c.name, c.written]));
+}
+
+/** A box on the screen, as CodeMirror measures the list, the option, its description and the room there is. */
+export interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+// CodeMirror's own widest description, and the margin it keeps from the edge.
+const infoWidest = 400;
+
+/**
+ * Where a suggestion's description goes: beside the list, level with the option, when there is room; on a
+ * narrow screen under the whole list, or over it when there is no room below. CodeMirror's own puts it just
+ * under the option, over the suggestions after it.
+ */
+export function infoPlacement(list: Box, option: Box, info: Box, space: Box): { style: string; class: string } {
+  const width = info.right - info.left;
+  const height = info.bottom - info.top;
+  const right = space.right - list.right;
+  const left = list.left - space.left;
+  if (width <= right || width <= left) {
+    const top = Math.max(space.top, Math.min(option.top, space.bottom - height)) - list.top;
+    return { style: `top: ${top}px; max-width: ${Math.min(infoWidest, width <= right ? right : left)}px`, class: width <= right ? 'cm-completionInfo-right' : 'cm-completionInfo-left' };
+  }
+  const tall = list.bottom - list.top;
+  const below = space.bottom - list.bottom >= height || space.bottom - list.bottom > list.top - space.top;
+  return { style: `${below ? 'top' : 'bottom'}: ${tall}px; max-width: ${Math.min(infoWidest, list.right - list.left)}px`, class: 'cm-completionInfo-under' };
 }
 
 function isOpen(node: Node): boolean {
@@ -476,15 +668,68 @@ function isComma(node: Node | undefined, text: (n: Node) => string): boolean {
 }
 
 /** The tokens of the one query around `at`: from the SELECT, UPDATE and so on before it to the next. */
-function segmentAround(tokens: Node[], at: number, text: (n: Node) => string): Node[] {
-  let start = 0;
-  let end = tokens.length;
-  tokens.forEach((t, i) => {
-    if (t.name !== 'Keyword' || !queryStarts.has(text(t).toUpperCase())) return;
-    if (t.from <= at) start = i;
-    else if (i < end && t.from > at) end = Math.min(end, i);
+/**
+ * The one query of a statement or parenthesis that `at` is in, from the SELECT, UPDATE and so on before it to
+ * the next, and the tables it names. Each level is split, and each query read, once per state.
+ */
+function queryAround(state: EditorState, level: Node, at: number, index: Map<string, Known>): { segment: Node[]; items: FromItem[] } {
+  const text = (n: Node) => state.sliceDoc(n.from, n.to);
+  const segments = cached(state, `segments:${level.from}:${level.name}`, () => {
+    const tokens = tokensOf(level);
+    const starts = tokens.flatMap((t, i) => (i > 0 && t.name === 'Keyword' && queryStarts.has(text(t).toUpperCase()) ? [i] : []));
+    return [0, ...starts].map((start, k, all) => tokens.slice(start, all[k + 1] ?? tokens.length));
   });
-  return tokens.slice(start, end);
+  let i = 0;
+  while (i + 1 < segments.length && (segments[i + 1][0]?.from ?? Infinity) <= at) i++;
+  const segment = segments[i];
+  const items = cached(state, `items:${level.from}:${level.name}:${i}`, () => {
+    const scopes = cteScopes(state);
+    return fromItems(segment, text, index, (name, from) => ctesAt(scopes, from).has(name));
+  });
+  return { segment, items };
+}
+
+/**
+ * The columns a query's select list names, in lower case: a bare name, or the last part of a qualified one.
+ * Not a column's alias, written `x AS a`, `x a` or `a = x`, nor a keyword or a function.
+ */
+function selectedColumns(segment: Node[], text: (n: Node) => string): string[] {
+  const out: string[] = [];
+  const start = segment.findIndex((t) => t.name === 'Keyword' && text(t).toUpperCase() === 'SELECT');
+  if (start < 0) return out;
+  const end = segment.findIndex((t, i) => i > start && t.name === 'Keyword' && text(t).toUpperCase() === 'FROM');
+  // The select list's items, split at its commas (a function's are inside its parentheses).
+  // DISTINCT, ALL and TOP (n) [PERCENT] [WITH TIES] come before the first item, not in it.
+  const word = (t: Node | undefined) => (t?.name === 'Keyword' ? text(t).toUpperCase() : '');
+  let first = start + 1;
+  if (word(segment[first]) === 'DISTINCT' || word(segment[first]) === 'ALL') first++;
+  if (word(segment[first]) === 'TOP') {
+    first += 2;
+    if (word(segment[first]) === 'PERCENT') first++;
+    // CodeMirror's T-SQL does not know TIES as a keyword: it comes as a name.
+    if (word(segment[first]) === 'WITH' && segment[first + 1] && text(segment[first + 1]).toUpperCase() === 'TIES') first += 2;
+  }
+  const items: Node[][] = [[]];
+  for (const t of segment.slice(first, end < 0 ? undefined : end)) {
+    if (isComma(t, text)) items.push([]);
+    else items[items.length - 1].push(t);
+  }
+  const isName = (t: Node | undefined) => t?.name === 'Identifier' || t?.name === 'QuotedIdentifier';
+  for (let item of items) {
+    const as = item.findIndex((t) => t.name === 'Keyword' && text(t).toUpperCase() === 'AS');
+    if (as >= 0) item = item.slice(0, as);
+    else if (isName(item[0]) && item[1]?.name === 'Operator' && text(item[1]) === '=') item = item.slice(2);
+    else if (item.length > 1 && isName(item[item.length - 1]) && item[item.length - 2]?.name !== 'Operator') item = item.slice(0, -1);
+    item.forEach((t, i) => {
+      if (item[i + 1]?.name === 'Parens') return;
+      if (isName(t)) out.push(unquote(text(t)).toLowerCase());
+      else if (t.name === 'CompositeIdentifier') {
+        const parts = pathOf(t, text);
+        if (parts.length > 1 && parts[parts.length - 1]) out.push(parts[parts.length - 1].toLowerCase());
+      }
+    });
+  }
+  return out;
 }
 
 /** Whether the last of these tokens is inside a FROM list, where a comma brings another table. */
@@ -503,21 +748,47 @@ function fromListAt(tokens: Node[], text: (n: Node) => string): boolean {
  * A table the query names after FROM, JOIN and the like, with the alias it gives it: known to the model, or
  * not (a CTE, a table it has not read, or a subquery, which has only its alias).
  */
-interface FromItem {
+export interface FromItem {
   name: string;
   known?: Known;
   at: number;
+  /** Its name as written, part by part, without quotes; empty for a subquery. */
+  path: string[];
+  /** Where its name ends. */
+  to: number;
+  /** A table-valued function, called: dbo.fn(1). */
+  call: boolean;
+  /** A name the query's own WITH gives, where it stands. */
+  cte: boolean;
   /** Where its name and its alias end: the caret just after either is still in the FROM list. */
   ends: number[];
 }
 
-function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string, Known>): FromItem[] {
+// SQL Server's table hints: in parentheses after a table, they are not a function's arguments.
+const tableHints = new Set(
+  ('NOLOCK READUNCOMMITTED UPDLOCK HOLDLOCK ROWLOCK TABLOCK TABLOCKX PAGLOCK NOWAIT READPAST XLOCK SERIALIZABLE ' +
+    'REPEATABLEREAD READCOMMITTED READCOMMITTEDLOCK SNAPSHOT INDEX FORCESEEK FORCESCAN NOEXPAND KEEPIDENTITY ' +
+    'KEEPDEFAULTS IGNORE_CONSTRAINTS IGNORE_TRIGGERS SPATIAL_WINDOW_MAX_CELLS').split(' '),
+);
+
+/** Parentheses that hold table hints: (NOLOCK), (INDEX(ix), UPDLOCK). */
+function isHint(parens: Node, text: (n: Node) => string): boolean {
+  const first = children(parens).find((t) => t.name !== '(');
+  return Boolean(first && tableHints.has(text(first).toUpperCase()));
+}
+
+function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string, Known>, isCte: (name: string, at: number) => boolean = () => false): FromItem[] {
   const items: FromItem[] = [];
   let expect = false;
   let inFrom = false;
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     const word = t.name === 'Keyword' ? text(t).toUpperCase() : '';
+    // A new query, with or without a semicolon before it: its FROM list is its own.
+    if (queryStarts.has(word)) {
+      inFrom = false;
+      expect = false;
+    }
     if (tableStarts.has(word)) {
       expect = true;
       inFrom = word === 'FROM' || inFrom;
@@ -534,8 +805,22 @@ function fromItems(tokens: Node[], text: (n: Node) => string, index: Map<string,
     }
     expect = false;
     const parts = t.name === 'Parens' ? [''] : pathOf(t, text);
-    const item: FromItem = { name: parts[parts.length - 1], known: t.name === 'Parens' ? undefined : index.get(parts.join('.').toLowerCase()), at: t.from, ends: [t.to] };
-    let j = i + 1;
+    const next = tokens[i + 1];
+    const hint = t.name !== 'Parens' && next?.name === 'Parens' && isHint(next, text);
+    const call = t.name !== 'Parens' && next?.name === 'Parens' && !hint;
+    // A CTE's name is the CTE's, even when the model has a table of that name.
+    const cte = t.name !== 'Parens' && parts.length === 1 && isCte(parts[0].toLowerCase(), t.from);
+    const item: FromItem = {
+      name: parts[parts.length - 1],
+      known: t.name === 'Parens' || call || cte ? undefined : index.get(parts.join('.').toLowerCase()),
+      at: t.from,
+      to: t.to,
+      path: t.name === 'Parens' ? [] : parts,
+      call,
+      cte,
+      ends: [t.to],
+    };
+    let j = call || hint ? i + 2 : i + 1;
     if (tokens[j]?.name === 'Keyword' && text(tokens[j]).toUpperCase() === 'AS') j++;
     if (tokens[j] && (tokens[j].name === 'Identifier' || tokens[j].name === 'QuotedIdentifier')) {
       item.name = unquote(text(tokens[j]));
@@ -557,7 +842,7 @@ function pathOf(node: Node, text: (n: Node) => string): string[] {
 }
 
 /** A name as written, without its [brackets] or "quotes". */
-function unquote(name: string): string {
+export function unquote(name: string): string {
   if (/^\[.*\]$/s.test(name)) return name.slice(1, -1).replace(/]]/g, ']');
   if (/^".*"$/s.test(name)) return name.slice(1, -1).replace(/""/g, '"');
   return name;

@@ -99,6 +99,10 @@ Strategy: restrained. No gradient, no shadow, no radius.
   case-insensitive and quoted with [brackets], as T-SQL is. The bar holds Copy query, Copy query for the
   remembered agent (the query with the tables it reads, as the docs write them) and Reset; a draft is kept in
   the browser. Under it, one line says the page cannot reach the database and where the query runs.
+  A suggestion's description is the same hairline box, beside the list, or under or over it on a phone,
+  never over the suggestions. A name the model does not have gets a red wavy underline, the page's one mark
+  for it, defined in the line of shortcuts under the editor; pointed at, a hairline box says what dbtour
+  knows, with a red rule at its left, and the nearest name it has as a button that writes it.
   Beside "T-SQL" the status says whether the page is connected: a hollow dot not; connected, the dot is the
   last run, grey before one and while it runs, green when the database answered, red when it did not, and
   the words say the same ("· ran", "· failed"). Green (`--live`, the page's only green) means one thing,

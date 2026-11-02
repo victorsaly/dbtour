@@ -169,3 +169,9 @@ test('the review: compression that differs by partition says so in the Markdown'
   model.databases[0].schemas[0].tables[0].compression = 'none, page';
   assert.match(renderMarkdown(model)['tables/dbo.Customers.md'], /- \*\*Compressed\*\*: none, page, by partition\n/);
 });
+
+test('a column the database hides from SELECT * says so in its Key cell', () => {
+  const model = shop();
+  model.databases[0].schemas[0].tables.find((t) => t.name === 'Products')!.columns.find((c) => c.name === 'Price')!.hidden = true;
+  assert.match(renderMarkdown(model)['tables/dbo.Products.md'], /\| Price \|[^\n]*\| hidden \|[^\n]*\|\n/);
+});

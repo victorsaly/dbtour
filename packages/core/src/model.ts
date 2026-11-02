@@ -34,6 +34,8 @@ export interface Column {
   /** Only where it differs from the database's collation. */
   collation?: string;
   sparse?: boolean;
+  /** Left out of SELECT * by the database: a temporal table's period columns, when declared HIDDEN. */
+  hidden?: boolean;
   /** The dynamic data masking function: default(), email(), partial(2,"XX",0). */
   masked?: string;
   /** Always Encrypted: how, and under which column encryption key. */
@@ -440,6 +442,7 @@ function checkTable(check: Checker, t: unknown, p: string): void {
     check.optionalString(c.description, `${cp}.description`);
     for (const field of ['identitySeed', 'identityIncrement', 'collation', 'masked']) check.optionalString(c[field], `${cp}.${field}`);
     check.optionalBoolean(c.sparse, `${cp}.sparse`);
+    check.optionalBoolean(c.hidden, `${cp}.hidden`);
     check.properties(c.properties, `${cp}.properties`);
     if (c.encrypted !== undefined && check.object(c.encrypted, `${cp}.encrypted`)) {
       check.oneOf(c.encrypted.type, ['deterministic', 'randomized'], `${cp}.encrypted.type`);
