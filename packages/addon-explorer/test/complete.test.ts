@@ -426,3 +426,15 @@ test('ORDER BY after UNION offers the first query\'s names, which the result tak
   assert.equal(listed[0], 'first_id');
   assert.ok(!listed.includes('last_id'));
 });
+
+test('Tab after * holds back or leaves out a protected column however it is passed on', () => {
+  assert.equal(tab('SELECT x.*| FROM dbo.Orders o CROSS APPLY (VALUES (o.Id, o.Status)) x (Id, s)'), null, 'VALUES: what each column reads is not traced');
+  assert.equal(tab('WITH r (a, b) AS (SELECT 0, 0 UNION ALL SELECT Id, Status FROM dbo.Orders) SELECT *| FROM r'), 'WITH r (a, b) AS (SELECT 0, 0 UNION ALL SELECT Id, Status FROM dbo.Orders) SELECT a FROM r', 'b is Status in the second branch');
+  assert.equal(tab('WITH a (id, s) AS (SELECT u.*, o.Status FROM dbo.Unmodelled u CROSS JOIN dbo.Orders o), b AS (SELECT a.s FROM a) SELECT *| FROM b'), null, 'b reads from a, which is not sure');
+  assert.equal(tab('SELECT x.*| FROM (SELECT Id, (Status) AS s FROM dbo.Orders) x'), 'SELECT x.Id FROM (SELECT Id, (Status) AS s FROM dbo.Orders) x', '(Status) is Status');
+});
+
+test('GROUP BY written out lists what GROUPING reads whole', async () => {
+  assert.equal((await applies('SELECT GROUPING(YEAR(CreatedAt)) AS g, COUNT(*) FROM dbo.Orders GROUP BY |'))[0], 'YEAR(CreatedAt)');
+  assert.equal((await applies('SELECT GROUPING_ID(Status, CustomerId) AS g, COUNT(*) FROM dbo.Orders GROUP BY |'))[0], 'Status, CustomerId');
+});
