@@ -1,10 +1,17 @@
 {
   "name": "dbtour-source-mssql",
-  "version": "0.9.4",
-  "description": "SQL Server source for dbtour: tables, views, columns, keys, relations, indexes, descriptions.",
+  "version": "0.9.5",
+  "description": "SQL Server source for dbtour: tables, views, keys, relations, indexes, row counts and extended properties, read from the catalogue with VIEW DEFINITION alone, never the rows.",
   "type": "module",
   "license": "MIT",
-  "author": "Victor Saly",
+  "author": {
+    "name": "Victor Saly",
+    "url": "https://github.com/victorsaly"
+  },
+  "homepage": "https://github.com/victorsaly/dbtour#readme",
+  "bugs": {
+    "url": "https://github.com/victorsaly/dbtour/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/victorsaly/dbtour.git",
@@ -27,15 +34,21 @@
   },
   "keywords": [
     "dbtour",
-    "mssql",
     "sql-server",
-    "schema"
+    "mssql",
+    "azure-sql",
+    "schema",
+    "extended-properties",
+    "data-dictionary"
   ],
   "dependencies": {
     "mssql": "^12.7.13"
   },
+  "peerDependencies": {
+    "dbtour": "0.9.5"
+  },
   "devDependencies": {
     "@types/mssql": "^9.1.8",
-    "dbtour": "0.9.4"
+    "dbtour": "0.9.5"
   }
 }
