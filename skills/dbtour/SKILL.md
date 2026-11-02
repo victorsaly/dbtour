@@ -36,8 +36,11 @@ Look for `dbtour.yaml` at the project's root and `docs/dbtour/schema.json` (or t
      database, so committing it is their call; a private schema stays out of a public repository.
 
 - **No project, but the person wants to look at their databases** (one or several, on their machine, not in a
-  repository): set them up in `~/.dbtour` with `npx dbtour add`, which keeps passwords in the system's keychain.
-  `npx dbtour list` shows what is set up already. The rules, every time:
+  repository): for a person at their own machine, the simplest is one line they run themselves,
+  `npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p dbtour-keychain dbtour serve`, which
+  opens a page that sets a database up step by step and types the password into it, not into you. To do it
+  from the terminal instead, set them up in `~/.dbtour` with `npx dbtour add`, which keeps passwords in the
+  system's keychain. `npx dbtour list` shows what is set up already. The rules, every time:
   - Name the database in every command (`--database <name>` on `sql`, `mcp` and `serve`). With several set up,
     dbtour refuses to guess, and so do you.
   - Prefer `--sign-in az`: no password at all. A login's password goes only on stdin (`--password-stdin`),

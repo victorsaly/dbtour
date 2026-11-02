@@ -2,6 +2,7 @@
 // asked and failed, 2 for what is missing, 0 otherwise.
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { execFile, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { dirname, join, resolve } from 'node:path';
@@ -12,7 +13,7 @@ import { emptyModel, scope, validate, type Api, type Database, type Model } from
 import { applyNotes, parseNotes } from './notes.ts';
 import { answerLine, type ToolResult } from './mcp.ts';
 import { checkQuery, clampLimit, defaultTimeoutMs, resultText, type QueryResult } from './sql.ts';
-import { startServer, type ServedDatabase } from './serve.ts';
+import { startServer, UnknownStep, type ServedDatabase } from './serve.ts';
 import { randomBytes } from 'node:crypto';
 import { loadAddon, loadSource, sourceModuleName, type Addon, type Importer, type Setup, type Source } from './plugins.ts';
 import {
@@ -47,7 +48,19 @@ export interface Io {
   stdout?: Writable;
   /** Where passwords are kept; the system's keychain (dbtour-keychain) unless a test hands in its own. */
   secrets?: SecretStore;
+  /** Opens the page serve started in the person's browser; absent when no one is at a terminal to see it. */
+  open?: (url: string) => void;
+  /** Who az is signed in as, for the setup's sign-in step; the az command unless a test hands in its own. */
+  az?: () => Promise<AzState>;
 }
+
+export type AzState = { state: 'signed in'; user: string } | { state: 'signed out' } | { state: 'missing' };
+
+/**
+ * dbtour with everything the home's setup uses, from nothing installed: the command, the SQL Server source,
+ * the page and the keychain, fetched together so each finds the others.
+ */
+export const startCommand = 'npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p dbtour-keychain dbtour serve';
 
 const help = `Usage: dbtour <command>
 
@@ -59,8 +72,9 @@ const help = `Usage: dbtour <command>
                           on stdin and stdout: claude mcp add dbtour -- npx dbtour mcp
   sql "<query>"           run one SELECT through a source's reader, a read-only login of its own,
                           rolled back, at most --limit rows (100); --source <name>, --json
-  serve [--port 4321]     the rendered page on this machine; its SQL editor runs queries through the
-                          readers, as sql does
+  serve [--port 4321]     the rendered page on this machine, opened in the browser (--no-open to not);
+                          its SQL editor runs queries through the readers, as sql does. With no
+                          ${configFile} here, the home of your databases, which sets one up step by step
 
 Databases set up on this machine (~/.dbtour), without a ${configFile}:
   add <name> --server <host> [--database <name on the server>] [--sign-in az|login --user <login>
@@ -72,9 +86,10 @@ Databases set up on this machine (~/.dbtour), without a ${configFile}:
   remove <name>           forget it and its passwords; its folder stays
   sql, mcp and serve take --database <name>; with several databases set up, they must name one.
 
-Set the connection string in the environment variable ${configFile} names, never in the file.`;
+Set the connection string in the environment variable ${configFile} names, never in the file.
+From nothing installed, the home and its setup in one line: ${startCommand}`;
 
-export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: console.log, error: console.error }): Promise<number> {
+export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: console.log, error: console.error, ...(process.stdout.isTTY ? { open: openInBrowser } : {}) }): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
     options: {
@@ -83,6 +98,7 @@ export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: c
       limit: { type: 'string' },
       json: { type: 'boolean' },
       port: { type: 'string' },
+      'no-open': { type: 'boolean' },
       database: { type: 'string' },
       server: { type: 'string' },
       type: { type: 'string' },
@@ -117,9 +133,10 @@ export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: c
       }
       case 'serve': {
         const port = typeof values.port === 'string' ? Number(values.port) : defaultPort;
-        // No project here and databases set up: the home of them all, each a page of its own.
-        if (text('database') === undefined && !existsSync(join(io.cwd, configFile)) && readWorkspace(homeOf(io)).databases.length > 0) return await serveHome(io, port);
-        return await serve(await projectFor(io, text('database'), { reader: true }), port);
+        const at = values['no-open'] === true ? { ...io, open: undefined } : io;
+        // No project here: the home of the databases set up on this machine, and the setup of the first.
+        if (text('database') === undefined && !existsSync(join(io.cwd, configFile))) return await serveHome(at, port);
+        return await serve(await projectFor(at, text('database'), { reader: true }), port);
       }
       case 'sql':
         return await sql(await projectFor(io, text('database'), { reader: true }), positionals[1], {
@@ -337,6 +354,7 @@ async function serve({ io, config }: Project, port: number): Promise<number> {
     throw error;
   }
   io.log(`Serving ${config.out} at ${server.url}`);
+  io.open?.(`${server.url}/`);
   io.log(readers.length ? `Queries run through ${readers.map((s) => `${s.name}'s reader`).join(', ')}. Ctrl+C to stop.` : `No source has a reader, so the page can be read but runs no query: add reader to a source in ${configFile}. Ctrl+C to stop.`);
   await (io.stop ?? new Promise<void>((done) => process.once('SIGINT', () => done())));
   await server.close();
@@ -500,34 +518,51 @@ interface AddOptions {
 
 async function add(io: Io, name: string | undefined, options: AddOptions): Promise<number> {
   if (name === undefined) throw missing('Name the database: dbtour add Shop --server shop.example.com');
-  const problem = nameProblem(name) ?? valueProblem('server', options.server) ?? valueProblem('database', options.database ?? name);
+  const command = `add ${name} --server ${options.server} --sign-in login --user ${options.user ?? '<login>'}`;
+  const { entry } = await addDatabase(io, name, options, () => passwordFrom(io, options, command));
+  io.log(`Added ${name}: ${entry.database} on ${entry.server}, signed in ${entry.signIn === 'az' ? 'with az' : `as ${entry.user}, its password in the keychain`}.`);
+  io.log(`Next: dbtour read ${name} writes its page. To run queries from it, dbtour reader ${name} --create shows how it would give ${name} a read-only login.`);
+  return 0;
+}
+
+/** Why a new database cannot be set up under these names, or nothing: checked before anything connects. */
+function newDatabaseProblem(io: Io, name: string, server: string | undefined, database: string | undefined): string | undefined {
+  const problem = nameProblem(name) ?? valueProblem('server', server) ?? valueProblem('database', database ?? name);
+  if (problem) return problem;
+  if (readWorkspace(homeOf(io)).databases.some((d) => d.name === name)) return `${name} is set up already: pick another name, or dbtour remove ${name} first`;
+  return undefined;
+}
+
+/**
+ * Tests a database and saves it, the password (a login's) from `password`, asked only once all else is
+ * right. A database that will not answer is not saved, and its password not kept.
+ */
+async function addDatabase(io: Io, name: string, options: Omit<AddOptions, 'password' | 'passwordStdin'>, password: () => Promise<string>): Promise<{ entry: WorkspaceDatabase; exists: boolean }> {
+  const problem = newDatabaseProblem(io, name, options.server, options.database);
   if (problem) throw new Error(`${problem}, then run it again`);
   if (options.signIn !== 'az' && options.signIn !== 'login') throw new Error(`--sign-in is az or login, not ${options.signIn}`);
   const home = homeOf(io);
   const workspace = readWorkspace(home);
-  if (workspace.databases.some((d) => d.name === name)) throw new Error(`${name} is set up already: pick another name, or dbtour remove ${name} first`);
   const entry: WorkspaceDatabase = { name, type: options.type, server: options.server!, database: options.database ?? name, signIn: options.signIn };
-  const command = `add ${name} --server ${entry.server} --sign-in login --user ${options.user ?? '<login>'}`;
   if (entry.signIn === 'login') {
     const userProblem = valueProblem('login', options.user);
     if (userProblem) throw new Error(`${userProblem} with --user, then run it again`);
     entry.user = options.user;
   }
-  const password = entry.signIn === 'login' ? await passwordFrom(io, options, command) : undefined;
+  const secret = entry.signIn === 'login' ? await password() : undefined;
   const { setup } = await setupOf(io, entry);
   const secrets = entry.signIn === 'login' ? await secretsOf(io) : undefined;
-  if (secrets && password !== undefined) await secrets.set(secretAccount(name, 'login'), password);
-  // Tested before it is saved: a database that will not answer is not set up, and its password not kept.
+  if (secrets && secret !== undefined) await secrets.set(secretAccount(name, 'login'), secret);
+  let state: { exists: boolean };
   try {
-    await setup.readerState(await catalogueConnection(io, entry, setup), readerLogin);
+    state = await setup.readerState(await catalogueConnection(io, entry, setup), readerLogin);
   } catch (error) {
     if (secrets) await secrets.remove(secretAccount(name, 'login'));
-    throw new Error(`${name} did not answer: ${error instanceof Error ? error.message : String(error)} Check the server, the database and the sign-in; nothing was saved`, { cause: error });
+    const az = entry.signIn === 'az' ? ' (with az, run az login in a terminal if it is signed out)' : '';
+    throw new Error(`${name} did not answer: ${error instanceof Error ? error.message : String(error)} Check the server, the database and the sign-in${az}; nothing was saved`, { cause: error });
   }
   writeWorkspace(home, { databases: [...workspace.databases, entry] });
-  io.log(`Added ${name}: ${entry.database} on ${entry.server}, signed in ${entry.signIn === 'az' ? 'with az' : `as ${entry.user}, its password in the keychain`}.`);
-  io.log(`Next: dbtour read ${name} writes its page. To run queries from it, dbtour reader ${name} --create shows how it would give ${name} a read-only login.`);
-  return 0;
+  return { entry, exists: state.exists };
 }
 
 interface ReaderOptions {
@@ -540,46 +575,81 @@ interface ReaderOptions {
 
 async function reader(io: Io, name: string | undefined, options: ReaderOptions): Promise<number> {
   if (name === undefined) throw missing('Name the database: dbtour reader Shop --create');
+  if (options.user !== undefined) {
+    const problem = valueProblem('login', options.user);
+    if (problem) throw new Error(problem);
+    // The database is found before the password is read, so a wrong name does not take it from stdin.
+    pickDatabase(readWorkspace(homeOf(io)), name);
+    const password = await passwordFrom(io, options, `reader ${name} --user ${options.user}`);
+    await useReader(io, name, options.user, password);
+    io.log(`${options.user} signs in to ${name}, and is its reader: its password is in the keychain as "dbtour · ${secretAccount(name, 'reader')}". Make sure it has db_datareader alone.`);
+    return 0;
+  }
+  if (!options.create) throw missing(`Say how: dbtour reader ${name} --create makes one, or --user <login> --password-stdin uses yours`);
+  const plan = await planReader(io, name);
+  // A change to the database: shown in full and done only when the database is named again.
+  if (options.confirm !== name) {
+    io.log(`This changes ${plan.changes}. It would run:\n`);
+    for (const statement of plan.statements) io.log(`  ${statement}`);
+    io.log(`\nThe password is made here, kept in the keychain as "${plan.account}", and never shown. To do it: dbtour reader ${name} --create --confirm ${name}`);
+    return 3;
+  }
+  await createReader(io, plan);
+  io.log(`${readerLogin} can read ${name} and nothing else (db_datareader), and signed in. Its password is in the keychain as "${plan.account}".`);
+  return 0;
+}
+
+/** A read-only login the person has, signed in with once before it and its password are kept. */
+async function useReader(io: Io, name: string, user: string, password: string): Promise<void> {
+  const problem = valueProblem('login', user);
+  if (problem) throw new Error(problem);
   const home = homeOf(io);
   const workspace = readWorkspace(home);
   const entry = pickDatabase(workspace, name);
   const { source, setup } = await setupOf(io, entry);
-  const save = (user: string) => writeWorkspace(home, { databases: workspace.databases.map((d) => (d.name === name ? { ...d, reader: user } : d)) });
-  const secrets = await secretsOf(io);
-  const account = secretAccount(name, 'reader');
+  const connection = setup.connectionString({ server: entry.server, database: entry.database, signIn: 'login', user, password });
+  if (!source.run) throw missing(`${sourceModuleName({ type: entry.type, name })} cannot run queries: update it to this version of dbtour`);
+  await source.run({ type: entry.type, name, connection }, 'SELECT 1 AS signedIn', { limit: 1, timeoutMs: defaultTimeoutMs });
+  await (await secretsOf(io)).set(secretAccount(name, 'reader'), password);
+  writeWorkspace(home, { databases: workspace.databases.map((d) => (d.name === name ? { ...d, reader: user } : d)) });
+}
 
-  if (options.user !== undefined) {
-    const problem = valueProblem('login', options.user);
-    if (problem) throw new Error(problem);
-    const password = await passwordFrom(io, options, `reader ${name} --user ${options.user}`);
-    const connection = setup.connectionString({ server: entry.server, database: entry.database, signIn: 'login', user: options.user, password });
-    if (!source.run) throw missing(`${sourceModuleName({ type: entry.type, name })} cannot run queries: update it to this version of dbtour`);
-    await source.run({ type: entry.type, name, connection }, 'SELECT 1 AS signedIn', { limit: 1, timeoutMs: defaultTimeoutMs });
-    await secrets.set(account, password);
-    save(options.user);
-    io.log(`${options.user} signs in to ${name}, and is its reader: its password is in the keychain as "dbtour · ${account}". Make sure it has db_datareader alone.`);
-    return 0;
-  }
-  if (!options.create) throw missing(`Say how: dbtour reader ${name} --create makes one, or --user <login> --password-stdin uses yours`);
+interface ReaderPlan {
+  name: string;
+  entry: WorkspaceDatabase;
+  setup: Setup;
+  admin: string;
+  /** The database, its server and the sign-in that would change it, in words. */
+  changes: string;
+  statements: string[];
+  /** The keychain's name for the password: "dbtour · <name> · reader". */
+  account: string;
+}
 
+/**
+ * What making dbtour_reader would do to the database, read through the admin's sign-in and changing nothing.
+ * A dbtour_reader that has more than db_datareader is refused, as it could do more than read.
+ */
+async function planReader(io: Io, name: string): Promise<ReaderPlan> {
+  const entry = pickDatabase(readWorkspace(homeOf(io)), name);
+  const { setup } = await setupOf(io, entry);
+  await secretsOf(io);
   const admin = await catalogueConnection(io, entry, setup);
   const state = await setup.readerState(admin, readerLogin);
   const more = state.roles.filter((r) => r !== 'db_datareader' && r !== 'public');
   if (more.length) throw new Error(`${readerLogin} already has ${more.join(', ')}, so it could do more than read: remove those roles from it, or use --user with a login of your own`);
-  // A change to the database: shown in full and done only when the database is named again.
-  if (options.confirm !== name) {
-    io.log(`This changes ${entry.database} on ${entry.server}, signed in ${entry.signIn === 'az' ? 'with az' : `as ${entry.user}`}. It would run:\n`);
-    for (const statement of setup.readerStatements(readerLogin, state.exists)) io.log(`  ${statement}`);
-    io.log(`\nThe password is made here, kept in the keychain as "dbtour · ${account}", and never shown. To do it: dbtour reader ${name} --create --confirm ${name}`);
-    return 3;
-  }
+  const changes = `${entry.database} on ${entry.server}, signed in ${entry.signIn === 'az' ? 'with az' : `as ${entry.user}`}`;
+  return { name, entry, setup, admin, changes, statements: setup.readerStatements(readerLogin, state.exists), account: `dbtour · ${secretAccount(name, 'reader')}` };
+}
+
+/** Runs the plan: a password made here and seen by nobody, the reader signed in with, then both kept. */
+async function createReader(io: Io, { name, entry, setup, admin }: ReaderPlan): Promise<void> {
   const password = newPassword();
   const readerConn = setup.connectionString({ server: entry.server, database: entry.database, signIn: 'login', user: readerLogin, password });
   await setup.createReader(admin, readerLogin, password, readerConn);
-  await secrets.set(account, password);
-  save(readerLogin);
-  io.log(`${readerLogin} can read ${name} and nothing else (db_datareader), and signed in. Its password is in the keychain as "dbtour · ${account}".`);
-  return 0;
+  await (await secretsOf(io)).set(secretAccount(name, 'reader'), password);
+  const home = homeOf(io);
+  writeWorkspace(home, { databases: readWorkspace(home).databases.map((d) => (d.name === name ? { ...d, reader: readerLogin } : d)) });
 }
 
 async function read(io: Io, name: string | undefined): Promise<number> {
@@ -644,7 +714,7 @@ function servedDatabase(home: string, entry: WorkspaceDatabase): ServedDatabase 
 async function serveHome(io: Io, port: number): Promise<number> {
   const home = homeOf(io);
   const explorer = await (io.loadAddon ?? ((a: AddonConfig) => loadAddon(a, importer(io.cwd))))({ type: 'explorer' }).catch((error: unknown) => {
-    throw missing(error instanceof Error ? error.message : String(error));
+    throw missing(`The home is a page, and dbtour-addon-explorer draws it: start dbtour with every package it uses, ${startCommand} (${error instanceof Error ? error.message : String(error)})`);
   });
   if (!explorer.render) throw missing('The explorer add-on writes no page: update dbtour-addon-explorer, then run it again');
   // The home is the page with no model: the served databases are its content.
@@ -657,7 +727,7 @@ async function serveHome(io: Io, port: number): Promise<number> {
       port,
       token,
       sources: [],
-      home: { html, databases: () => readWorkspace(home).databases.map((d) => servedDatabase(home, d)) },
+      home: { html, databases: () => readWorkspace(home).databases.map((d) => servedDatabase(home, d)), setup: (step, input) => setupStep(io, step, input) },
       run: async (text, source, limit, database) => {
         const project = await projectFor(io, database, { reader: true, setUpOnly: true });
         return { ...(await runQuery(project.io, project.config, text, source, limit)), source: project.config.sources[0].name };
@@ -668,9 +738,104 @@ async function serveHome(io: Io, port: number): Promise<number> {
     throw error;
   }
   const names = readWorkspace(home).databases.map((d) => d.name);
-  io.log(`Serving ${names.length === 1 ? names[0] : `${names.length} databases (${names.join(', ')})`} at ${server.url}`);
-  io.log('Each page runs queries through its own database\'s reader, read from the keychain when asked. Ctrl+C to stop.');
+  io.log(`Serving ${names.length === 0 ? 'the setup' : names.length === 1 ? names[0] : `${names.length} databases (${names.join(', ')})`} at ${server.url}`);
+  if (names.length === 0) io.log(`Nothing is set up yet: the page at ${server.url}/ walks you through it. Ctrl+C to stop.`);
+  else io.log('Each page runs queries through its own database\'s reader, read from the keychain when asked. Add another from the home. Ctrl+C to stop.');
+  io.open?.(`${server.url}/`);
   await (io.stop ?? new Promise<void>((done) => process.once('SIGINT', () => done())));
   await server.close();
   return 0;
+}
+
+/** The kinds of database the setup offers, each a source package that may or may not be installed. */
+const setupKinds = [{ type: 'mssql', name: 'SQL Server' }];
+
+/**
+ * How long the setup waits for az to say who is signed in. It reads its own token cache and answers in a
+ * second or two; past this it is stuck on a prompt or a proxy, and the page says signed out rather than hang.
+ */
+const azWaitMs = 15_000;
+
+function azAccount(): Promise<AzState> {
+  return new Promise((done) => {
+    // On Windows az is a .cmd, which Node runs only through a shell.
+    execFile('az', ['account', 'show', '--query', 'user.name', '-o', 'tsv'], { timeout: azWaitMs, shell: process.platform === 'win32' }, (error, stdout) => {
+      if ((error as { code?: unknown } | null)?.code === 'ENOENT') return done({ state: 'missing' });
+      if (error || stdout.trim() === '') return done({ state: 'signed out' });
+      done({ state: 'signed in', user: stdout.trim() });
+    });
+  });
+}
+
+/** The person's browser, at the page serve started: the command each system opens an address with. */
+function openInBrowser(url: string): void {
+  const [command, args] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['explorer.exe', [url]] : ['xdg-open', [url]];
+  spawn(command, args, { stdio: 'ignore', detached: true }).on('error', () => undefined).unref();
+}
+
+/** A field the page sent, when it is text. */
+function field(input: Record<string, unknown>, name: string): string | undefined {
+  return typeof input[name] === 'string' ? (input[name] as string) : undefined;
+}
+
+/**
+ * One step of the home's setup, as dbtour add, reader and read do it and under the same rules: names checked
+ * before anything connects, a database saved only once it answers, a password only ever into the keychain,
+ * and the database changed only when the page names it again. What it answers never holds a secret.
+ */
+async function setupStep(io: Io, step: string, input: Record<string, unknown>): Promise<unknown> {
+  const name = field(input, 'name') ?? '';
+  switch (step) {
+    case 'state': {
+      const kinds = [];
+      for (const kind of setupKinds) {
+        const installed = await setupOf(io, { type: kind.type, name: kind.name }).then(() => true, () => false);
+        kinds.push({ ...kind, installed });
+      }
+      const keychain = await secretsOf(io).then(() => true, () => false);
+      return { kinds, keychain, az: await (io.az ?? azAccount)(), names: readWorkspace(homeOf(io)).databases.map((d) => d.name) };
+    }
+    case 'check': {
+      const problem = newDatabaseProblem(io, name, field(input, 'server'), field(input, 'database'));
+      if (problem) throw new Error(problem);
+      return { ok: true };
+    }
+    case 'add': {
+      const signIn = field(input, 'signIn') ?? 'az';
+      const password = field(input, 'password');
+      const { entry, exists } = await addDatabase(io, name, { server: field(input, 'server'), database: field(input, 'database'), type: field(input, 'type') ?? 'mssql', signIn, user: field(input, 'user') }, async () => {
+        if (!password) throw missing('Type the login\'s password, then test again');
+        return password;
+      });
+      return { name: entry.name, signIn: entry.signIn, reader: { user: readerLogin, exists } };
+    }
+    case 'reader-plan': {
+      const plan = await planReader(io, name);
+      return { user: readerLogin, changes: plan.changes, statements: plan.statements, account: plan.account };
+    }
+    case 'reader-create': {
+      const plan = await planReader(io, name);
+      if (field(input, 'confirm') !== name) throw new Error(`This changes ${plan.changes}: confirm it by naming ${name}`);
+      await createReader(io, plan);
+      return { name, reader: readerLogin };
+    }
+    case 'reader-use': {
+      const user = field(input, 'user');
+      const password = field(input, 'password');
+      if (!user || !password) throw missing('Type the reader\'s login and its password, then try again');
+      await useReader(io, name, user, password);
+      return { name, reader: user };
+    }
+    case 'read': {
+      // What the read says goes back to the page: what the login could not read, how many files it wrote.
+      const lines: string[] = [];
+      const said = { ...io, log: (line: string) => lines.push(line), error: (line: string) => lines.push(line) };
+      if ((await read(said, name)) !== 0) throw new Error(lines.join(' ') || `${name} could not be read`);
+      const home = homeOf(io);
+      const entry = pickDatabase(readWorkspace(home), name);
+      return { name, tables: servedDatabase(home, entry).tables ?? 0, lines };
+    }
+    default:
+      throw new UnknownStep(`There is no setup step ${step}: the steps are state, check, add, reader-plan, reader-create, reader-use and read`);
+  }
 }

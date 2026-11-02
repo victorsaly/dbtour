@@ -39,8 +39,19 @@ export interface Served {
    * /db/<name>/ from its folder under `root`, and its queries go to /db/<name>/api/query, so a page can only
    * ask of its own database. Read on every request, so a database read since shows.
    */
-  home?: { html: string; databases: () => ServedDatabase[] };
+  home?: {
+    html: string;
+    databases: () => ServedDatabase[];
+    /**
+     * The home's setup, a step at a time: /api/setup/<step> posts the step's fields here and answers what it
+     * returns, or why not. Its errors say what to do next, and nothing it answers holds a secret.
+     */
+    setup?: (step: string, input: Record<string, unknown>) => Promise<unknown>;
+  };
 }
+
+/** A setup step that does not exist: answered 404, not as a failure of one that does. */
+export class UnknownStep extends Error {}
 
 /** The address it listens on: this machine alone. */
 export const serveHost = '127.0.0.1';
@@ -84,15 +95,19 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
     return send(response, 403, { error: 'Open the page at the address dbtour serve printed: this server answers only to its own name.' });
   }
   const path = decodeURIComponent(new URL(request.url ?? '/', 'http://local').pathname);
+  if (path.startsWith('/api/setup/') && !options.home?.setup) return send(response, 404, { error: 'This page is a project\'s: it is set up in dbtour.yaml, not here.' });
   if (!options.home) {
     if (path === '/api/query') return query(request, response, options, hosts, origins);
     return file(request, response, options.root, path, { token: options.token, sources: options.sources });
   }
+  if (path.startsWith('/api/setup/')) return setup(request, response, options, origins, path.slice('/api/setup/'.length));
   const databases = options.home.databases();
   if (path === '/' || path === '/index.html') {
     if (request.method !== 'GET' && request.method !== 'HEAD') return send(response, 405, { error: 'Only the page and its files are here: GET them.' });
     response.writeHead(200, { 'content-type': types['.html'], 'cache-control': 'no-store' });
-    return void response.end(request.method === 'HEAD' ? undefined : withServe(options.home.html, { token: options.token, sources: [], databases }));
+    const told: Meta = { token: options.token, sources: [], databases };
+    if (options.home.setup) told.setup = true;
+    return void response.end(request.method === 'HEAD' ? undefined : withServe(options.home.html, told));
   }
   const match = /^\/db\/([^/]+)(\/.*)?$/.exec(path);
   const database = match && databases.find((d) => d.name === match[1]);
@@ -117,6 +132,8 @@ interface Meta {
   sources: { name: string; reader: boolean }[];
   databases?: ServedDatabase[];
   current?: string;
+  /** The home can add a database: its setup's steps are at /api/setup/. */
+  setup?: boolean;
 }
 
 /** A file under `root`, never outside it however the path is written; its index.html told it is served. */
@@ -136,6 +153,31 @@ function withServe(html: string, told: Meta): string {
   const value = JSON.stringify(told).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   const meta = `<meta name="dbtour-serve" content="${value}">`;
   return html.includes('</head>') ? html.replace('</head>', `${meta}</head>`) : meta + html;
+}
+
+/**
+ * One step of the home's setup. It saves settings, keeps passwords and can change a database, so it asks more
+ * than a query does: the Origin a browser always sends with a page's POST must be there and be this server's.
+ */
+async function setup(request: IncomingMessage, response: ServerResponse, options: Served, origins: Set<string>, step: string): Promise<void> {
+  if (request.method !== 'POST') return send(response, 405, { error: 'POST a step of the setup, as the home does.' });
+  if (!origins.has(request.headers.origin ?? '') || request.headers['x-dbtour-token'] !== options.token) {
+    return send(response, 403, { error: 'Only the home dbtour serve gave out can set up a database: open it again from the address dbtour serve printed.' });
+  }
+  const text = await body(request);
+  if (text === undefined) return send(response, 413, { error: 'That is more than a step of the setup sends.' });
+  let input: unknown;
+  try {
+    input = JSON.parse(text);
+  } catch {
+    input = undefined;
+  }
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return send(response, 400, { error: 'Send the step\'s fields as a JSON object.' });
+  try {
+    send(response, 200, await options.home!.setup!(step, input as Record<string, unknown>));
+  } catch (error) {
+    send(response, error instanceof UnknownStep ? 404 : 422, { error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 async function query(request: IncomingMessage, response: ServerResponse, options: Served, hosts: Set<string>, origins: Set<string>, database?: string): Promise<void> {

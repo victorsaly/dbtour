@@ -23,6 +23,8 @@ export interface Served {
   /** Served from the home of several databases: all of them, and the one this page is. */
   databases?: ServedDatabase[];
   current?: string;
+  /** The home can set up a database: its steps are posted to /api/setup/. */
+  setup?: boolean;
 }
 
 /** What dbtour serve wrote into the page's meta tag; nothing when opened from a file or a deployed site. */
@@ -34,6 +36,7 @@ export function parseServed(content: string | null | undefined): Served | undefi
     const served: Served = { token: value.token, sources: value.sources.filter((s) => typeof s?.name === 'string').map((s) => ({ name: s.name, reader: s.reader === true })) };
     if (Array.isArray(value.databases) && value.databases.every((d) => typeof d?.name === 'string' && typeof d?.server === 'string')) served.databases = value.databases;
     if (typeof value.current === 'string') served.current = value.current;
+    if (value.setup === true) served.setup = true;
     return served;
   } catch {
     return undefined;

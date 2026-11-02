@@ -595,3 +595,83 @@ test('several databases through dbtour serve: the home lists them, and a databas
     await server.close();
   }
 });
+
+test('with nothing set up, the home walks through the five steps to the database\'s page', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+  const root = mkdtempSync(join(tmpdir(), 'dbtour-setup-'));
+  const databases: { name: string; driver: string; server: string; database: string; reader: boolean; read: boolean; tables?: number }[] = [];
+  const steps: string[] = [];
+  // dbtour serve's steps, as the CLI answers them, with nothing behind them.
+  const setup = async (step: string, input: Record<string, unknown>): Promise<unknown> => {
+    steps.push(step);
+    const name = String(input.name ?? '');
+    if (step === 'state') return { kinds: [{ type: 'mssql', name: 'SQL Server', installed: true }], keychain: true, az: { state: 'signed in', user: 'ann@example.com' }, names: [] };
+    if (step === 'check') return { ok: true };
+    if (step === 'add') {
+      databases.push({ name, driver: 'mssql', server: String(input.server), database: String(input.database), reader: false, read: false });
+      return { name, signIn: input.signIn, reader: { user: 'dbtour_reader', exists: false } };
+    }
+    if (step === 'reader-plan') {
+      return { user: 'dbtour_reader', changes: 'Shop on shop.example, signed in with az', statements: ["CREATE USER [dbtour_reader] WITH PASSWORD = '••••••';", 'ALTER ROLE db_datareader ADD MEMBER [dbtour_reader];'], account: 'dbtour · Shop · reader' };
+    }
+    if (step === 'reader-create') {
+      if (input.confirm !== name) throw new Error('confirm it by naming Shop');
+      databases[0].reader = true;
+      return { name, reader: 'dbtour_reader' };
+    }
+    if (step === 'read') {
+      mkdirSync(join(root, name), { recursive: true });
+      writeFileSync(join(root, name, 'index.html'), render(model)['index.html']);
+      Object.assign(databases[0], { read: true, tables: 6 });
+      return { name, tables: 6, lines: ['Wrote 9 files to databases/Shop.'] };
+    }
+    throw new Error(`no step ${step}`);
+  };
+  const html = render({ ...model, databases: [], groups: [] })['index.html'];
+  const server = await startServer({ root, port: 0, token: 'e2e', sources: [], home: { html, databases: () => databases, setup } });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${server.url}/`);
+    await page.locator('h1', { hasText: 'Add a database' }).waitFor();
+    const current = () => page.locator('.setup-step.is-current .setup-title').textContent();
+    assert.equal(await current(), 'Database');
+
+    await page.getByLabel('Server').fill('shop.example');
+    await page.getByLabel('Database', { exact: true }).fill('Shop');
+    assert.equal(await page.getByLabel('Name in dbtour').inputValue(), 'Shop', 'named after the database');
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    await page.locator('.setup-step.is-current', { hasText: 'Signed in to az as ann@example.com' }).waitFor();
+    assert.match((await page.locator('.setup-step').first().textContent()) ?? '', /Shop on shop\.example/);
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    await page.getByRole('button', { name: 'Test and save' }).click();
+    await page.locator('.setup-step.is-current', { hasText: 'CREATE USER [dbtour_reader]' }).waitFor();
+    assert.equal(await current(), 'Reader');
+    await page.getByRole('button', { name: 'Run these on Shop' }).click();
+
+    await page.locator('.setup-step.is-current .setup-title', { hasText: 'Read' }).waitFor();
+    await page.getByRole('button', { name: 'Read Shop' }).click();
+    await page.getByRole('link', { name: 'Open Shop' }).click();
+    await page.locator('.switcher').waitFor();
+    assert.equal(new URL(page.url()).pathname, '/db/Shop/');
+    assert.deepEqual(steps, ['state', 'check', 'add', 'reader-plan', 'reader-create', 'read']);
+
+    // With a database set up, the home lists it and offers another.
+    await page.goto(`${server.url}/`);
+    await page.locator('h1', { hasText: 'Databases' }).waitFor();
+    await page.locator('main').getByRole('link', { name: 'Add a database' }).click();
+    await page.locator('h1', { hasText: 'Add a database' }).waitFor();
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});

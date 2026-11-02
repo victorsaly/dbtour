@@ -89,7 +89,7 @@ with no runtime plugin loading, which is what keeps it a single HTML file.
 dbtour init                 # writes dbtour.yaml, picks sources
 dbtour extract              # sources → schema.json (connection string from an environment variable, never argv)
 dbtour render               # schema.json + notes → index.html, README.md, one .md per table
-dbtour serve                # the page on 127.0.0.1; with a reader, its editor runs queries; later, the setup wizard
+dbtour serve                # the page on 127.0.0.1; with a reader, its editor runs queries; with no project, the home and its setup
 dbtour check                # CI: fails when the database and schema.json disagree
 dbtour find users           # search from the terminal, same index as the page
 dbtour mcp                  # the model to an agent over MCP: overview, search, table, path
@@ -186,9 +186,9 @@ shop window, and nothing goes on the page before it is released.
    and environment variables keep working as they do, for CI and agents. The keychain is a dependency, so it
    lives in a package of its own, not core. The owner chose the layout on 1 November 2026: the setup is a
    page shaped like an entry, five numbered sections, and the home is a list of database entries with the
-   rail switching between them. First the settings, the keychain, the commands an agent can run safely and
-   the home (0.10.0), then the wizard on the page. ← here
-7. `source-openapi` and table-to-endpoint links.
+   rail switching between them. The settings, the keychain, the commands an agent can run safely, the home
+   and the setup on it, started from nothing with one npx line (0.10.0).
+7. `source-openapi` and table-to-endpoint links. ← next
 8. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
    and the comments its database keeps.
 9. Deploy workflow, `check`, `addon-lint`.

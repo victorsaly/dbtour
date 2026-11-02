@@ -180,3 +180,66 @@ test('several databases: the home lists them, each page is its own folder and as
     await server.close();
   }
 });
+
+/** A POST as a browser sends it, Origin and all, and what came back. */
+function posted(url: string, headers: Record<string, string>, body: string): Promise<{ status: number; json: Record<string, unknown> }> {
+  return new Promise((done, fail) => {
+    const req = request(url, { method: 'POST', headers }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => done({ status: res.statusCode ?? 0, json: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') }));
+    });
+    req.on('error', fail);
+    req.end(body);
+  });
+}
+
+test('the home\'s setup: each step a POST from this server\'s own page, with the token, answered or told why not', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dbtour-setup-'));
+  const steps: [string, unknown][] = [];
+  const server = await startServer({
+    root,
+    port: 0,
+    token: 'tok',
+    sources: [],
+    home: {
+      html: '<html><head></head></html>',
+      databases: () => [],
+      setup: async (step, input) => {
+        steps.push([step, input]);
+        if (step === 'add') throw new Error('Shop did not answer: Login failed.');
+        return { ok: true };
+      },
+    },
+  });
+  const host = new URL(server.url).host;
+  const page = { host, origin: server.url, 'content-type': 'application/json', 'x-dbtour-token': 'tok' };
+  try {
+    const front = await (await fetch(`${server.url}/`)).text();
+    assert.match(front, /&quot;setup&quot;:true/, 'the page is told it can set up');
+    assert.deepEqual(await posted(`${server.url}/api/setup/check`, page, '{"name":"Shop"}'), { status: 200, json: { ok: true } });
+    assert.deepEqual(await posted(`${server.url}/api/setup/add`, page, '{"name":"Shop"}'), { status: 422, json: { error: 'Shop did not answer: Login failed.' } });
+    // Without the token, from another site, or with no Origin at all (not a browser's page): refused unread.
+    assert.equal((await posted(`${server.url}/api/setup/check`, { ...page, 'x-dbtour-token': 'nope' }, '{}')).status, 403);
+    assert.equal((await posted(`${server.url}/api/setup/check`, { ...page, origin: 'https://evil.example' }, '{}')).status, 403);
+    const noOrigin: Record<string, string> = { ...page };
+    delete noOrigin.origin;
+    assert.equal((await posted(`${server.url}/api/setup/check`, noOrigin, '{}')).status, 403);
+    assert.equal((await posted(`${server.url}/api/setup/check`, page, '[1]')).status, 400);
+    assert.equal((await fetch(`${server.url}/api/setup/check`)).status, 405);
+    assert.deepEqual(steps, [['check', { name: 'Shop' }], ['add', { name: 'Shop' }]]);
+  } finally {
+    await server.close();
+  }
+});
+
+test('a project\'s page has no setup: it is set up in dbtour.yaml', async () => {
+  const { url, close, token } = await serve();
+  try {
+    const host = new URL(url).host;
+    const answer = await posted(`${url}/api/setup/check`, { host, origin: url, 'content-type': 'application/json', 'x-dbtour-token': token }, '{}');
+    assert.equal(answer.status, 404);
+  } finally {
+    await close();
+  }
+});

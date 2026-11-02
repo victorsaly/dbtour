@@ -16,6 +16,8 @@ import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
 import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, parseServed, railStatus, statusOf } from '../src/page/served.ts';
 import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
+import { azLine, formProblem, setupSteps, startCommand, stepSummary, suggestName, type SetupForm } from '../src/page/setup.ts';
+import { startCommand as coreStart } from '../../core/src/cli.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
 
@@ -587,4 +589,43 @@ test('a served home: the databases set up, numbered, each with its facts, its li
     { number: '001', name: 'Shop', href: '/db/Shop/', tone: 'live', status: 'reader', facts: ['SQL Server', 'Shop on shop.example', '35 tables', '1.2 GB', 'read 1 Nov 2026'] },
     { number: '002', name: 'Logs', href: undefined, tone: 'idle', status: 'no reader', facts: ['SQL Server', 'AppLogs on logs.example', 'not read yet: dbtour read Logs'] },
   ]);
+});
+
+test('the served home says when it can set up a database', () => {
+  assert.equal(parseServed('{"token":"t","sources":[],"databases":[],"setup":true}')?.setup, true);
+  assert.equal(parseServed('{"token":"t","sources":[],"databases":[]}')?.setup, undefined);
+});
+
+test('the setup: five steps, a name suggested from the database, each step checked before it is sent', () => {
+  assert.deepEqual(setupSteps, ['Database', 'Sign in', 'Test', 'Reader', 'Read']);
+  assert.equal(suggestName('Shop'), 'Shop');
+  assert.equal(suggestName('Dry Revival'), 'Dry-Revival');
+  assert.equal(suggestName('2024 sales.archive'), 'db-2024-sales-archive');
+  assert.equal(suggestName(''), '');
+  assert.equal(suggestName('x'.repeat(80)).length, 64);
+
+  const form: SetupForm = { type: 'mssql', server: 'shop.example', database: 'Shop', name: 'Shop', signIn: 'az', user: '', password: '' };
+  assert.equal(formProblem(1, form), undefined);
+  assert.match(formProblem(1, { ...form, server: ' ' }) ?? '', /server/);
+  assert.match(formProblem(1, { ...form, database: '' }) ?? '', /database/);
+  assert.match(formProblem(1, { ...form, name: '1 Shop' }) ?? '', /letter/);
+  assert.equal(formProblem(2, form), undefined);
+  assert.match(formProblem(2, { ...form, signIn: 'login' }) ?? '', /login/);
+  assert.match(formProblem(2, { ...form, signIn: 'login', user: 'ann' }) ?? '', /password/);
+
+  assert.equal(stepSummary(1, form, {}), 'Shop on shop.example');
+  assert.equal(stepSummary(1, { ...form, name: 'Prod' }, {}), 'Shop on shop.example, called Prod');
+  assert.equal(stepSummary(2, form, {}), 'Microsoft Entra, through az');
+  assert.equal(stepSummary(2, { ...form, signIn: 'login', user: 'ann' }, {}), 'The login ann, its password in the keychain');
+  assert.equal(stepSummary(3, form, {}), 'It answered, and is saved');
+  assert.equal(stepSummary(4, form, { reader: 'dbtour_reader' }), 'dbtour_reader, which can only read');
+  assert.equal(stepSummary(4, form, {}), 'None for now: the page shows the structure, and runs no query');
+  assert.equal(stepSummary(5, form, { tables: 1 }), '1 table read, and its page written');
+  assert.equal(stepSummary(5, form, { tables: 35 }), '35 tables read, and its page written');
+
+  assert.deepEqual(azLine({ state: 'signed in', user: 'ann@example.com' }), { tone: 'live', text: 'Signed in to az as ann@example.com' });
+  assert.deepEqual(azLine({ state: 'signed out' }), { tone: 'failed', text: 'az is signed out: run az login in a terminal, then check again' });
+  assert.equal(azLine({ state: 'missing' }).tone, 'off');
+  assert.equal(azLine(undefined).tone, 'idle');
+  assert.equal(startCommand, coreStart, 'the page fixes a missing package with the command the CLI gives');
 });
