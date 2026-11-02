@@ -975,7 +975,7 @@ function selectItems(state: EditorState, segment: Node[]): SelectItem[] {
         if (n.from < from || n.to > to) return;
         const node = n.node;
         const next = node.nextSibling;
-        if (n.name === 'Parens' && upper(children(node).find((c) => c.name !== '(')) === 'SELECT') {
+        if (n.name === 'Parens' && isSubquery(state, node)) {
           subquery = true;
           outside.push(...outerColumns(state, node, outer));
           return false;
@@ -1008,19 +1008,32 @@ function selectItems(state: EditorState, segment: Node[]): SelectItem[] {
   });
 }
 
+/** Parentheses that hold a query: (SELECT …). */
+function isSubquery(state: EditorState, node: Node): boolean {
+  const first = children(node).find((c) => c.name !== '(');
+  return Boolean(first && state.sliceDoc(first.from, first.to).toUpperCase() === 'SELECT');
+}
+
 /**
  * The outer query's columns a subquery reads, as written there: `o.CustomerId` in `(SELECT … WHERE c.Id =
- * o.CustomerId)`, where o is a table of the outer query and not one of the subquery's own.
+ * o.CustomerId)`, where o is a table of the outer query and not one the subquery binds, at its own level or
+ * at any between (`bound`), as a subquery inside it binds its own.
  */
-function outerColumns(state: EditorState, subquery: Node, outer: Set<string>): string[] {
+function outerColumns(state: EditorState, subquery: Node, outer: Set<string>, bound: Set<string> = new Set()): string[] {
   const text = (n: Node) => state.sliceDoc(n.from, n.to);
-  const own = new Set(fromItems(tokensOf(subquery), text, new Map()).map((item) => item.name.toLowerCase()));
+  const own = new Set([...bound, ...fromItems(tokensOf(subquery), text, new Map()).map((item) => item.name.toLowerCase())]);
   const out: string[] = [];
   treeOf(state).iterate({
     from: subquery.from,
     to: subquery.to,
     enter: (n) => {
-      if (n.from < subquery.from || n.to > subquery.to || n.name !== 'CompositeIdentifier') return;
+      if (n.from < subquery.from || n.to > subquery.to) return;
+      const inner = n.name === 'Parens' && (n.from !== subquery.from || n.to !== subquery.to) && isSubquery(state, n.node);
+      if (inner) {
+        out.push(...outerColumns(state, n.node, outer, own));
+        return false;
+      }
+      if (n.name !== 'CompositeIdentifier') return;
       const parts = pathOf(n.node, text);
       const table = parts[0]?.toLowerCase();
       if (parts.length === 2 && outer.has(table) && !own.has(table) && n.node.nextSibling?.name !== 'Parens') out.push(text(n.node));

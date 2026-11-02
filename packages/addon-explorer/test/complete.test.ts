@@ -381,3 +381,8 @@ test('a protected column a subquery passes on as it is stays left out by Tab', (
   assert.equal(tab(`SELECT x.*| ${sub}`), `SELECT x.Id, x.loud ${sub}`, 'Status is masked in the described model');
   assert.equal(tab('SELECT x.*| FROM (SELECT o.Id, o.Status AS s FROM dbo.Orders o) x'), 'SELECT x.Id FROM (SELECT o.Id, o.Status AS s FROM dbo.Orders o) x', 'renamed, it is still Status');
 });
+
+test('GROUP BY written out: in a subquery inside a subquery, a name bound inside is not the outer query\'s', async () => {
+  assert.equal((await applies('SELECT o.Status, (SELECT (SELECT TOP (1) o.Email FROM dbo.Customers o)) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |'))[0], 'o.Status');
+  assert.equal((await applies('SELECT o.Status, (SELECT (SELECT TOP (1) c.Email FROM dbo.Customers c WHERE c.Id = o.CustomerId)) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |'))[0], 'o.Status, o.CustomerId', 'an outer name read two levels in');
+});
