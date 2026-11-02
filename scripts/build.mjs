@@ -18,4 +18,4 @@ mkdirSync(`${repo}packages/source-mssql/dist`, { recursive: true });
 copyFileSync(`${repo}packages/source-mssql/src/query.sql`, `${repo}packages/source-mssql/dist/query.sql`);
 execFileSync(process.execPath, [`${repo}packages/addon-explorer/build.mjs`], { stdio: 'inherit' });
 // npm packs a licence only from the package's own folder, so each gets the repository's.
-for (const pkg of ['core', 'source-mssql', 'addon-explorer']) copyFileSync(`${repo}LICENSE`, `${repo}packages/${pkg}/LICENSE`);
+for (const pkg of ['core', 'keychain', 'source-mssql', 'addon-explorer']) copyFileSync(`${repo}LICENSE`, `${repo}packages/${pkg}/LICENSE`);

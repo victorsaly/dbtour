@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 
 const root = new URL('../../', import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8');
-const folders = ['core', 'source-mssql', 'addon-explorer'];
+const folders = ['core', 'source-mssql', 'addon-explorer', 'keychain'];
 const manifest = (folder: string) => JSON.parse(read(`packages/${folder}/package.json`));
 const version = manifest('core').version;
 

@@ -45,7 +45,7 @@
     "sql-editor"
   ],
   "peerDependencies": {
-    "dbtour": "0.9.5"
+    "dbtour": "0.10.0"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.4",

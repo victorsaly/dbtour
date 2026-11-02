@@ -45,7 +45,7 @@
     "mssql": "^12.7.13"
   },
   "peerDependencies": {
-    "dbtour": "0.9.5"
+    "dbtour": "0.10.0"
   },
   "devDependencies": {
     "@types/mssql": "^9.1.8",
