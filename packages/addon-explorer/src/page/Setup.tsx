@@ -4,7 +4,7 @@
 // password goes to the keychain and never comes back, and the database changes only on the second yes.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { databaseHref, type Served } from './served.ts';
-import { azLine, formProblem, setupSteps, startCommand, stepSummary, suggestName, type AzState, type SetupForm } from './setup.ts';
+import { azLine, clock, formProblem, setupSteps, startCommand, stepSummary, suggestName, took, type AzState, type SetupForm } from './setup.ts';
 
 interface State {
   kinds: { type: string; name: string; installed: boolean }[];
@@ -22,15 +22,25 @@ interface Plan {
 
 type ReaderChoice = 'create' | 'own' | 'skip';
 
+/** A line of the log beside the steps: when, what, and its dot (grey doing, green done, red refused). */
+interface LogLine {
+  at: Date;
+  text: string;
+  tone: 'idle' | 'ok' | 'failed';
+  /** What the server said a step did, set under the step. */
+  detail?: boolean;
+}
+
 /** One step of the setup posted to dbtour serve: what it answered, or its reason as the error. */
-async function post<T>(served: Served, step: string, input: Record<string, unknown>): Promise<T> {
+export async function post<T>(served: Served, step: string, input: Record<string, unknown>): Promise<T> {
   const response = await fetch(`/api/setup/${step}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-dbtour-token': served.token }, body: JSON.stringify(input) });
   const answer = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(answer.error ?? `dbtour serve answered ${response.status}: is it still running?`);
   return answer;
 }
 
-export function SetupPage({ served, first }: { served: Served; first: boolean }) {
+/** `onReader` is told when the database has a reader, so the rail's dot can turn green without a reload. */
+export function SetupPage({ served, first, onReader }: { served: Served; first: boolean; onReader?: () => void }) {
   const [at, setAt] = useState(1);
   const [form, setForm] = useState<SetupForm>({ type: 'mssql', server: '', database: '', name: '', signIn: 'az', user: '', password: '' });
   const [named, setNamed] = useState(false);
@@ -41,17 +51,53 @@ export function SetupPage({ served, first }: { served: Served; first: boolean })
   const [plan, setPlan] = useState<Plan>();
   const [own, setOwn] = useState({ user: '', password: '' });
   const [reader, setReader] = useState<string>();
-  const [read, setRead] = useState<{ tables: number; lines: string[] }>();
+  const [read, setRead] = useState<{ tables: number; log: string[] }>();
+  const [log, setLog] = useState<LogLine[]>([]);
   const top = useRef<HTMLElement>(null);
+  const logEnd = useRef<HTMLLIElement>(null);
 
-  const ask = () => post<State>(served, 'state', {}).then(setState, (e: Error) => setError(e.message));
+  const note = (text: string, tone: LogLine['tone'] = 'ok') => setLog((lines) => [...lines, { at: new Date(), text, tone }]);
+  /**
+   * A step posted to dbtour serve, logged: what it is doing, grey until it ends, then green or red with how long
+   * it took, and under it what the server did or why not.
+   */
+  const call = async <T,>(step: string, input: Record<string, unknown>, doing: string): Promise<T> => {
+    const line: LogLine = { at: new Date(), text: doing, tone: 'idle' };
+    setLog((lines) => [...lines, line]);
+    const started = performance.now();
+    const end = (tone: LogLine['tone'], after: string[]) =>
+      setLog((lines) => [...lines.map((l) => (l === line ? { ...l, tone, text: `${doing} · ${took(performance.now() - started)}` } : l)), ...after.map((text) => ({ at: new Date(), text, tone, detail: true }))]);
+    try {
+      const answer = await post<T & { log?: string[] }>(served, step, input);
+      end('ok', answer.log ?? []);
+      return answer;
+    } catch (e) {
+      end('failed', [(e as Error).message]);
+      throw e;
+    }
+  };
+  // In braces: an effect returns its cleanup, and Chrome's scrollIntoView now returns a promise, not nothing.
+  useEffect(() => {
+    logEnd.current?.scrollIntoView({ block: 'nearest' });
+  }, [log]);
+
+  const ask = () =>
+    call<State>('state', {}, 'Asking dbtour serve what is installed, and az who is signed in').then(
+      (s) => {
+        setState(s);
+        note(azLine(s.az).text, s.az.state === 'signed in' ? 'ok' : 'failed');
+      },
+      (e: Error) => setError(e.message),
+    );
   useEffect(() => void ask(), []);
-  useEffect(() => top.current?.querySelector<HTMLElement>('.setup-step.is-current input, .setup-step.is-current button')?.focus(), [at]);
+  useEffect(() => {
+    top.current?.querySelector<HTMLElement>('.setup-step.is-current input, .setup-step.is-current button')?.focus();
+  }, [at]);
   // The reader's statements are read once the database is saved, so the person sees them before choosing.
   useEffect(() => {
     if (at !== 4 || choice !== 'create' || plan) return;
     setBusy('Reading what it would change…');
-    post<Plan>(served, 'reader-plan', { name: form.name })
+    call<Plan>('reader-plan', { name: form.name }, `Reading what making dbtour_reader would change in ${form.name}`)
       .then(setPlan, (e: Error) => setError(e.message))
       .finally(() => setBusy(undefined));
   }, [at, choice]);
@@ -111,7 +157,7 @@ export function SetupPage({ served, first }: { served: Served; first: boolean })
           />
         </div>
         <Actions busy={busy}>
-          <button type="button" className="button setup-go" onClick={() => go('Checking…', () => post(served, 'check', where).then(() => undefined))}>
+          <button type="button" className="button setup-go" onClick={() => go('Checking…', () => call('check', where, `Checking the names for ${where.name}`).then(() => undefined))}>
             Next
           </button>
         </Actions>
@@ -160,7 +206,7 @@ export function SetupPage({ served, first }: { served: Served; first: boolean })
             className="button setup-go"
             onClick={() =>
               go('Signing in…', async () => {
-                await post(served, 'add', { ...where, signIn: form.signIn, user: form.user, password: form.signIn === 'login' ? form.password : undefined });
+                await call('add', { ...where, signIn: form.signIn, user: form.user, password: form.signIn === 'login' ? form.password : undefined }, `Signing in to ${where.database} on ${where.server}`);
                 // Kept by the keychain now: the page forgets it.
                 set({ password: '' });
               })
@@ -202,7 +248,8 @@ export function SetupPage({ served, first }: { served: Served; first: boolean })
               disabled={!plan}
               onClick={() =>
                 go('Making the reader…', async () => {
-                  setReader((await post<{ reader: string }>(served, 'reader-create', { name: form.name, confirm: form.name })).reader);
+                  setReader((await call<{ reader: string }>('reader-create', { name: form.name, confirm: form.name }, `Making dbtour_reader in ${form.name}`)).reader);
+                  onReader?.();
                 })
               }
             >
@@ -215,7 +262,8 @@ export function SetupPage({ served, first }: { served: Served; first: boolean })
               className="button setup-go"
               onClick={() =>
                 go('Signing in as the reader…', async () => {
-                  setReader((await post<{ reader: string }>(served, 'reader-use', { name: form.name, ...own })).reader);
+                  setReader((await call<{ reader: string }>('reader-use', { name: form.name, ...own }, `Signing in as ${own.user}`)).reader);
+                  onReader?.();
                   setOwn((o) => ({ ...o, password: '' }));
                 })
               }
@@ -224,7 +272,13 @@ export function SetupPage({ served, first }: { served: Served; first: boolean })
             </button>
           )}
           {choice === 'skip' && (
-            <button type="button" className="button setup-go" onClick={() => go('', async () => setReader(undefined))}>
+            <button type="button" className="button setup-go" onClick={() =>
+                go('', async () => {
+                  setReader(undefined);
+                  note('No reader for now: the page will show the structure');
+                })
+              }
+            >
               Next
             </button>
           )}
@@ -235,7 +289,7 @@ export function SetupPage({ served, first }: { served: Served; first: boolean })
       <>
         <p className="setup-lead">dbtour reads the catalogue and writes the database's page. A large one takes a minute.</p>
         <Actions busy={busy}>
-          <button type="button" className="button setup-go" onClick={() => go('Reading the catalogue…', async () => setRead(await post(served, 'read', { name: form.name })))}>
+          <button type="button" className="button setup-go" onClick={() => go('Reading the catalogue…', async () => setRead(await call('read', { name: form.name }, `Reading ${form.name}'s catalogue and writing its page`)))}>
             Read {form.name}
           </button>
         </Actions>
@@ -244,74 +298,87 @@ export function SetupPage({ served, first }: { served: Served; first: boolean })
   };
 
   return (
-    <article className="page setup" ref={top}>
-      <header className="entry-head">
-        <h1>Add a database</h1>
-        <p className="meta">
-          <span>5 steps</span> · <span>nothing saved until it answers</span>
-        </p>
-        {first && !read && <p className="description">Nothing is set up on this machine yet. Tell dbtour where your database is, and it gives it a page you can search, follow and query.</p>}
-      </header>
-      <ol className="setup-steps">
-        {setupSteps.map((title, i) => {
-          const step = i + 1;
-          const status = step < at ? 'is-done' : step === at ? 'is-current' : 'is-later';
-          return (
-            <li key={title} className={`setup-step ${status}`} aria-current={step === at ? 'step' : undefined}>
-              <div className="setup-head">
-                <span className="no">{String(step).padStart(2, '0')}</span>
-                <h2 className="setup-title">{title}</h2>
-                {step < at && <span className="setup-summary">{stepSummary(step, form, { reader, tables: read?.tables })}</span>}
-                {/* Before the test saves it, the database and the sign-in can still change. */}
-                {step < at && at <= 3 && (
-                  <button type="button" className="sql-copy setup-change" onClick={() => {
-                      setAt(step);
-                      setError(undefined);
-                    }}>
-                    Change
-                  </button>
-                )}
-              </div>
-              {step === at && (
-                <div className="setup-body">
-                  {bodies[step]}
-                  {error && (
-                    <p className="setup-error" role="alert">
-                      <span className="status is-failed">Not yet</span> {error}
-                    </p>
+    <div className="with-panel">
+      <article className="page setup" ref={top}>
+        <header className="entry-head">
+          <h1>Add a database</h1>
+          <p className="meta">
+            <span>5 steps</span> · <span>nothing saved until it answers</span>
+          </p>
+          {first && !read && <p className="description">Nothing is set up on this machine yet. Tell dbtour where your database is, and it gives it a page you can search, follow and query.</p>}
+        </header>
+        <ol className="setup-steps">
+          {setupSteps.map((title, i) => {
+            const step = i + 1;
+            const status = step < at ? 'is-done' : step === at ? 'is-current' : 'is-later';
+            return (
+              <li key={title} className={`setup-step ${status}`} aria-current={step === at ? 'step' : undefined}>
+                <div className="setup-head">
+                  <span className="no">{String(step).padStart(2, '0')}</span>
+                  <h2 className="setup-title">{title}</h2>
+                  {step < at && <span className="setup-summary">{stepSummary(step, form, { reader, tables: read?.tables })}</span>}
+                  {/* Before the test saves it, the database and the sign-in can still change. */}
+                  {step < at && at <= 3 && (
+                    <button type="button" className="sql-copy setup-change" onClick={() => {
+                        setAt(step);
+                        setError(undefined);
+                      }}>
+                      Change
+                    </button>
                   )}
                 </div>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-      {read && (
-        <section className="setup-done" aria-label="Done">
-          <p>
-            {form.name} is set up{reader ? ', with a reader that runs your queries' : ''}.
-          </p>
-          {read.lines.length > 0 && (
-            <ul className="setup-lines">
-              {read.lines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          )}
-          <div className="actions">
-            <a className="button setup-go" href={databaseHref(form.name)}>
-              Open {form.name}
-            </a>
-            <a className="button" href="/">
-              All databases
-            </a>
-          </div>
-        </section>
-      )}
-      <p className="sql-hint databases-hint">
-        An agent can do the same in a terminal: <code>npx dbtour add {form.name || '<name>'} --server {form.server || '<host>'}</code>, then <code>dbtour reader</code> and <code>dbtour read</code>. Passwords never go on its command line.
-      </p>
-    </article>
+                {step === at && (
+                  <div className="setup-body">
+                    {bodies[step]}
+                    {error && (
+                      <p className="setup-error" role="alert">
+                        <span className="status is-failed">Not yet</span> {error}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+        {read && (
+          <section className="setup-done" aria-label="Done">
+            <p>
+              {form.name} is set up{reader ? ', with a reader that runs your queries' : ''}.
+            </p>
+            <div className="actions">
+              <a className="button setup-go" href={databaseHref(form.name)}>
+                Open {form.name}
+              </a>
+              <a className="button" href="/">
+                All databases
+              </a>
+            </div>
+          </section>
+        )}
+        <p className="sql-hint databases-hint">
+          An agent can do the same in a terminal: <code>npx dbtour add {form.name || '<name>'} --server {form.server || '<host>'}</code>, then <code>dbtour reader</code> and <code>dbtour read</code>. Passwords never go on its command line.
+        </p>
+      </article>
+      <aside className="panel setup-log" aria-label="Log">
+        <h2>Log</h2>
+        {log.length === 0 ? (
+          <p className="setup-help">What each step does shows here as it runs.</p>
+        ) : (
+          <ol aria-live="polite">
+            {log.map((line, i) => (
+              <li key={i} className={`is-${line.tone}${line.detail ? ' is-detail' : ''}`} ref={i === log.length - 1 ? logEnd : undefined}>
+                <time className="no">{clock(line.at)}</time>
+                <span className={`status is-${line.tone}`}>
+                  <span className="hidden-words">{line.tone === 'failed' ? 'refused' : line.tone === 'ok' ? 'done' : ''}</span>
+                </span>
+                <span className="setup-log-text">{line.text}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </aside>
+    </div>
   );
 }
 

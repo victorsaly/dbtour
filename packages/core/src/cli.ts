@@ -807,24 +807,31 @@ async function setupStep(io: Io, step: string, input: Record<string, unknown>): 
         if (!password) throw missing('Type the login\'s password, then test again');
         return password;
       });
-      return { name: entry.name, signIn: entry.signIn, reader: { user: readerLogin, exists } };
+      const log = [
+        `It answered, signed in ${entry.signIn === 'az' ? 'with az' : `as ${entry.user}`}`,
+        `${readerLogin} is ${exists ? 'in the database already' : 'not in the database yet'}`,
+        `Saved ${name} in ${join(homeOf(io), 'databases.json')}`,
+      ];
+      if (entry.signIn === 'login') log.push(`Kept the login's password in the keychain as "dbtour · ${secretAccount(name, 'login')}"`);
+      return { name: entry.name, signIn: entry.signIn, reader: { user: readerLogin, exists }, log };
     }
     case 'reader-plan': {
       const plan = await planReader(io, name);
-      return { user: readerLogin, changes: plan.changes, statements: plan.statements, account: plan.account };
+      return { user: readerLogin, changes: plan.changes, statements: plan.statements, account: plan.account, log: ['Nothing has changed: the statements wait for your yes'] };
     }
     case 'reader-create': {
       const plan = await planReader(io, name);
       if (field(input, 'confirm') !== name) throw new Error(`This changes ${plan.changes}: confirm it by naming ${name}`);
       await createReader(io, plan);
-      return { name, reader: readerLogin };
+      const log = [...plan.statements.map((s) => `Ran ${s}`), `Signed in as ${readerLogin}: it can read`, `Kept its password in the keychain as "${plan.account}"`];
+      return { name, reader: readerLogin, log };
     }
     case 'reader-use': {
       const user = field(input, 'user');
       const password = field(input, 'password');
       if (!user || !password) throw missing('Type the reader\'s login and its password, then try again');
       await useReader(io, name, user, password);
-      return { name, reader: user };
+      return { name, reader: user, log: [`Signed in as ${user}: it can read`, `Kept its password in the keychain as "dbtour · ${secretAccount(name, 'reader')}"`] };
     }
     case 'read': {
       // What the read says goes back to the page: what the login could not read, how many files it wrote.
@@ -833,7 +840,7 @@ async function setupStep(io: Io, step: string, input: Record<string, unknown>): 
       if ((await read(said, name)) !== 0) throw new Error(lines.join(' ') || `${name} could not be read`);
       const home = homeOf(io);
       const entry = pickDatabase(readWorkspace(home), name);
-      return { name, tables: servedDatabase(home, entry).tables ?? 0, lines };
+      return { name, tables: servedDatabase(home, entry).tables ?? 0, log: lines };
     }
     default:
       throw new UnknownStep(`There is no setup step ${step}: the steps are state, check, add, reader-plan, reader-create, reader-use and read`);

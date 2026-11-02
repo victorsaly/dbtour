@@ -16,7 +16,7 @@ import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
 import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, parseServed, railStatus, statusOf } from '../src/page/served.ts';
 import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
-import { azLine, formProblem, setupSteps, startCommand, stepSummary, suggestName, type SetupForm } from '../src/page/setup.ts';
+import { azLine, clock, formProblem, setupSteps, startCommand, stepSummary, suggestName, took, type SetupForm } from '../src/page/setup.ts';
 import { startCommand as coreStart } from '../../core/src/cli.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { markSvg, markDataUri, markPulse } from '../src/mark.ts';
@@ -628,4 +628,6 @@ test('the setup: five steps, a name suggested from the database, each step check
   assert.equal(azLine({ state: 'missing' }).tone, 'off');
   assert.equal(azLine(undefined).tone, 'idle');
   assert.equal(startCommand, coreStart, 'the page fixes a missing package with the command the CLI gives');
+  assert.equal(clock(new Date(2026, 10, 2, 9, 5, 7)), '09:05:07');
+  assert.deepEqual([took(840.4), took(6230), took(1000)], ['840\u00a0ms', '6.2\u00a0s', '1.0\u00a0s']);
 });
