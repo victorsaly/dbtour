@@ -102,7 +102,9 @@ Strategy: restrained. No gradient, no shadow, no radius.
   A suggestion's description is the same hairline box, beside the list, or under or over it on a phone,
   never over the suggestions. A name the model does not have gets a red wavy underline, the page's one mark
   for it, defined in the line of shortcuts under the editor; pointed at, a hairline box says what dbtour
-  knows, with a red rule at its left, and the nearest name it has as a button that writes it.
+  knows, with a red rule at its left, and the nearest name it has as a button that writes it. When Tab writes
+  out a * without its masked, encrypted or labelled columns, a line under the editor says so, a plain
+  `left out` tag and the columns by name, until the query is edited again.
   Beside "T-SQL" the status says whether the page is connected: a hollow dot not; connected, the dot is the
   last run, grey before one and while it runs, green when the database answered, red when it did not, and
   the words say the same ("· ran", "· failed"). Green (`--live`, the page's only green) means one thing,

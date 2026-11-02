@@ -3,69 +3,15 @@
 // as CodeMirror orders them, so a case reads as what the reader sees.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { CompletionContext, type Completion, type CompletionResult, type CompletionSource } from '@codemirror/autocomplete';
+import type { Completion } from '@codemirror/autocomplete';
 import { ensureSyntaxTree } from '@codemirror/language';
 import { EditorState } from '@codemirror/state';
-import { scope, type Model } from 'dbtour/model';
-import { expandStar, pickOf, snippets, sqlSupport } from '../src/page/complete.ts';
+import { scope } from 'dbtour/model';
+import { expandStar, pickOf, snippets, sqlSupport, starExpansion } from '../src/page/complete.ts';
 import { formatQuery } from '../src/page/format.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { twoDatabases } from '../../core/test/fixtures/two.ts';
-
-const shop = (): Model => JSON.parse(readFileSync(new URL('../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
-
-interface Listed {
-  label: string;
-  apply: string;
-  detail?: string;
-}
-
-/**
- * The list at the caret. Explicit is Ctrl+Space; without it, as when typing. The order is CodeMirror's: how
- * well the label matches what is typed, plus the option's boost, then the label. Only prefix matches are kept:
- * the fuzzy ones CodeMirror also lists come last there, and no case here rests on them.
- */
-async function suggest(
-  text: string,
-  { explicit = false, model = shop(), database = 'Shop', used = {} as Record<string, number> } = {},
-): Promise<Listed[]> {
-  const pos = text.indexOf('|');
-  assert.ok(pos >= 0, 'a case marks the caret with |');
-  const doc = text.slice(0, pos) + text.slice(pos + 1);
-  const state = EditorState.create({ doc, selection: { anchor: pos }, extensions: [sqlSupport(model, database, (key) => used[key] ?? 0)] });
-  ensureSyntaxTree(state, doc.length, 5000);
-  const context = new CompletionContext(state, pos, explicit);
-  const sources = state.languageDataAt<CompletionSource>('autocomplete', pos);
-  const results = (await Promise.all(sources.map((s) => s(context)))).filter((r): r is CompletionResult => Boolean(r));
-  const scored: { option: Completion; score: number }[] = [];
-  for (const result of results) {
-    const typed = doc.slice(result.from, pos);
-    for (const option of result.options) {
-      const score = matchScore(typed, option.label);
-      if (score !== null) scored.push({ option, score: score + (option.boost ?? 0) });
-    }
-  }
-  const sorted = scored.sort((a, b) => b.score - a.score || (a.option.sortText ?? a.option.label).localeCompare(b.option.sortText ?? b.option.label));
-  const listed: Listed[] = [];
-  for (const { option } of sorted) {
-    const apply = typeof option.apply === 'string' ? option.apply : option.label;
-    const same = listed.find((l) => l.label === option.label && l.apply === apply && l.detail === option.detail);
-    if (!same) listed.push({ label: option.label, apply, detail: option.detail });
-  }
-  return listed;
-}
-
-// CodeMirror's penalties: -100 when the label is longer than what is typed, -200 when only the case differs.
-function matchScore(typed: string, label: string): number | null {
-  if (!typed) return 0;
-  const full = typed.length === label.length ? 0 : -100;
-  if (label.startsWith(typed)) return full;
-  if (label.toLowerCase().startsWith(typed.toLowerCase())) return full - 200;
-  return null;
-}
-
-const applies = async (text: string, options?: Parameters<typeof suggest>[1]) => (await suggest(text, options)).map((s) => s.apply);
+import { applies, shop, suggest } from './suggest.ts';
 
 test('in the select list, the columns of the table the query reads come first, in the table\'s order', async () => {
   const top = (await applies('SELECT | FROM dbo.Orders', { explicit: true })).slice(0, 5);
@@ -237,7 +183,9 @@ test('a table that has its alias already is written without another', async () =
 
 test('Tab writes no * that would lose or expose columns', () => {
   const derived = 'FROM dbo.Products p CROSS JOIN (SELECT 1 AS Extra) x';
-  assert.equal(tab(`SELECT *| ${derived}`), null, 'Extra is not in the model: written out, it would be lost');
+  assert.equal(tab(`SELECT *| ${derived}`), `SELECT p.Id, p.Sku, p.Price, x.Extra ${derived}`, 'Extra is named in the subquery\'s select list');
+  const unknown = 'FROM dbo.Products p CROSS JOIN (SELECT * FROM dbo.Nope) x';
+  assert.equal(tab(`SELECT *| ${unknown}`), null, 'what dbo.Nope returns is not known: written out, it would be lost');
   assert.equal(tab(`SELECT p.*| ${derived}`), `SELECT p.Id, p.Sku, p.Price ${derived}`, 'p.* covers Products alone');
   const locked = describe(shop());
   for (const c of locked.databases[0].schemas[0].tables.find((t) => t.name === 'Products')!.columns) c.masked = 'default()';
@@ -301,8 +249,8 @@ test('* expands to what SELECT * returns: no hidden column, every table in FROM,
   assert.equal(tab(`SELECT *| ${comma}`), `SELECT p.Id, p.Sku, p.Price, ol.OrderId, ol.ProductId, ol.Quantity, c.Id, c.Email, c.Name ${comma}`, 'a table after a comma that follows ON');
   assert.equal(tab('SELECT*| FROM dbo.Products'), 'SELECT Id, Sku, Price FROM dbo.Products', 'a space after SELECT when * had none');
   assert.equal(tab('SELECT DISTINCT*| FROM dbo.Products'), 'SELECT DISTINCT Id, Sku, Price FROM dbo.Products');
-  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT *| FROM Products'), null, 'a CTE named like a table is not that table');
-  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT p.*| FROM Products p'), null);
+  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT *| FROM Products'), 'WITH Products AS (SELECT 1 AS Extra) SELECT Extra FROM Products', 'a CTE named like a table is not that table');
+  assert.equal(tab('WITH Products AS (SELECT 1 AS Extra) SELECT p.*| FROM Products p'), 'WITH Products AS (SELECT 1 AS Extra) SELECT p.Extra FROM Products p');
 });
 
 test('a space after the schema\'s dot is still the schema: the table is written once', async () => {
@@ -326,4 +274,155 @@ test('DISTINCT, ALL and TOP before the first column do not hide it from the rank
   assert.equal((await applies('SELECT ALL Price FROM |'))[0], 'dbo.Products AS p');
   assert.equal((await applies('SELECT TOP (100) Price FROM |'))[0], 'dbo.Products AS p');
   assert.equal((await applies('SELECT TOP 10 PERCENT WITH TIES Price FROM |'))[0], 'dbo.Products AS p');
+});
+
+test('a CTE\'s columns are the names its select list gives, after its name and a dot or bare', async () => {
+  assert.deepEqual(await applies('WITH r AS (SELECT o.Id, o.Total AS amount, 1 FROM dbo.Orders o) SELECT r.| FROM r', { explicit: true }), ['Id', 'amount'], 'an unnamed expression gives no column');
+  assert.deepEqual(await applies('WITH r (a, b) AS (SELECT Id, Total FROM dbo.Orders) SELECT r.| FROM r', { explicit: true }), ['a', 'b'], 'the names after its own name rename them');
+  assert.deepEqual(await applies('WITH r AS (SELECT * FROM dbo.Customers) SELECT r.| FROM r', { explicit: true }), ['Id', 'Email', 'Name'], '* is the table\'s columns');
+  assert.deepEqual(await applies('WITH r AS (SELECT c.*, 1 AS one FROM dbo.Customers c) SELECT r.| FROM r', { explicit: true }), ['Id', 'Email', 'Name', 'one']);
+  assert.deepEqual(await applies('WITH a AS (SELECT Id FROM dbo.Orders), b AS (SELECT a.Id AS OrderId FROM a) SELECT b.| FROM b', { explicit: true }), ['OrderId'], 'one CTE read from another');
+  assert.deepEqual(await applies('WITH r AS (SELECT * FROM r) SELECT r.| FROM r', { explicit: true }), [], 'one that reads only itself has none');
+  assert.equal((await applies('WITH r AS (SELECT Email FROM dbo.Customers) SELECT | FROM r', { explicit: true }))[0], 'Email');
+});
+
+test('a CTE\'s column says what it is: the column it reads, or what it is called', async () => {
+  const [id, amount] = await suggest('WITH r AS (SELECT o.Id, SUM(o.Total) AS amount FROM dbo.Orders o GROUP BY o.Id) SELECT r.| FROM r', { explicit: true });
+  assert.equal(id.detail, 'int · primary key');
+  assert.equal(amount.detail, 'CTE column');
+});
+
+test('a subquery in FROM has the columns its select list gives', async () => {
+  assert.deepEqual(await applies('SELECT x.| FROM (SELECT Id, Email AS mail FROM dbo.Customers) x', { explicit: true }), ['Id', 'mail']);
+  const both = await applies('SELECT ma| FROM (SELECT Email AS mail FROM dbo.Customers) x JOIN dbo.Orders o ON o.CustomerId = x.Id');
+  assert.equal(both[0], 'x.mail', 'written with its alias, as another table is in scope');
+});
+
+test('after GROUP BY, what the select list does not aggregate, written out', async () => {
+  const two = 'FROM dbo.Orders o JOIN dbo.Customers c ON c.Id = o.CustomerId';
+  assert.equal((await applies(`SELECT c.Email, o.Status, SUM(o.Total) AS spent, COUNT(*) ${two} GROUP BY |`))[0], 'c.Email, o.Status');
+  assert.equal((await applies('SELECT YEAR(CreatedAt), COUNT(*) FROM dbo.Orders GROUP BY |'))[0], 'YEAR(CreatedAt)', 'an expression as written');
+  assert.equal((await applies('SELECT Status, ISNULL(SUM(Total), 0) FROM dbo.Orders GROUP BY |'))[0], 'Status', 'an aggregate inside another call');
+  assert.equal((await applies('SELECT Status, ROW_NUMBER() OVER (ORDER BY Id) FROM dbo.Orders GROUP BY |'))[0], undefined, 'nothing aggregated: no list to write');
+  assert.deepEqual(await applies('SELECT Status, 1, COUNT(*) FROM dbo.Orders GROUP BY |'), ['Status'], 'a constant is not grouped by');
+  assert.deepEqual(await applies('SELECT Status, COUNT(*) FROM dbo.Orders GROUP BY Status, |'), [], 'only where the list starts');
+  assert.equal((await applies('SELECT Status, COUNT(*) FROM dbo.Orders GROUP BY Cr|'))[0], 'CreatedAt', 'a column typed is still offered');
+});
+
+test('in GROUP BY and ORDER BY, what the select list names comes first; in ORDER BY its aliases before those', async () => {
+  assert.deepEqual((await applies('SELECT Name, Email FROM dbo.Customers ORDER BY |', { explicit: true })).slice(0, 3), ['Name', 'Email', 'Id']);
+  assert.deepEqual((await applies('SELECT CustomerId, SUM(Total) AS spent FROM dbo.Orders GROUP BY CustomerId ORDER BY |', { explicit: true })).slice(0, 2), ['spent', 'CustomerId']);
+  assert.equal((await applies('SELECT Email AS mail FROM dbo.Customers ORDER BY m|'))[0], 'mail');
+  assert.equal((await applies('SELECT [order total] = SUM(Total) FROM dbo.Orders ORDER BY |', { explicit: true }))[0], '[order total]', 'quoted as it must be');
+  assert.ok(!(await applies('SELECT Email AS mail FROM dbo.Customers GROUP BY |', { explicit: true })).includes('mail'), 'GROUP BY cannot read an alias');
+  assert.equal((await applies('SELECT Status, CustomerId, COUNT(*) FROM dbo.Orders GROUP BY Status, |', { explicit: true }))[0], 'CustomerId', 'not one grouped by already');
+  assert.ok(!(await applies('SELECT Email AS mail FROM dbo.Customers WHERE |', { explicit: true })).includes('mail'), 'nor WHERE');
+});
+
+test('a column the clause has, qualified or not, is not offered again first; after an alias and a dot, the select list still leads', async () => {
+  assert.equal((await applies('SELECT o.Status, o.CustomerId, COUNT(*) FROM dbo.Orders o GROUP BY Status, |', { explicit: true }))[0], 'CustomerId');
+  assert.equal((await applies('SELECT Status, CustomerId, COUNT(*) FROM dbo.Orders o GROUP BY o.Status, |', { explicit: true }))[0], 'CustomerId');
+  assert.deepEqual((await applies('SELECT o.Status, o.CustomerId FROM dbo.Orders o ORDER BY o.|', { explicit: true })).slice(0, 3), ['Status', 'CustomerId', 'Id']);
+  assert.equal((await applies('SELECT o.Status, o.CustomerId, COUNT(*) FROM dbo.Orders o GROUP BY o.Status, o.|', { explicit: true }))[0], 'CustomerId');
+});
+
+test('names given after a CTE or a subquery rename its columns by place, an unnamed one counted', async () => {
+  const listed = await suggest('WITH r (a, b) AS (SELECT 1, Id FROM dbo.Orders) SELECT r.| FROM r', { explicit: true });
+  assert.deepEqual(listed.map((s) => [s.apply, s.detail]), [['a', 'CTE column'], ['b', 'int · primary key']]);
+  assert.deepEqual(await applies('SELECT x.| FROM (SELECT Id, Email FROM dbo.Customers) AS x (customerId, mail)', { explicit: true }), ['customerId', 'mail']);
+});
+
+test('an alias written as a string is the name it spells', async () => {
+  assert.equal((await applies("SELECT Total AS 'order total' FROM dbo.Orders ORDER BY |", { explicit: true }))[0], '[order total]');
+  assert.equal((await applies("SELECT Total 'it''s' FROM dbo.Orders ORDER BY |", { explicit: true }))[0], "[it's]");
+  assert.equal((await applies("SELECT 'n' = COUNT(*) FROM dbo.Orders ORDER BY |", { explicit: true }))[0], 'n');
+  assert.deepEqual(await applies("WITH r AS (SELECT Id AS 'key' FROM dbo.Orders) SELECT r.| FROM r", { explicit: true }), ['[key]']);
+});
+
+test('GROUP BY written out has the columns an aggregating expression reads outside its aggregate', async () => {
+  assert.equal((await applies('SELECT Status, SUM(Total) + CustomerId AS adjusted FROM dbo.Orders GROUP BY |'))[0], 'Status, CustomerId');
+  assert.equal((await applies('SELECT CASE WHEN COUNT(*) > 1 THEN o.Status END FROM dbo.Orders o GROUP BY |'))[0], 'o.Status');
+  assert.equal((await applies('SELECT Status, status, COUNT(*) FROM dbo.Orders GROUP BY |'))[0], 'Status', 'once');
+});
+
+test('in a self-join, each alias is ranked by its own columns in the select list', async () => {
+  const sql = 'SELECT b.Status, a.CustomerId FROM dbo.Orders a JOIN dbo.Orders b ON b.Id = a.Id ORDER BY ';
+  assert.equal((await applies(`${sql}b.|`, { explicit: true }))[0], 'Status');
+  assert.equal((await applies(`${sql}a.|`, { explicit: true }))[0], 'CustomerId');
+});
+
+test('a select list ends where its query\'s next clause or UNION begins, FROM or not', async () => {
+  assert.equal((await applies('SELECT 1 AS n ORDER BY |', { explicit: true }))[0], 'n');
+  assert.deepEqual(await applies('WITH r AS (SELECT 1 AS n UNION ALL SELECT 2) SELECT r.| FROM r', { explicit: true }), ['n']);
+  assert.equal((await applies("SELECT CustomerId, STRING_AGG(Status, ',') WITHIN GROUP (ORDER BY CreatedAt) AS s FROM dbo.Orders ORDER BY |", { explicit: true }))[0], 's', 'WITHIN GROUP is the aggregate\'s, not a clause');
+});
+
+test('GROUP BY written out: a subquery\'s own aggregates and tables are its own; WITHIN GROUP is the aggregate\'s; a window\'s inputs are grouped', async () => {
+  assert.equal((await applies('SELECT o.Status, (SELECT COUNT(*) FROM dbo.Customers) AS n FROM dbo.Orders o GROUP BY |'))[0], undefined, 'the outer query does not aggregate');
+  assert.equal((await applies('SELECT o.Status, (SELECT MAX(c.Email) FROM dbo.Customers c WHERE c.Id = o.CustomerId) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |'))[0], 'o.Status, o.CustomerId', 'a correlated subquery\'s outer column is grouped');
+  assert.equal((await applies("SELECT CustomerId, STRING_AGG(Status, ',') WITHIN GROUP (ORDER BY CreatedAt) FROM dbo.Orders GROUP BY |"))[0], 'CustomerId');
+  assert.equal((await applies('SELECT Status, COUNT(*), ROW_NUMBER() OVER (ORDER BY CustomerId) FROM dbo.Orders GROUP BY |'))[0], 'Status, CustomerId');
+  assert.equal((await applies('SELECT Status, SUM(SUM(Total)) OVER (PARTITION BY Status) FROM dbo.Orders GROUP BY |'))[0], 'Status', 'an aggregate inside a window is still one');
+});
+
+test('Tab after * writes a subquery\'s or a CTE\'s columns when its select list names every one', () => {
+  const sub = 'FROM (SELECT Id, Email AS mail FROM dbo.Customers) x';
+  assert.equal(tab(`SELECT x.*| ${sub}`), `SELECT x.Id, x.mail ${sub}`);
+  assert.equal(tab(`SELECT *| ${sub}`), `SELECT Id, mail ${sub}`);
+  assert.equal(tab('WITH r AS (SELECT * FROM dbo.Customers) SELECT *| FROM r'), 'WITH r AS (SELECT * FROM dbo.Customers) SELECT Id, Email, Name FROM r', 'its own * over a table the model knows');
+  assert.equal(tab('WITH r (a, b) AS (SELECT 1, Id FROM dbo.Orders) SELECT *| FROM r'), 'WITH r (a, b) AS (SELECT 1, Id FROM dbo.Orders) SELECT a, b FROM r', 'names given after its own');
+  assert.equal(tab('SELECT x.*| FROM (SELECT Id, 1 FROM dbo.Customers) x'), null, 'an unnamed column: not every one is known');
+  assert.equal(tab('SELECT x.*| FROM (SELECT * FROM dbo.Nope) x'), null, 'a table the model does not know');
+  assert.equal(tab('SELECT *| FROM (SELECT 1 AS a) x JOIN dbo.Nope n ON 1 = 1'), null, 'beside a table the model does not know');
+});
+
+test('a protected column a subquery passes on as it is stays left out by Tab', () => {
+  const sub = 'FROM (SELECT o.Id, o.Status, UPPER(o.Status) AS loud FROM dbo.Orders o) x';
+  assert.equal(tab(`SELECT x.*| ${sub}`), `SELECT x.Id, x.loud ${sub}`, 'Status is masked in the described model');
+  assert.equal(tab('SELECT x.*| FROM (SELECT o.Id, o.Status AS s FROM dbo.Orders o) x'), 'SELECT x.Id FROM (SELECT o.Id, o.Status AS s FROM dbo.Orders o) x', 'renamed, it is still Status');
+});
+
+test('GROUP BY written out: in a subquery inside a subquery, a name bound inside is not the outer query\'s', async () => {
+  assert.equal((await applies('SELECT o.Status, (SELECT (SELECT TOP (1) o.Email FROM dbo.Customers o)) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |'))[0], 'o.Status');
+  assert.equal((await applies('SELECT o.Status, (SELECT (SELECT TOP (1) c.Email FROM dbo.Customers c WHERE c.Id = o.CustomerId)) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |'))[0], 'o.Status, o.CustomerId', 'an outer name read two levels in');
+});
+
+test('Tab after * says which protected columns it left out, so the reader knows to ask for every column', () => {
+  const left = (text: string, model = describe(shop())) => {
+    const pos = text.indexOf('|');
+    const doc = text.slice(0, pos) + text.slice(pos + 1);
+    const state = EditorState.create({ doc, selection: { anchor: pos }, extensions: [sqlSupport(model, 'Shop')] });
+    ensureSyntaxTree(state, doc.length, 5000);
+    return starExpansion(state)?.left;
+  };
+  assert.deepEqual(left('SELECT *| FROM dbo.Orders'), ['Status', 'CreatedAt']);
+  assert.deepEqual(left('SELECT x.*| FROM (SELECT o.Id, o.Status AS s FROM dbo.Orders o) x'), ['s'], 'by the name the subquery gives it');
+  assert.deepEqual(left('SELECT *| FROM dbo.Customers'), [], 'nothing left out');
+  assert.equal(left('SELECT Id| FROM dbo.Customers'), undefined, 'no * at the caret');
+});
+
+test('Tab after * holds back where it cannot tell which columns are protected', () => {
+  assert.equal(tab('SELECT x.*| FROM (SELECT 0 AS Id, 0 AS s UNION ALL SELECT Id, Status FROM dbo.Orders) x'), 'SELECT x.Id FROM (SELECT 0 AS Id, 0 AS s UNION ALL SELECT Id, Status FROM dbo.Orders) x', 'Status in a later branch protects s');
+  assert.equal(tab('SELECT x.*| FROM dbo.Orders o CROSS APPLY (SELECT o.Id, o.Status AS s) x'), null, 'a column of the query around it: not known here');
+  assert.equal(tab('WITH r (a, b) AS (SELECT u.*, o.Status FROM dbo.Unmodelled u CROSS JOIN dbo.Orders o) SELECT *| FROM r'), null, 'a * of unknown width: the names cannot be matched to their columns');
+});
+
+test('GROUP BY written out lists what GROUPING reads; COLLATE is not an alias; a comment does not hide a subquery', async () => {
+  assert.equal((await applies('SELECT Status, GROUPING(CustomerId) AS g, COUNT(*) FROM dbo.Orders GROUP BY |'))[0], 'Status, CustomerId');
+  assert.equal((await applies('SELECT Name COLLATE Latin1_General_CI_AS, COUNT(*) FROM dbo.Customers GROUP BY |'))[0], 'Name COLLATE Latin1_General_CI_AS');
+  assert.ok(!(await applies('SELECT Name COLLATE Latin1_General_CI_AS FROM dbo.Customers ORDER BY |', { explicit: true })).includes('Latin1_General_CI_AS'));
+  assert.equal((await applies('SELECT o.Status, (/* count */ SELECT COUNT(*) FROM dbo.Customers) AS n FROM dbo.Orders o GROUP BY |'))[0], undefined);
+});
+
+test('GROUP BY written out: a bare name in a subquery is bound as SQL Server binds it, or nothing is written', async () => {
+  const sub = (where: string) => `SELECT o.Status, (SELECT MAX(c.Email) FROM dbo.Customers c WHERE ${where}) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |`;
+  assert.equal((await applies(sub('c.Id = CustomerId')))[0], 'o.Status, CustomerId', 'Customers has no CustomerId: it is the outer Orders\'');
+  assert.equal((await applies(sub('Email IS NOT NULL')))[0], 'o.Status', 'Email is Customers\'');
+  assert.equal((await applies(sub('Mystery = 1')))[0], undefined, 'neither has it: not sure, so nothing written');
+});
+
+test('ORDER BY after UNION offers the first query\'s names, which the result takes', async () => {
+  const listed = await applies('SELECT Id AS first_id FROM dbo.Orders UNION ALL SELECT Id AS last_id FROM dbo.Orders ORDER BY |', { explicit: true });
+  assert.equal(listed[0], 'first_id');
+  assert.ok(!listed.includes('last_id'));
 });

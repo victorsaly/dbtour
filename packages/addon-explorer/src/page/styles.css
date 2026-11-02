@@ -1701,15 +1701,18 @@ table.columns tr.is-pointed td {
   accent-color: var(--ink);
 }
 .sql-error,
-.sql-waiting {
+.sql-waiting,
+.sql-note {
   margin: 0;
   padding: 8px 12px;
   border-top: var(--hair) solid var(--line);
 }
-.sql-waiting {
+.sql-waiting,
+.sql-note {
   color: var(--ink-2);
 }
-.sql-waiting .tag {
+.sql-waiting .tag,
+.sql-note .tag {
   margin-left: 0;
 }
 /* The run before, kept while the next goes or after it failed: dimmed, and its head says so. */

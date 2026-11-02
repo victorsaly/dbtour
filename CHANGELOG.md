@@ -1,6 +1,33 @@
 # Changelog
 
-## 0.10.0 (unreleased)
+## 0.10.1 (unreleased)
+
+- The SQL editor's autocomplete knows a CTE's and a subquery's columns: the names its select list gives them
+  (an alias, written as a name or a string, or the column's own name), the names after the CTE's own or the
+  subquery's alias when they are given (`WITH r (a, b) AS`, `AS x (a, b)`), which rename them by place, an
+  unnamed one counted, and for `*` or `alias.*` the columns of what it reads. After `r.` they are all that is offered; bare, they
+  come with the other tables' columns. One read as it is says what its source says (`int · primary key`); an
+  expression says it is a CTE or subquery column. A CTE read from another is followed; one that reads only
+  itself has none. After FROM, a CTE that has the columns the select list names comes first, as a table does.
+  Tab after `*` or `x.*` writes a CTE's or a subquery's columns out when its select list names every one (no
+  unnamed item, and its own `*` only over tables the model knows); a protected column it passes on, renamed
+  or not, is left out as a table's is. When Tab leaves a masked, encrypted or labelled column out of a `*`, a
+  line under the editor now says which, and that Ctrl+Space after the `*` offers every column; it went
+  unsaid, and looked like a column lost.
+- After `GROUP BY`, in a query that aggregates, the first suggestion writes out what its select list does
+  not aggregate, as written there (`c.Email, o.Status`, `YEAR(CreatedAt)`), and the columns an aggregating
+  item reads outside its aggregate (`SUM(Total) + CustomerId`), outside an ordered aggregate's WITHIN GROUP,
+  as a window function's input, or as the outer column a subquery reads; a constant, a window function or a
+  subquery is not listed whole, and a subquery's own aggregate does not make its query aggregate. In GROUP BY and ORDER BY, the columns the select list names come first, in its order, after an
+  alias and a dot too (each alias of a self-join its own), and not one the clause has already, qualified or
+  not; in ORDER BY the names the select list gives (`SUM(Total) AS spent`) come
+  before those, as it is the one clause that can read them.
+- A ranking bench holds the autocomplete to the reader: 54 half-written queries, each with what a reader
+  wants at the caret, and where it comes in the list. It went from first in 67% of them and in the first
+  three in 70%, to 98% and 100%; the test fails if a change lowers either. The one case not first is
+  `FROM Ord|`, where OrderLines comes before Orders, as CodeMirror orders names that match as well.
+
+## 0.10.0 (2 November 2026)
 
 - Start in one line, with nothing installed: `npx -y -p dbtour -p dbtour-source-mssql -p
   dbtour-addon-explorer -p dbtour-keychain dbtour serve` opens the browser on a page that sets a database up

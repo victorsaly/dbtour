@@ -48,8 +48,9 @@ export function unknownNames(state: EditorState): Diagnostic[] {
       for (let child = ref.node.firstChild; child; child = child.nextSibling) if (child.name === 'Identifier' || child.name === 'QuotedIdentifier') parts.push(child);
       if (parts.length !== 2) return;
       const column = parts[1];
+      // A CTE's or a subquery's columns are read from its select list, which may not name them all.
       const known = readAt(state, column.from, found.index, { place: false }).dotted?.known;
-      if (!known) return;
+      if (!known || known.derived) return;
       // CodeMirror's parser ends a "quoted name" at its first quote, so "a""b" comes as "a" and "b": joined
       // again, as T-SQL reads a doubled quote.
       let end = column.to;
