@@ -37,7 +37,7 @@
   command, and show the reader's statements to the person before confirming them. For a person at their
   machine, it offers the one line and the page first.
 
-## 0.9.5 (unreleased)
+## 0.9.5 (2 November 2026)
 
 The npm pages, which 0.9.4 was meant to carry: its pull request merged before these were pushed.
 
