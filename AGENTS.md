@@ -50,9 +50,9 @@ npm run smoke   # the packed packages installed and run as a user would
 ## Rules
 
 - Write the failing test first, then the fix.
-- One pull request is one release: bump every package's version, the skill's (`metadata.version` in
-  `skills/dbtour/SKILL.md`) and the plugin's (`.claude-plugin/plugin.json`), the README badge and a changelog entry
-  marked `(unreleased)` in the same pull request. Find the number from what is released (`gh release list`).
+- One pull request is one release: bump every package's version and its `dbtour` pins, the skill's
+  (`metadata.version` in `skills/dbtour/SKILL.md`) and the plugin's (`.claude-plugin/plugin.json`), the README
+  badge and a changelog entry marked `(unreleased)` in the same pull request. Find the number from what is released (`gh release list`).
   Merging to main does the rest: `release.yml` tags the version, creates the GitHub release from the
   changelog section and publishes to npm. `npm run release` is the same by hand, for when it could not, and
   `npm run release -- --publish` from a checkout of a tag publishes a version the workflow tagged but did
