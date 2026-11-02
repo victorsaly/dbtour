@@ -11,7 +11,9 @@
   itself has none. After FROM, a CTE that has the columns the select list names comes first, as a table does.
   Tab after `*` or `x.*` writes a CTE's or a subquery's columns out when its select list names every one (no
   unnamed item, and its own `*` only over tables the model knows); a protected column it passes on, renamed
-  or not, is left out as a table's is.
+  or not, is left out as a table's is. When Tab leaves a masked, encrypted or labelled column out of a `*`, a
+  line under the editor now says which, and that Ctrl+Space after the `*` offers every column; it went
+  unsaid, and looked like a column lost.
 - After `GROUP BY`, in a query that aggregates, the first suggestion writes out what its select list does
   not aggregate, as written there (`c.Email, o.Status`, `YEAR(CreatedAt)`), and the columns an aggregating
   item reads outside its aggregate (`SUM(Total) + CustomerId`), outside an ordered aggregate's WITHIN GROUP,

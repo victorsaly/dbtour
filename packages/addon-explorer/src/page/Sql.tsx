@@ -13,7 +13,7 @@ import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutt
 import type { Model } from 'dbtour/model';
 import { CopyButton } from './Copy.tsx';
 import { unknownNames } from './check.ts';
-import { expandStar, infoPlacement, pickOf, sqlSupport } from './complete.ts';
+import { infoPlacement, pickOf, sqlSupport, starExpansion } from './complete.ts';
 import { formatQuery } from './format.ts';
 import { sqlPrompt } from './query.ts';
 import { sqlHighlighter, sqlTokens } from './sql.ts';
@@ -216,6 +216,8 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
   const connection = connectionFor(served, database);
   // The last result stays while the next run goes and after one fails, dimmed, so the rows do not flash away.
   const [ran, setRan] = useState<{ result?: Ran; error?: string; running?: boolean; waiting?: string }>({});
+  // The protected columns Tab left out of the * it wrote last, said until the query is edited again.
+  const [leftOut, setLeftOut] = useState<string[]>();
   const status = statusOf(connection, ran);
   const [autoRun, setAutoRun] = useState(readAutoRun);
   const auto = useRef(autoRun);
@@ -309,9 +311,11 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
               key: 'Tab',
               run: (v) => {
                 if (pickNowOrSoon(v)) return true;
-                const spec = expandStar(v.state);
-                if (spec) v.dispatch(spec);
-                return Boolean(spec);
+                const star = starExpansion(v.state);
+                if (!star) return false;
+                v.dispatch(star.spec);
+                setLeftOut(star.left.length ? star.left : undefined);
+                return true;
               },
             },
             { key: 'Shift-Alt-f', run: format },
@@ -340,6 +344,7 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
               if (reopen) setTimeout(() => startCompletion(update.view));
             }
             if (!update.docChanged) return;
+            setLeftOut(undefined);
             writeDraft(draft, update.state.doc.toString() === initial ? undefined : update.state.doc.toString());
             if (auto.current) {
               // The latest pause decides: a retry queued during an earlier run must not send it mid-word.
@@ -403,6 +408,11 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
         </span>
       </div>
       <div className="sql-block" ref={host} />
+      {leftOut && (
+        <p className="sql-note" role="status">
+          <span className="tag">left out</span> {leftOut.join(', ')}: masked, encrypted or labelled. Ctrl+Space after * offers every column.
+        </p>
+      )}
       {ran.error && (
         <p className="sql-error" role="alert">
           <span className="tag warn">not run</span> {ran.error}
@@ -415,7 +425,7 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
       )}
       {ran.result && <Result result={ran.result} stale={Boolean(ran.running || ran.error)} />}
       <p className="sql-hint">
-        Ctrl+Space suggests what fits where the caret is, and Tab or Enter takes it. Tab after * writes the columns; ssf, st100,
+        Ctrl+Space suggests what fits where the caret is, and Tab or Enter takes it. Tab after * writes the columns, without the masked, encrypted or labelled ones (Ctrl+Space there offers every column); ssf, st100,
         scf, cte and wex write the start of a query; Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y formats it. A red wavy line marks a name
         the model does not have; point at it for the nearest it has.
       </p>

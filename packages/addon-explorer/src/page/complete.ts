@@ -444,6 +444,8 @@ interface Expansion {
   detail: string;
   /** Masked, encrypted or labelled columns are in it: offered on Ctrl+Space, never written by Tab. */
   exposes: boolean;
+  /** The protected columns it leaves out, by name. */
+  left: string[];
 }
 
 /**
@@ -470,24 +472,30 @@ function expansions(reading: Reading, model: Model): Expansion[] {
   const write = (list: typeof columns) => (star.spaced ? '' : ' ') + list.map(({ name, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(name)).join(', ');
   const open = columns.filter((c) => !c.protected);
   const left = columns.filter((c) => c.protected).map((c) => c.name);
-  const all = { text: write(columns), count: columns.length, detail: 'every column', exposes: left.length > 0 };
+  const all = { text: write(columns), count: columns.length, detail: 'every column', exposes: left.length > 0, left: [] };
   if (!left.length) return [all];
   if (!open.length) return [{ ...all, detail: 'every column, masked, encrypted or labelled' }];
-  return [{ text: write(open), count: open.length, detail: `leaves out ${left.join(', ')}: masked, encrypted or labelled`, exposes: false }, all];
+  return [{ text: write(open), count: open.length, detail: `leaves out ${left.join(', ')}: masked, encrypted or labelled`, exposes: false, left }, all];
 }
 
 /**
- * Tab after * in the select list: the change that writes its columns, without the protected ones. Null
- * anywhere else, and where that would lose or expose a column, so Tab does what it does elsewhere.
+ * Tab after * in the select list: the change that writes its columns, without the protected ones, and which
+ * those were, for the editor to say. Null anywhere else, and where that would lose or expose a column, so Tab
+ * does what it does elsewhere.
  */
-export function expandStar(state: EditorState): TransactionSpec | null {
+export function starExpansion(state: EditorState): { spec: TransactionSpec; left: string[] } | null {
   const found = state.facet(setup);
   const pos = state.selection.main.head;
   if (!found || !state.selection.main.empty) return null;
   const reading = readAt(state, pos, found.index);
   const first = expansions(reading, found.model).find((e) => !e.exposes);
   if (!first || !reading.star) return null;
-  return { changes: { from: reading.star.from, to: pos, insert: first.text }, selection: { anchor: reading.star.from + first.text.length } };
+  return { spec: { changes: { from: reading.star.from, to: pos, insert: first.text }, selection: { anchor: reading.star.from + first.text.length } }, left: first.left };
+}
+
+/** Tab after * in the select list: the change alone. */
+export function expandStar(state: EditorState): TransactionSpec | null {
+  return starExpansion(state)?.spec ?? null;
 }
 
 /** Every table of one database, by each way SQL there can name it, in lower case: table, schema.table, db.schema.table. */

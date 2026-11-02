@@ -7,7 +7,7 @@ import type { Completion } from '@codemirror/autocomplete';
 import { ensureSyntaxTree } from '@codemirror/language';
 import { EditorState } from '@codemirror/state';
 import { scope } from 'dbtour/model';
-import { expandStar, pickOf, snippets, sqlSupport } from '../src/page/complete.ts';
+import { expandStar, pickOf, snippets, sqlSupport, starExpansion } from '../src/page/complete.ts';
 import { formatQuery } from '../src/page/format.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { twoDatabases } from '../../core/test/fixtures/two.ts';
@@ -385,4 +385,18 @@ test('a protected column a subquery passes on as it is stays left out by Tab', (
 test('GROUP BY written out: in a subquery inside a subquery, a name bound inside is not the outer query\'s', async () => {
   assert.equal((await applies('SELECT o.Status, (SELECT (SELECT TOP (1) o.Email FROM dbo.Customers o)) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |'))[0], 'o.Status');
   assert.equal((await applies('SELECT o.Status, (SELECT (SELECT TOP (1) c.Email FROM dbo.Customers c WHERE c.Id = o.CustomerId)) AS e, COUNT(*) FROM dbo.Orders o GROUP BY |'))[0], 'o.Status, o.CustomerId', 'an outer name read two levels in');
+});
+
+test('Tab after * says which protected columns it left out, so the reader knows to ask for every column', () => {
+  const left = (text: string, model = describe(shop())) => {
+    const pos = text.indexOf('|');
+    const doc = text.slice(0, pos) + text.slice(pos + 1);
+    const state = EditorState.create({ doc, selection: { anchor: pos }, extensions: [sqlSupport(model, 'Shop')] });
+    ensureSyntaxTree(state, doc.length, 5000);
+    return starExpansion(state)?.left;
+  };
+  assert.deepEqual(left('SELECT *| FROM dbo.Orders'), ['Status', 'CreatedAt']);
+  assert.deepEqual(left('SELECT x.*| FROM (SELECT o.Id, o.Status AS s FROM dbo.Orders o) x'), ['s'], 'by the name the subquery gives it');
+  assert.deepEqual(left('SELECT *| FROM dbo.Customers'), [], 'nothing left out');
+  assert.equal(left('SELECT Id| FROM dbo.Customers'), undefined, 'no * at the caret');
 });

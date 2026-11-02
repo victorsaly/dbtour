@@ -394,6 +394,7 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     await page.keyboard.press('Tab');
     assert.equal(await sqlEditor.textContent(), 'SELECT Id, Email, Name FROM dbo.Customers AS c');
     assert.ok(await page.evaluate("document.activeElement?.classList.contains('cm-content')"), 'Tab stayed in the editor to write them');
+    assert.equal(await page.locator('.sql-note').count(), 0, 'nothing protected left out, nothing said');
     await page.locator('.sql-page button', { hasText: 'Format' }).click();
     assert.deepEqual(await page.locator('.sql-page .cm-line').allTextContents(), ['SELECT', '  Id,', '  Email,', '  Name', 'FROM', '  dbo.Customers AS c']);
 
