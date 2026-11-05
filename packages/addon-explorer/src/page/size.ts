@@ -1,6 +1,6 @@
 // A table's size, read apart from its plot: the plot is the columns and keys, the size bar is the bytes.
 // Lengths are linear, so half the length is half the bytes, and every figure is named beside its bar.
-import { formatBytes, formatCount } from 'dbtour/markdown';
+import { driverName, formatBytes, formatCount } from 'dbtour/markdown';
 import type { Table, TableStats } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
 
@@ -32,11 +32,21 @@ export function rankByRows(cat: Catalogue, ref: string): string | undefined {
   return `the ${ordinal(rank)} largest ${of}`;
 }
 
-/** What each figure is, in plain words, naming the database that counted it. */
-export function sizeTerms(database: string): { rows: string; data: string; indexes: string } {
+/**
+ * What each figure of a table's size is, as its database counts it: SQL Server estimates the rows from its
+ * catalogue; SQLite's are the cells of the table's pages, counted when it was read.
+ */
+export function sizeTerms(driver: string): { rows: string; data: string; indexes: string } {
+  if (driver === 'sqlite') {
+    return {
+      rows: 'Counted from the cells of its pages in the file, as it was when read: no row is read to make it.',
+      data: 'The pages the rows sit on: the table\'s own b-tree.',
+      indexes: 'The pages every index takes beside it, a UNIQUE\'s among them.',
+    };
+  }
   return {
-    rows: `${database}'s own count of the rows, an estimate: no row is read to make it.`,
-    data: 'The pages the rows sit on: the table itself, its heap or clustered index.',
+    rows: `${driverName(driver)}'s own count of the rows, an estimate: no row is read to make it.`,
+    data: `The pages the rows sit on: the table itself${driver === 'mssql' ? ', its heap or clustered index' : ''}.`,
     indexes: 'The pages every other index takes beside it.',
   };
 }

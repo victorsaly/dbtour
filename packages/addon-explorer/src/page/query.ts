@@ -3,6 +3,7 @@
 // cannot run a query (it is a static file), so running stays with dbtour sql and the MCP query tool.
 import { driverName, formatCount } from 'dbtour/markdown';
 import { findTable, localRef, relationsOf, tableRef, type Column, type Database, type Model } from 'dbtour/model';
+import { dialectOf, firstRows } from './dialect.ts';
 import { prompt } from './prompt.ts';
 import { sqlTokens } from './sql.ts';
 
@@ -106,9 +107,11 @@ export function starterQuery(model: Model, ref: string): string {
     lines.push('SELECT COUNT(*) AS [Rows]', `FROM ${quoteRef(localRef(model, found.ref))} AS ${alias};`);
     return lines.join('\n');
   }
-  lines.push(`SELECT TOP (${starterRows})`, ...select.map((s, i, all) => `    ${s}${i < all.length - 1 ? ',' : ''}`));
+  const rows = firstRows(dialectOf(found.database.driver), starterRows);
+  lines.push(rows.select, ...select.map((s, i, all) => `    ${s}${i < all.length - 1 ? ',' : ''}`));
   lines.push(`FROM ${quoteRef(localRef(model, found.ref))} AS ${alias}`, ...joins);
   if (table.primaryKey?.length) lines.push(`ORDER BY ${table.primaryKey.map((k) => `${alias}.${quoteName(k)} DESC`).join(', ')}`);
+  if (rows.end) lines.push(rows.end);
   lines[lines.length - 1] += ';';
   return lines.join('\n');
 }
@@ -199,7 +202,7 @@ export function sqlPrompt(model: Model, sql: string, databaseName: string | unde
   const refs = queryTables(model, sql, database.name);
   const head =
     `The query below runs on the ${database.name} database (${driverName(database.driver)}). Check it against the tables it reads, from dbtour, and improve it: ` +
-    'the names as the tables have them, joins on their keys, a TOP or a filter on an indexed column for a large table, and masked or labelled columns only if the question needs them.';
+    `the names as the tables have them, joins on their keys, ${dialectOf(database.driver).rows === 'top' ? 'a TOP' : 'a LIMIT'} or a filter on an indexed column for a large table, and masked or labelled columns only if the question needs them.`;
   const tables = refs.length ? prompt(model, refs) : 'It names no table dbtour knows: say which tables it should read.';
   return `${head}\n\n\`\`\`sql\n${sql.trim()}\n\`\`\`\n\n${tables}`;
 }

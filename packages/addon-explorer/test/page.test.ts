@@ -15,6 +15,8 @@ import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/p
 import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
 import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, parseServed, railStatus, statusOf } from '../src/page/served.ts';
+import { dialectOf } from '../src/page/dialect.ts';
+import { formatQuery } from '../src/page/format.ts';
 import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
 import { azLine, clock, formProblem, setupSteps, startCommand, stepSummary, suggestName, took, type SetupForm } from '../src/page/setup.ts';
 import { startCommand as coreStart } from '../../core/src/cli.ts';
@@ -227,11 +229,15 @@ test('a table\'s place by rows reads as words, and only tables with stats are co
   assert.deepEqual([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111].map(ordinal), ['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd', '101st', '111th']);
 });
 
-test('the size terms say what each figure is, naming the database', () => {
-  const terms = sizeTerms('SQL Server');
+test('the size terms say what each figure is, as each database counts it', () => {
+  const terms = sizeTerms('mssql');
   assert.equal(terms.rows, "SQL Server's own count of the rows, an estimate: no row is read to make it.");
-  assert.match(terms.data, /^The pages the rows sit on/);
+  assert.match(terms.data, /^The pages the rows sit on: the table itself, its heap or clustered index/);
   assert.match(terms.indexes, /^The pages every other index takes/);
+  const lite = sizeTerms('sqlite');
+  assert.equal(lite.rows, 'Counted from the cells of its pages in the file, as it was when read: no row is read to make it.');
+  assert.doesNotMatch(lite.data, /heap|clustered/);
+  assert.match(sizeTerms('postgres').rows, /^PostgreSQL's own count/);
 });
 
 test('a profile rises for keys and the plot path has one pulse per column', () => {
@@ -442,6 +448,18 @@ test('a starter query: the table\'s columns, a join for a name-like column of ea
   // A view has no key to order by; a table referencing nothing says only its name.
   assert.equal(starterQuery(shop(), 'dbo.vOrderTotals'), '-- dbo.vOrderTotals.\nSELECT TOP (100)\n    vot.OrderId,\n    vot.Total\nFROM dbo.vOrderTotals AS vot;');
   assert.match(starterQuery(shop(), 'dbo.Customers'), /^-- dbo\.Customers\.\n/);
+});
+
+test('a SQLite table\'s starter asks for its first rows with LIMIT, and its dialect says how its reader is named', () => {
+  const model = shop();
+  model.databases[0].driver = 'sqlite';
+  assert.equal(starterQuery(model, 'dbo.vOrderTotals'), '-- dbo.vOrderTotals.\nSELECT\n    vot.OrderId,\n    vot.Total\nFROM dbo.vOrderTotals AS vot\nLIMIT 100;');
+  assert.match(starterQuery(model, 'dbo.Customers'), /\nORDER BY c\.Id DESC\nLIMIT 100;$/);
+  assert.match(sqlPrompt(model, 'SELECT 1', 'Shop'), /\(SQLite\).* a LIMIT or a filter/);
+  assert.deepEqual([dialectOf('sqlite').label, dialectOf('sqlite').reader], ['SQLite', 'read-only']);
+  assert.deepEqual([dialectOf('mssql').label, dialectOf(undefined).label], ['T-SQL', 'T-SQL']);
+  assert.deepEqual([dialectOf('postgres').label, dialectOf('postgres').reader, dialectOf('postgres') === dialectOf('postgres')], ['SQL', '${DBTOUR_POSTGRES_READER}', true]);
+  assert.equal(formatQuery('select id from orders where total>1 limit 5', dialectOf('sqlite')), 'SELECT\n  id\nFROM\n  orders\nWHERE\n  total > 1\nLIMIT\n  5');
 });
 
 test('a starter leaves protected columns out and says which, quotes a name SQL would misread, and uses local names', () => {

@@ -1,7 +1,7 @@
 // One entry: its number and name, its plot, its columns ruled beneath; the facts, relations and the sequence
 // on the right. Indexes, constraints and a view's definition fold below.
 import { Fragment, useEffect, useState } from 'react';
-import { driverName, formatBytes, formatCount } from 'dbtour/markdown';
+import { formatBytes, formatCount } from 'dbtour/markdown';
 import { findTable, findTables, isUniqueColumn, relationsOf, type Column, type Model, type Relation, type Table, type TableStats } from 'dbtour/model';
 import { neighboursOf, type Catalogue } from './catalogue.ts';
 import { DiagramView } from './Diagram.tsx';
@@ -331,7 +331,7 @@ export function TableView({ model, cat, tableRef, column }: Props) {
                   </span>
                   {!trigger.enabled && <span className="tag warn">disabled</span>}
                 </p>
-                {trigger.definition ? <SqlBlock code={trigger.definition} /> : <p className="muted">Its definition is encrypted.</p>}
+                {trigger.definition ? <SqlBlock code={trigger.definition} driver={found.database.driver} /> : <p className="muted">Its definition is encrypted.</p>}
               </div>
             ))}
           </details>
@@ -371,7 +371,7 @@ export function TableView({ model, cat, tableRef, column }: Props) {
         {table.definition !== undefined && (
           <details>
             <summary>Definition</summary>
-            <SqlBlock code={table.definition} />
+            <SqlBlock code={table.definition} driver={found.database.driver} />
           </details>
         )}
       </article>
@@ -500,7 +500,7 @@ function Action({ relation }: { relation: Relation }) {
  * into data and indexes with each figure written under it, and what each figure is.
  */
 function Size({ stats, rank, readAt, driver }: { stats: TableStats; rank?: string; readAt?: string; driver: string }) {
-  const terms = sizeTerms(driverName(driver));
+  const terms = sizeTerms(driver);
   return (
     <section className="size-block" aria-label="Size">
       <div className="size-head">

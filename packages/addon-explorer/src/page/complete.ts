@@ -8,17 +8,12 @@
 // few snippets write the start of a read. What the reader picks is counted, and comes first among equals. Pure,
 // so the cases in test/complete.test.ts and the bench in test/ranking.test.ts run it as the editor does.
 import { snippet, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from '@codemirror/autocomplete';
-import { keywordCompletionSource, MSSQL, schemaCompletionSource, SQLDialect, type SQLNamespace } from '@codemirror/lang-sql';
+import { keywordCompletionSource, schemaCompletionSource, type SQLNamespace } from '@codemirror/lang-sql';
 import { ensureSyntaxTree, LanguageSupport, syntaxTree } from '@codemirror/language';
 import { Facet, type EditorState, type Extension, type TransactionSpec } from '@codemirror/state';
 import { findTable, localRef, relationsOf, tableRef, type Model } from 'dbtour/model';
+import { dialectOf, type Dialect } from './dialect.ts';
 import { aliasFor, completionSchema, isProtected, joinCompletions, quoteName, quoteRef, type Suggestion, type TableSuggestions } from './query.ts';
-
-/**
- * T-SQL as SQL Server reads it by default: names are not case-sensitive, so a completed OrderLines needs no
- * quotes, and a name that does need them gets [brackets], as T-SQL is written, rather than "double quotes".
- */
-export const tsql = SQLDialect.define({ ...MSSQL.spec, caseInsensitiveIdentifiers: true, identifierQuotes: '["' });
 
 // CodeMirror ranks by how well a label matches what is typed, then by boost; its SQL keywords have -1 and
 // schema names 0. A column of the caret's own query at 2, and of an outer query's at 1, comes above both when
@@ -32,7 +27,8 @@ const schemaBoost = -0.5;
 // A table that has every column the select list names comes a point above one that has none, a part for
 // some: the same scale as a pick, so a better typed match still leads.
 const tableFitBoost = 1;
-// After a table and its alias, the words that can follow it; ON leads after a JOIN, where it is due.
+// After a table and its alias, the words that can follow it; ON leads after a JOIN, where it is due. LIMIT too
+// where the dialect asks for rows with it: CodeMirror's T-SQL lists the word, which SQL Server refuses.
 const afterTableWords = new Set([
   'AS', 'WITH', 'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'OUTER', 'APPLY', 'ON', 'AND', 'OR',
   'GROUP', 'ORDER', 'HAVING', 'UNION', 'EXCEPT', 'INTERSECT', 'OPTION', 'FOR', 'SET', 'OUTPUT', 'PIVOT', 'UNPIVOT',
@@ -73,6 +69,8 @@ export interface Keyed extends Completion {
 export interface Snippet {
   name: string;
   template: string;
+  /** Only where the first rows are asked for this way: TOP (100) in T-SQL, LIMIT 100 in SQLite. */
+  rows?: Dialect['rows'];
 }
 
 /**
@@ -81,7 +79,8 @@ export interface Snippet {
  */
 export const snippets: Snippet[] = [
   { name: 'ssf', template: 'SELECT * FROM ' },
-  { name: 'st100', template: 'SELECT TOP (100) * FROM ' },
+  { name: 'st100', template: 'SELECT TOP (100) * FROM ', rows: 'top' },
+  { name: 'sl100', template: 'SELECT * FROM ${}\nLIMIT 100', rows: 'limit' },
   { name: 'scf', template: 'SELECT COUNT(*) FROM ' },
   { name: 'cte', template: 'WITH ${name} AS (\n  SELECT ${}\n)\nSELECT * FROM ${name}' },
   { name: 'wex', template: 'WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${condition})' },
@@ -91,6 +90,7 @@ export const snippets: Snippet[] = [
 export interface Setup {
   model: Model;
   databaseName: string;
+  dialect: Dialect;
   defaultSchema: string;
   index: Map<string, Known>;
 }
@@ -222,8 +222,12 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
     if (!reading) readings.set(context, (reading = readAt(context.state, context.pos, index)));
     return reading;
   };
-  const keywords = keywordCompletionSource(tsql, true);
-  const names = schemaCompletionSource({ dialect: tsql, schema: schema as unknown as SQLNamespace, defaultSchema });
+  const database = model.databases.find((d) => d.name === databaseName) ?? model.databases[0];
+  const dialect = dialectOf(database?.driver);
+  const { language } = dialect;
+  const keywords = keywordCompletionSource(language, true);
+  const followTable = dialect.rows === 'limit' ? new Set([...afterTableWords, 'LIMIT']) : afterTableWords;
+  const names = schemaCompletionSource({ dialect: language, schema: schema as unknown as SQLNamespace, defaultSchema });
   const sources: CompletionSource[] = [
     (context) => {
       const at = read(context);
@@ -232,7 +236,7 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
       const result = keywords(context) as CompletionResult | null;
       if (!result || !at.afterTable) return result;
       const joining = at.afterTable.joining;
-      const options = result.options.filter((o) => afterTableWords.has(o.label)).map((o) => (joining && o.label === 'ON' ? { ...o, boost: (o.boost ?? 0) + onBoost } : o));
+      const options = result.options.filter((o) => followTable.has(o.label)).map((o) => (joining && o.label === 'ON' ? { ...o, boost: (o.boost ?? 0) + onBoost } : o));
       return { ...result, options };
     },
     // Where a table takes an alias, the tables come from here, written with one; in a [quoted name], from
@@ -243,11 +247,13 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
     },
     (context) => withRanks(columns(context, read(context), model), ranked),
     (context) => withRanks(tables(context, read(context), model, index), ranked),
-    (context) => withRanks(snippetsAt(context, read(context)), ranked),
+    (context) => withRanks(snippetsAt(context, read(context), dialect), ranked),
     (context) => withRanks(joins(context, read(context), model, databaseName), ranked),
   ];
-  const databaseNameHere = (model.databases.find((d) => d.name === databaseName) ?? model.databases[0])?.name ?? '';
-  return [setup.of({ model, databaseName: databaseNameHere, defaultSchema, index }), new LanguageSupport(tsql.language, sources.map((autocomplete) => tsql.language.data.of({ autocomplete })))];
+  return [
+    setup.of({ model, databaseName: database?.name ?? '', dialect, defaultSchema, index }),
+    new LanguageSupport(language.language, sources.map((autocomplete) => language.language.data.of({ autocomplete }))),
+  ];
 }
 
 function withRanks(result: CompletionResult | null, ranked: (options: Keyed[]) => Keyed[]): CompletionResult | null {
@@ -421,11 +427,11 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
 }
 
 /** The snippets, once a word is typed where a query or a clause can start: not after a dot, nor where a table goes. */
-function snippetsAt(context: CompletionContext, reading: Reading): CompletionResult | null {
+function snippetsAt(context: CompletionContext, reading: Reading, dialect: Dialect): CompletionResult | null {
   if (reading.quiet || reading.quoted || reading.afterDot || reading.dotted || reading.tableSpot || reading.star) return null;
   const word = context.matchBefore(/\w+$/);
   if (!word) return null;
-  const options = snippets.map((s): Keyed => {
+  const options = snippets.filter((s) => s.rows === undefined || s.rows === dialect.rows).map((s): Keyed => {
     const fields = s.template.includes('${');
     return {
       label: s.name,

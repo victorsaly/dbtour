@@ -252,7 +252,7 @@ function overviewOf(database: Database): string {
   if (database.description) parts.push(`${database.description}\n`);
   const driver = database.version ? `${driverName(database.driver)} ${database.version}` : driverName(database.driver);
   parts.push(`${driver}. ${plural(entries.length, 'table or view', 'tables and views')} in ${plural(database.schemas.length, 'schema', 'schemas')}, ${plural(database.relations.length, 'relation', 'relations')}.\n`);
-  if (sized) parts.push(`Largest first, by the rows the database counted${database.statsReadAt ? ` on ${database.statsReadAt.slice(0, 10)}` : ''}; its own estimate.\n`);
+  if (sized) parts.push(`Largest first, by the rows the database counted${database.statsReadAt ? ` on ${database.statsReadAt.slice(0, 10)}` : ''}${database.driver === 'mssql' ? '; its own estimate' : ''}.\n`);
   parts.push(sized ? '| Table | Kind | Columns | Rows | Description |\n|---|---|---|---|---|' : '| Table | Kind | Columns | Description |\n|---|---|---|---|');
   for (const { ref, table } of ordered.slice(0, overviewLimit)) {
     const rows = !sized ? '' : ` ${table.stats ? formatCount(table.stats.rows) : ''} |`;

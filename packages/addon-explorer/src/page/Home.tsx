@@ -29,7 +29,7 @@ export function Home({ model, cat }: { model: Model; cat: Catalogue }) {
   };
   const largest = Math.max(0, ...cat.entries.map((e) => (e.stats ? e.stats.dataBytes + e.stats.indexBytes : 0)));
   const counter = model.databases.find((d) => d.schemas.some((s) => s.tables.some((t) => t.stats)));
-  const terms = sizeTerms(driverName(counter?.driver ?? 'the database'));
+  const terms = sizeTerms(counter?.driver ?? '');
   return (
     <div className="with-panel">
       <article className="page home">

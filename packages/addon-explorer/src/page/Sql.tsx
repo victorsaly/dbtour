@@ -1,27 +1,29 @@
 // SQL on the page: a definition in a read-only CodeMirror editor, with line numbers and folding, and a short
-// expression in a table cell as coloured text. Both read it with the same MSSQL parser and the same classes
-// (sql.ts), so a check reads the same in a cell as in a trigger. The editor is where a SQL generator will
+// expression in a table cell as coloured text. Both read it with the same parser and the same classes
+// (sql.ts), so a check reads the same in a cell as in a trigger; the editor in its database's dialect. The editor is where a SQL generator will
 // later let the reader write; for now nothing can be typed into it.
 import { useEffect, useRef, useState } from 'react';
 import { acceptCompletion, autocompletion, completionKeymap, pickedCompletion, startCompletion } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { foldGutter, syntaxHighlighting } from '@codemirror/language';
-import { MSSQL, sql } from '@codemirror/lang-sql';
+import { sql } from '@codemirror/lang-sql';
 import { linter } from '@codemirror/lint';
 import { EditorState } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
 import type { Model } from 'dbtour/model';
 import { CopyButton } from './Copy.tsx';
 import { unknownNames } from './check.ts';
-import { infoPlacement, pickOf, sqlSupport, starExpansion } from './complete.ts';
+import { infoPlacement, pickOf, setupOf, snippets, sqlSupport, starExpansion } from './complete.ts';
+import { dialectOf } from './dialect.ts';
 import { formatQuery } from './format.ts';
 import { sqlPrompt } from './query.ts';
 import { sqlHighlighter, sqlTokens } from './sql.ts';
 import { storedTool } from './tools.ts';
 import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, parseServed, statusOf, type Served } from './served.ts';
 
-export function SqlBlock({ code, label = 'SQL definition' }: { code: string; label?: string }) {
+export function SqlBlock({ code, driver, label = 'SQL definition' }: { code: string; driver: string; label?: string }) {
   const host = useRef<HTMLDivElement>(null);
+  const dialect = dialectOf(driver);
   useEffect(() => {
     if (!host.current) return;
     const view = new EditorView({
@@ -31,7 +33,7 @@ export function SqlBlock({ code, label = 'SQL definition' }: { code: string; lab
         extensions: [
           lineNumbers(),
           foldGutter(),
-          sql({ dialect: MSSQL }),
+          sql({ dialect: dialect.language }),
           syntaxHighlighting(sqlHighlighter),
           EditorState.readOnly.of(true),
           EditorView.editable.of(false),
@@ -41,11 +43,11 @@ export function SqlBlock({ code, label = 'SQL definition' }: { code: string; lab
       }),
     });
     return () => view.destroy();
-  }, [code, label]);
+  }, [code, label, dialect]);
   return (
     <div className="sql-frame">
       <div className="sql-bar">
-        <span className="label">T-SQL</span>
+        <span className="label">{dialect.label}</span>
         <CopyButton text={code.trim()} className="sql-copy" />
       </div>
       <div className="sql-block" ref={host} />
@@ -161,7 +163,7 @@ const checkPauseMs = 400;
 /** The query laid out, in place, undoable; one Format cannot read is left as it is. */
 function format(view: EditorView): boolean {
   const doc = view.state.doc.toString();
-  const laid = formatQuery(doc);
+  const laid = formatQuery(doc, setupOf(view.state)?.dialect);
   if (laid !== null && laid !== doc) view.dispatch({ changes: { from: 0, to: doc.length, insert: laid } });
   return true;
 }
@@ -214,6 +216,8 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
   const tool = storedTool();
   const served = servedPage();
   const connection = connectionFor(served, database);
+  const dialect = dialectOf((model.databases.find((d) => d.name === database) ?? model.databases[0])?.driver);
+  const snippetNames = snippets.filter((s) => s.rows === undefined || s.rows === dialect.rows).map((s) => s.name);
   // The last result stays while the next run goes and after one fails, dimmed, so the rows do not flash away.
   const [ran, setRan] = useState<{ result?: Ran; error?: string; running?: boolean; waiting?: string }>({});
   // The protected columns Tab left out of the * it wrote last, said until the query is edited again.
@@ -380,7 +384,7 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
     <div className="sql-frame sql-editor">
       <div className="sql-bar">
         <span className="sql-state">
-          <span className="label">T-SQL</span>
+          <span className="label">{dialect.label}</span>
           <span className={`status is-${status.tone}`} role="status">
             {status.text}
           </span>
@@ -425,20 +429,20 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
       )}
       {ran.result && <Result result={ran.result} stale={Boolean(ran.running || ran.error)} />}
       <p className="sql-hint">
-        Ctrl+Space suggests what fits where the caret is, and Tab or Enter takes it. Tab after * writes the columns, without the masked, encrypted or labelled ones (Ctrl+Space there offers every column); ssf, st100,
-        scf, cte and wex write the start of a query; Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y formats it. A red wavy line marks a name
+        Ctrl+Space suggests what fits where the caret is, and Tab or Enter takes it. Tab after * writes the columns, without the masked, encrypted or labelled ones (Ctrl+Space there offers every column);{' '}
+        {snippetNames.slice(0, -1).join(', ')} and {snippetNames[snippetNames.length - 1]} write the start of a query; Shift+Alt+F or ⌘/Ctrl+K ⌘/Ctrl+Y formats it. A red wavy line marks a name
         the model does not have; point at it for the nearest it has.
       </p>
       <p className="sql-hint">
         {connection.state === 'ready' && (
           <>
-            Runs through {connection.source}'s reader, a read-only login: checked first, rolled back after, at most {runRows} rows. Ctrl+Enter (or ⌘+Enter) runs it;
+            Runs through {connection.source}'s reader, {dialect.readOnly}, at most {runRows} rows. Ctrl+Enter (or ⌘+Enter) runs it;
             with Auto-run, it runs each time you pause typing. The dot is the last run: grey none yet, green answered, red failed.
           </>
         )}
         {connection.state === 'no reader' && (
           <>
-            Connected, but {connection.source} has no reader: add <code>reader: ${'{'}DBTOUR_MSSQL_READER{'}'}</code> to it in dbtour.yaml, then start dbtour serve again.
+            Connected, but {connection.source} has no reader: add <code>reader: {dialect.reader}</code> to it in dbtour.yaml, then start dbtour serve again.
           </>
         )}
         {connection.state === 'not served' && (
