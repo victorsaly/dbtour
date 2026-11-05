@@ -214,7 +214,7 @@ async function extract({ io, config }: Project, next = ' Run dbtour render to wr
     const { extract } = await load(source);
     let result: Database | Api;
     try {
-      result = await extract({ ...source, connection });
+      result = await extract({ ...source, connection, root: io.cwd });
     } catch (error) {
       io.error(`${source.name} (${source.type}): ${error instanceof Error ? error.message : String(error)}`);
       return 1;
@@ -385,12 +385,16 @@ async function runQuery(io: Io, config: Config, text: string, sourceName: string
   const checked = checkQuery(text);
   if (!checked.ok) throw new Error(checked.reason);
   const source = pickSource(config, sourceName);
-  const reader = resolveReader(source, io.env ?? process.env);
   const load = io.load ?? ((s: SourceConfig) => loadSource(s, importer(io.cwd)));
-  const { run } = await load(source);
+  const { run, readOnly } = await load(source);
+  const env = io.env ?? process.env;
+  const reader = resolveReader(source, env, readOnly);
   if (run === undefined) throw missing(`Source ${source.name} (${source.type}) cannot run queries: update ${source.module ?? `dbtour-source-${source.type}`} to the version of dbtour you have, then run it again`);
+  // A read-only source runs with what it extracts with, as it opens that read-only; any other with its reader.
+  const connection = readOnly ? resolveConnection(source.connection, env) : reader;
+  const running = { ...source, root: io.cwd, ...(connection === undefined ? {} : { connection }) };
   try {
-    return await run({ ...source, connection: reader }, checked.sql, { limit: clampLimit(limit), timeoutMs: defaultTimeoutMs });
+    return await run(running, checked.sql, { limit: clampLimit(limit), timeoutMs: defaultTimeoutMs });
   } catch (error) {
     throw new Error(`${source.name} (${source.type}): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }

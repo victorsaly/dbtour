@@ -1,7 +1,7 @@
 name: Release
 
 # Every push to main whose version has no tag yet becomes a tag, a GitHub release with that version's
-# changelog section as its notes, and a publish of the three packages to npm. One pull request is one
+# changelog section as its notes, and a publish of every package to npm. One pull request is one
 # release, so this runs on the merge. The tag and the publish are decided apart: a version already tagged
 # is not tagged again, and a version npm lacks is published even when it was tagged earlier, so a failed
 # publish is retried by running the workflow on the tag: gh workflow run release.yml --ref v<version>.

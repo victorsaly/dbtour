@@ -1,5 +1,5 @@
 // Releases what main holds: the version in packages/core/package.json becomes a tag and a GitHub release
-// whose notes are that version's changelog section, then the three packages go to npm.
+// whose notes are that version's changelog section, then every package goes to npm.
 //
 //   node scripts/release.mjs --check     say whether the version is untagged, whether npm lacks it and
 //                                        whether the checkout is the tag's commit; in GitHub Actions, write
@@ -30,7 +30,7 @@ const fail = (message, code = 1) => {
 };
 
 // Core first: the others depend on its exact version.
-const workspaces = ['packages/core', 'packages/keychain', 'packages/source-mssql', 'packages/addon-explorer'];
+const workspaces = ['packages/core', 'packages/keychain', 'packages/source-mssql', 'packages/source-sqlite', 'packages/addon-explorer'];
 const manifests = workspaces.map((workspace) => ({ workspace, ...JSON.parse(readFileSync(join(repo, workspace, 'package.json'), 'utf8')) }));
 const version = manifests[0].version;
 const tag = `v${version}`;

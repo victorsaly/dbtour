@@ -270,7 +270,7 @@ function renderTable(model: Model, ref: string, table: Table, database: Database
   if (table.triggers?.length) {
     parts.push('## Triggers\n');
     for (const trigger of table.triggers) {
-      const when = `${trigger.timing === 'after' ? 'After' : 'Instead of'} ${trigger.events.join(', ')}. ${trigger.enabled ? 'Enabled' : 'Disabled'}.`;
+      const when = `${trigger.timing[0].toUpperCase()}${trigger.timing.slice(1)} ${trigger.events.join(', ')}. ${trigger.enabled ? 'Enabled' : 'Disabled'}.`;
       parts.push(`### ${trigger.name}\n\n${when}\n`);
       if (trigger.definition) parts.push('```sql\n' + trigger.definition.trim() + '\n```\n');
     }

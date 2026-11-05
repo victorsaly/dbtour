@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkQuery, clampLimit, defaultLimit, formatCell, maxLimit, resultText, type QueryResult } from '../src/sql.ts';
+import { checkQuery, clampLimit, defaultLimit, formatCell, maxLimit, resultText, RowCollector, sizeOf, type QueryResult } from '../src/sql.ts';
 import { resolveReader } from '../src/config.ts';
 
 const refused = (sql: string): string => {
@@ -30,6 +30,8 @@ test('anything but one read is refused, saying why and what to do', () => {
   assert.match(refused('SELECT 1 EXEC sp_who'), /EXEC/);
   assert.match(refused("SELECT 'unclosed"), /string/);
   assert.match(refused('SELECT 1 /* unclosed'), /comment/);
+  // T-SQL and PostgreSQL nest them, SQLite and MySQL end at the first */: what one database runs, another reads as a comment.
+  assert.match(refused('/* /* */ DELETE FROM dbo.Orders; */ SELECT 1'), /comment inside a comment/);
   assert.match(refused('SELECT Delete FROM dbo.Log'), /\[Delete\]/, 'a column named like a statement is told to bracket it');
 });
 
@@ -100,4 +102,21 @@ test('the review: statements without semicolons, a comment ended by a carriage r
 test('the review: a result the byte budget stopped says so, and how to fix it', () => {
   const text = resultText({ columns: ['Doc'], rows: [['x']], truncated: true, limit: 100, reason: 'size' });
   assert.match(text, /The first 1 row: they came to more than 10 MB\. Select fewer or narrower columns\.$/);
+});
+
+test('the review: rows are collected up to the limit or a byte budget, whichever comes first, and say which', () => {
+  const rows = new RowCollector(2, 1000);
+  rows.start([{ name: 'Id' }, { name: 'Doc' }]);
+  assert.equal(rows.add([1, 'a']), true);
+  assert.equal(rows.add([2, 'b']), true);
+  assert.equal(rows.add([3, 'c']), false, 'one past the limit: stop');
+  assert.deepEqual(rows.result(), { columns: ['Id', 'Doc'], rows: [[1, 'a'], [2, 'b']], truncated: true, limit: 2, reason: 'limit' });
+
+  const big = new RowCollector(100, 1000);
+  big.start([{ name: 'Doc' }]);
+  assert.equal(big.add(['x'.repeat(300)]), true);
+  assert.equal(big.add(['x'.repeat(300)]), false, 'past the budget: stop, keeping what fitted');
+  assert.deepEqual([big.result().rows.length, big.result().truncated, big.result().reason], [1, true, 'size']);
+  assert.equal(new RowCollector(1, 1000).result().truncated, false);
+  assert.ok(sizeOf(Buffer.alloc(50)) === 50 && sizeOf('ab') === 4 && sizeOf(null) > 0);
 });

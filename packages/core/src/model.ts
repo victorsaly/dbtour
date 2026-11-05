@@ -71,7 +71,8 @@ export interface Constraint {
 
 export interface Trigger {
   name: string;
-  timing: 'after' | 'instead of';
+  /** SQL Server's run after or instead of the statement; SQLite's and PostgreSQL's also before it. */
+  timing: 'before' | 'after' | 'instead of';
   /** insert, update, delete. */
   events: string[];
   enabled: boolean;
@@ -492,7 +493,7 @@ function checkCatalogue(check: Checker, t: Record<string, any>, p: string): void
     check.list(t.triggers, `${p}.triggers`, (g, gp) => {
       if (!check.object(g, gp)) return;
       check.string(g.name, `${gp}.name`);
-      check.oneOf(g.timing, ['after', 'instead of'], `${gp}.timing`);
+      check.oneOf(g.timing, ['before', 'after', 'instead of'], `${gp}.timing`);
       check.strings(g.events, `${gp}.events`);
       if (typeof g.enabled !== 'boolean') check.errors.push(`${gp}.enabled must be true or false`);
       check.optionalString(g.definition, `${gp}.definition`);

@@ -1,8 +1,8 @@
-// What a user gets: packs the three packages, installs the tarballs into an empty project, and runs dbtour
+// What a user gets: packs every package, installs the tarballs into an empty project, and runs dbtour
 // from there on the shop example. Catches a package that ships something Node will not run, which the
 // repository's own tests, importing src/ directly, never see. Run by `npm run smoke` and by CI.
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,7 @@ const run = (command, args, cwd) => execFileSync(command, args, { cwd, stdio: ['
 
 // Pack each package into the scratch folder; prepack builds dist/ on the way.
 const tarballs = [];
-for (const pkg of ['core', 'keychain', 'source-mssql', 'addon-explorer']) {
+for (const pkg of ['core', 'keychain', 'source-mssql', 'source-sqlite', 'addon-explorer']) {
   const out = run('npm', ['pack', '--pack-destination', scratch, '--silent'], join(repo, 'packages', pkg)).trim();
   tarballs.push(join(scratch, out.split('\n').pop()));
 }
@@ -50,4 +50,20 @@ run('node', ['--input-type=module', '-e', "const { store } = await import('dbtou
 const listed = execFileSync('npx', ['dbtour', 'list'], { cwd: project, env: { ...process.env, DBTOUR_HOME: join(scratch, 'home') }, stdio: ['ignore', 'pipe', 'inherit'] }).toString();
 if (!listed.includes('No database is set up yet')) throw new Error(`dbtour list did not say none is set up:\n${listed}`);
 
-console.log(`Installed ${tarballs.length} tarballs into ${project}; dbtour --help, render, mcp and list work, and the keychain loads.`);
+// A SQLite file, as a user's own: extract reads it with Node's own SQLite, and sql runs a query in a process
+// of its own, which only the built package can start (its .js, not the repository's .ts).
+const lite = join(scratch, 'lite');
+mkdirSync(lite);
+cpSync(join(repo, 'packages/source-sqlite/test/fixtures/shop.sql'), join(lite, 'shop.sql'));
+writeFileSync(join(lite, 'dbtour.yaml'), 'out: docs\nsources:\n  - type: sqlite\n    name: Shop\n    file: shop.db\n    reader: read-only\naddons:\n  - explorer\n');
+writeFileSync(join(lite, 'package.json'), JSON.stringify({ name: 'smoke-lite', private: true }, null, 2));
+run('npm', ['install', '--no-audit', '--no-fund', '--silent', ...tarballs], lite);
+run('node', ['--no-warnings', '-e', "const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync('shop.db'); db.exec(require('fs').readFileSync('shop.sql', 'utf8')); db.close();"], lite);
+const extracted = execFileSync('npx', ['dbtour', 'extract'], { cwd: lite, stdio: ['ignore', 'pipe', 'pipe'] });
+if (!extracted.toString().includes('Shop: 4 tables, 2 relations')) throw new Error(`dbtour extract did not read the SQLite file:\n${extracted}`);
+run('npx', ['dbtour', 'render'], lite);
+if (!readFileSync(join(lite, 'docs/index.html'), 'utf8').includes('main.orders')) throw new Error('the SQLite page does not hold its model');
+const queried = run('npx', ['dbtour', 'sql', 'SELECT count(*) AS n FROM orders', '--json'], lite);
+if (JSON.parse(queried).rows[0][0] !== 3) throw new Error(`dbtour sql did not run in the SQLite file:\n${queried}`);
+
+console.log(`Installed ${tarballs.length} tarballs into ${project}; dbtour --help, render, mcp and list work, the keychain loads, and a SQLite file extracts, renders and runs a query.`);
