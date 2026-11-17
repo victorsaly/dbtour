@@ -40,7 +40,11 @@ test('a settings file that is not one says what to do, and a value that could br
   assert.throws(() => parseWorkspace('{'), /is not JSON/);
   assert.throws(() => parseWorkspace('{}'), /no "databases" list/);
   assert.throws(() => parseWorkspace(JSON.stringify({ databases: [{ ...shop, name: '../etc' }] })), /cannot name a database/);
-  assert.throws(() => parseWorkspace(JSON.stringify({ databases: [{ ...shop, signIn: 'magic' }] })), /not az or login/);
+  assert.throws(() => parseWorkspace(JSON.stringify({ databases: [{ ...shop, signIn: 'magic' }] })), /not az, login or file/);
+  const file = (d: object) => () => parseWorkspace(JSON.stringify({ databases: [{ name: 'notes', type: 'sqlite', signIn: 'file', ...d }] }));
+  assert.doesNotThrow(file({ file: '/data/notes.db', reader: 'read-only' }), 'a file needs no server, database or login');
+  assert.throws(file({ file: 'notes.db' }), /notes's file is not a full path/);
+  assert.throws(file({ file: '/data/notes.db', reader: 'dbtour_reader' }), /notes's reader is a file's, read-only/);
   assert.throws(() => parseWorkspace(JSON.stringify({ databases: [{ ...shop, database: 'Shop;Password=x' }] })), /character dbtour does not accept/);
   assert.throws(() => parseWorkspace(JSON.stringify({ databases: [{ ...logs, user: undefined }] })), /Give the login/);
   assert.throws(() => parseWorkspace(JSON.stringify({ databases: [{ ...shop, reader: "x'" }] })), /reader/);

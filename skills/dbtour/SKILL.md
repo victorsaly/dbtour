@@ -3,7 +3,7 @@ name: dbtour
 description: Documents a project's database from its structure and answers questions about it without reading a row - which table holds something, how two tables join, what a column means, how big a table is - and writes SQL against it from the real tables and columns, through dbtour (dbtour.yaml, docs/dbtour/schema.json, the dbtour MCP server). Use when asked to document a database or keep its docs current, to find where data lives, to explain a schema, to write or check a query for the project's database, or to set up dbtour. Load it before writing SQL against a database the project uses, even a short query.
 license: MIT
 metadata:
-  version: 0.10.2
+  version: 0.11.0
   homepage: https://github.com/victorsaly/dbtour
 allowed-tools: Bash(npx dbtour *)
 ---
@@ -22,7 +22,8 @@ Look for `dbtour.yaml` at the project's root and `docs/dbtour/schema.json` (or t
 - **Both there**: go to 2.
 - **Neither**: set it up, with the person:
   1. `npm install --save-dev dbtour dbtour-source-mssql dbtour-addon-explorer`: the command, the SQL Server
-     source and the page. `npx dbtour` alone fetches only the command, which then has nothing to read a
+     source and the page (`dbtour-source-sqlite` for a SQLite file, which `dbtour.yaml` names by `file:`
+     and which needs no connection string). `npx dbtour` alone fetches only the command, which then has nothing to read a
      database with. Then `npx dbtour init` writes `dbtour.yaml` for SQL Server; add `exclude` for tables
      nobody should read about.
   2. The connection string goes in the environment variable `dbtour.yaml` names (`DBTOUR_MSSQL`), set by the
@@ -37,7 +38,7 @@ Look for `dbtour.yaml` at the project's root and `docs/dbtour/schema.json` (or t
 
 - **No project, but the person wants to look at their databases** (one or several, on their machine, not in a
   repository): for a person at their own machine, the simplest is one line they run themselves,
-  `npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p dbtour-keychain dbtour serve`, which
+  `npx -y -p dbtour -p dbtour-source-mssql -p dbtour-source-sqlite -p dbtour-addon-explorer -p dbtour-keychain dbtour serve`, which
   opens a page that sets a database up step by step and types the password into it, not into you. To do it
   from the terminal instead, set them up in `~/.dbtour` with `npx dbtour add`, which keeps passwords in the
   system's keychain. `npx dbtour list` shows what is set up already. The rules, every time:
@@ -84,7 +85,8 @@ loading the whole file. If the person uses Claude Code and asks, connect it:
   it once you have read the tables. A guessed name looks right and runs wrong, or silently sums the wrong column.
 - Join through the relations the model has, or **path**'s JOINs. A relation marked **(notes)** was written by
   a person, not declared by the database; one marked **not trusted** is not enforced on existing rows.
-- Write the database's dialect: the model's `driver` (`mssql` is T-SQL: `TOP`, `[brackets]`, `N'text'`).
+- Write the database's dialect: the model's `driver` (`mssql` is T-SQL: `TOP`, `[brackets]`, `N'text'`;
+  `sqlite` is SQLite: `LIMIT`, `"quotes"` or `[brackets]`).
 - Mind the size: a table of millions of rows gets a `TOP` and a filter on an indexed column, and a `SELECT *`
   is never the answer on it.
 - A column that is **masked**, **encrypted** or has a **sensitivity label** holds data someone protected: do

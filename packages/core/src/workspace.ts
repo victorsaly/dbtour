@@ -6,7 +6,7 @@
 // work with. Pure but for the file it reads and writes, so it is tested in Node.
 import { randomBytes } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 /** Where passwords are kept: the system's keychain in use, a map in tests. Nothing in it is ever printed. */
 export interface SecretStore {
@@ -16,21 +16,27 @@ export interface SecretStore {
   remove(account: string): Promise<boolean>;
 }
 
-/** How dbtour signs in to read the catalogue: the person's own az (Entra) sign-in, or a login and password. */
-export type SignIn = 'az' | 'login';
+/**
+ * How dbtour signs in to read the catalogue: the person's own az (Entra) sign-in, or a login and password; a
+ * file (SQLite) has no sign-in, and is opened read-only.
+ */
+export type SignIn = 'az' | 'login' | 'file';
 
 export interface WorkspaceDatabase {
   /** What dbtour calls it: the folder's name, the page's title, what --database names. */
   name: string;
   /** The source: mssql loads dbtour-source-mssql. */
   type: string;
-  server: string;
+  /** Where a database with logins is; a file has none. */
+  server?: string;
   /** The database's own name on the server. */
-  database: string;
+  database?: string;
+  /** A file's absolute path, when signIn is file. */
+  file?: string;
   signIn: SignIn;
   /** The login, when signIn is login; its password is in the keychain. */
   user?: string;
-  /** The read-only login queries run as; its password is in the keychain. */
+  /** The read-only login queries run as, its password in the keychain; `read-only` for a file. */
   reader?: string;
   /** When its catalogue was last read, ISO. */
   readAt?: string;
@@ -93,11 +99,13 @@ export function parseWorkspace(text: string, path = workspaceFile): Workspace {
   for (const d of databases as WorkspaceDatabase[]) {
     const problem =
       (typeof d?.name === 'string' ? nameProblem(d.name) : 'a database without a name') ??
-      (d.signIn === 'az' || d.signIn === 'login' ? undefined : `${d.name}'s signIn is not az or login`) ??
-      valueProblem('server', d.server) ??
-      valueProblem('database', d.database) ??
-      (d.signIn === 'login' ? valueProblem('login', d.user) : undefined) ??
-      (d.reader !== undefined ? valueProblem('reader', d.reader) : undefined);
+      (d.signIn === 'az' || d.signIn === 'login' || d.signIn === 'file' ? undefined : `${d.name}'s signIn is not az, login or file`) ??
+      (d.signIn === 'file'
+        ? (typeof d.file === 'string' && isAbsolute(d.file) ? undefined : `${d.name}'s file is not a full path`) ?? (d.reader === undefined || d.reader === 'read-only' ? undefined : `${d.name}'s reader is a file's, read-only`)
+        : valueProblem('server', d.server) ??
+          valueProblem('database', d.database) ??
+          (d.signIn === 'login' ? valueProblem('login', d.user) : undefined) ??
+          (d.reader !== undefined ? valueProblem('reader', d.reader) : undefined));
     if (problem) throw new Error(`${path}: ${problem}`);
   }
   return { databases: databases as WorkspaceDatabase[] };

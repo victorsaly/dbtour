@@ -267,9 +267,12 @@ shop window, and nothing goes on the page before it is released.
    page shaped like an entry, five numbered sections, and the home is a list of database entries with the
    rail switching between them. The settings, the keychain, the commands an agent can run safely, the home
    and the setup on it, started from nothing with one npx line (0.10.0).
-7. `source-openapi` and table-to-endpoint links. ← next
+7. `source-openapi` and table-to-endpoint links.
 8. `source-postgres`, `source-mysql`, `source-sqlite`, `source-tbls`, `source-paste`; each reads the stats
-   and the comments its database keeps.
+   and the comments its database keeps. Taken before 7, on 5 November 2026, as more people have one of these
+   than an OpenAPI spec. SQLite came first (0.11.0): a file, read with the SQLite Node ships, its comments
+   those written in each CREATE, its reader the file opened read-only, set up from the page in the same five
+   steps, and the editor speaking each database's dialect. ← next: `source-postgres`
 9. Deploy workflow, `check`, `addon-lint`.
 10. `addon-usage`: index and table usage from the management views, as a panel on the entry.
 11. **Showing it**: the page on skills.victorsaly.com with its film and the live example, the script that

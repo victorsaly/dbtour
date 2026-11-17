@@ -18,7 +18,7 @@ import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, database
 import { dialectOf } from '../src/page/dialect.ts';
 import { formatQuery } from '../src/page/format.ts';
 import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
-import { azLine, clock, formProblem, setupSteps, startCommand, stepSummary, suggestName, took, type SetupForm } from '../src/page/setup.ts';
+import { azLine, clock, fileName, formProblem, setupSteps, startCommand, stepSummary, suggestName, took, type SetupForm } from '../src/page/setup.ts';
 import { startCommand as coreStart } from '../../core/src/cli.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { logoSvg, markSvg, markDataUri, markPulse, wordmarkDb, wordmarkTour } from '../src/mark.ts';
@@ -613,19 +613,35 @@ test('a served home: the databases set up, numbered, each with its facts, its li
   const databases = [
     { name: 'Shop', driver: 'mssql', server: 'shop.example', database: 'Shop', reader: true, read: true, tables: 35, bytes: 1288490188, readAt: '2026-11-01T18:54:00.000Z' },
     { name: 'Logs', driver: 'mssql', server: 'logs.example', database: 'AppLogs', reader: false, read: false },
+    { name: 'notes', driver: 'sqlite', file: '/Users/ann/notes.db', reader: true, read: true, tables: 4 },
   ];
   const served = parseServed(JSON.stringify({ token: 't', sources: [], databases, current: 'Shop' }));
-  assert.deepEqual([served?.databases?.length, served?.current], [2, 'Shop']);
+  assert.deepEqual([served?.databases?.length, served?.current], [3, 'Shop'], 'a file, with no server, among them');
   assert.equal(parseServed(JSON.stringify({ token: 't', sources: [], databases: [{ nope: 1 }] }))?.databases, undefined, 'only what reads as databases');
   assert.deepEqual(databaseEntries(databases), [
     { number: '001', name: 'Shop', href: '/db/Shop/', tone: 'live', status: 'reader', facts: ['SQL Server', 'Shop on shop.example', '35 tables', '1.2 GB', 'read 1 Nov 2026'] },
     { number: '002', name: 'Logs', href: undefined, tone: 'idle', status: 'no reader', facts: ['SQL Server', 'AppLogs on logs.example', 'not read yet: dbtour read Logs'] },
+    { number: '003', name: 'notes', href: '/db/notes/', tone: 'live', status: 'reader', facts: ['SQLite', '/Users/ann/notes.db', '4 tables'] },
   ]);
 });
 
 test('the served home says when it can set up a database', () => {
   assert.equal(parseServed('{"token":"t","sources":[],"databases":[],"setup":true}')?.setup, true);
   assert.equal(parseServed('{"token":"t","sources":[],"databases":[]}')?.setup, undefined);
+});
+
+test('a SQLite file in the setup: named after the file, checked for its path, its sign-in and reader each a line', () => {
+  assert.deepEqual([fileName('~/data/shop orders.db'), fileName('C:\\data\\Shop.sqlite3'), fileName('notes'), fileName('')], ['shop-orders', 'Shop', 'notes', '']);
+  const file: SetupForm = { type: 'sqlite', server: '', database: '', file: '~/data/shop orders.db', name: 'shop-orders', signIn: 'az', user: '', password: '' };
+  assert.equal(formProblem(1, file), undefined, 'no server or database for a file');
+  assert.match(formProblem(1, { ...file, file: ' ' }) ?? '', /path to the SQLite file/);
+  assert.equal(formProblem(2, file), undefined);
+  assert.equal(stepSummary(1, file, {}), '~/data/shop orders.db');
+  assert.equal(stepSummary(1, { ...file, name: 'Orders' }, {}), '~/data/shop orders.db, called Orders');
+  assert.equal(stepSummary(2, file, {}), 'None: a file, opened read-only');
+  assert.equal(stepSummary(3, file, {}), 'It opened, and is saved');
+  assert.equal(stepSummary(4, file, { reader: 'read-only' }), 'Yes: queries open the file read-only');
+  assert.equal(stepSummary(4, file, {}), 'None for now: the page shows the structure, and runs no query');
 });
 
 test('the setup: five steps, a name suggested from the database, each step checked before it is sent', () => {
@@ -636,7 +652,7 @@ test('the setup: five steps, a name suggested from the database, each step check
   assert.equal(suggestName(''), '');
   assert.equal(suggestName('x'.repeat(80)).length, 64);
 
-  const form: SetupForm = { type: 'mssql', server: 'shop.example', database: 'Shop', name: 'Shop', signIn: 'az', user: '', password: '' };
+  const form: SetupForm = { type: 'mssql', server: 'shop.example', database: 'Shop', file: '', name: 'Shop', signIn: 'az', user: '', password: '' };
   assert.equal(formProblem(1, form), undefined);
   assert.match(formProblem(1, { ...form, server: ' ' }) ?? '', /server/);
   assert.match(formProblem(1, { ...form, database: '' }) ?? '', /database/);

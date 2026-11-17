@@ -127,7 +127,9 @@ Strategy: restrained. No gradient, no shadow, no radius.
   carries the 2px red inset and opens its fields. Each step's primary button shows its red block from the
   start; while a step runs, its button gives way to a grey status that says what it is doing, and a refusal
   is a red dot ("Not yet") with the reason. The reader's statements are shown in a hairline box, mono, before
-  the button that runs them. Chosen by the owner on 1 November 2026 with the home's layout.
+  the button that runs them. Chosen by the owner on 1 November 2026 with the home's layout. The first step
+  opens with the kind as such a choice (SQL Server, SQLite); a SQLite file keeps the five steps, its Sign in
+  folded to its line from the start and without Change, its Reader a yes or Not now (chosen 17 November 2026).
 - **Facts**: four mono-caps labels with 20px mono values, in two columns, each over a hairline: columns,
   keys, references, referenced by. Every entry shows the same four in the same place.
 - **Map nodes**: 240px wide, a 34px head with block, number and name, 22px rows, 6px padding; sizes

@@ -13,8 +13,10 @@ export interface ServedDatabase {
   name: string;
   /** The source's type: mssql. */
   driver: string;
-  server: string;
-  database: string;
+  server?: string;
+  database?: string;
+  /** A file's path (SQLite), in place of a server and a database. */
+  file?: string;
   reader: boolean;
   /** Whether its page has been written (dbtour read). */
   read: boolean;

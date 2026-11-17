@@ -4,17 +4,19 @@
 import type { Tone } from './served.ts';
 
 /** dbtour with every package the setup uses, as core's startCommand: what a missing package is fixed with. */
-export const startCommand = 'npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p dbtour-keychain dbtour serve';
+export const startCommand = 'npx -y -p dbtour -p dbtour-source-mssql -p dbtour-source-sqlite -p dbtour-addon-explorer -p dbtour-keychain dbtour serve';
 
 /** The five numbered sections of the setup, in order: each opens when the one before is done. */
 export const setupSteps = ['Database', 'Sign in', 'Test', 'Reader', 'Read'] as const;
 
 export interface SetupForm {
-  /** The source's type: mssql. */
+  /** The source's type: mssql, or sqlite for a file. */
   type: string;
   server: string;
   /** The database's name on its server. */
   database: string;
+  /** A file's path on this machine (SQLite), in place of a server and a database. */
+  file: string;
   /** What dbtour calls it: its folder, its address on the home, the name every command takes. */
   name: string;
   signIn: 'az' | 'login';
@@ -38,14 +40,29 @@ export function suggestName(database: string): string {
   return (/^[A-Za-z]/.test(name) ? name : `db-${name}`).slice(0, nameLength);
 }
 
+/** Whether the form is for a file (SQLite): no server, no sign-in, its reader the file opened read-only. */
+export function isFile(form: Pick<SetupForm, 'type'>): boolean {
+  return form.type === 'sqlite';
+}
+
+/** A name dbtour takes, made from a file's: its last part, without what follows its last dot. */
+export function fileName(path: string): string {
+  const last = path.trim().split(/[\\/]/).pop() ?? '';
+  return suggestName(last.includes('.') ? last.slice(0, last.lastIndexOf('.')) : last);
+}
+
 /** Why a step's fields cannot be sent yet, in a sentence that says what to type; nothing when they can. */
 export function formProblem(step: number, form: SetupForm): string | undefined {
   if (step === 1) {
-    if (form.server.trim() === '') return 'Type the server\'s address, as your SQL tool connects to it.';
-    if (form.database.trim() === '') return 'Type the database\'s name on that server.';
+    if (isFile(form)) {
+      if (form.file.trim() === '') return 'Type the path to the SQLite file on this machine.';
+    } else {
+      if (form.server.trim() === '') return 'Type the server\'s address, as your SQL tool connects to it.';
+      if (form.database.trim() === '') return 'Type the database\'s name on that server.';
+    }
     if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(form.name) || form.name.length > nameLength) return `Give it a name that starts with a letter, then letters, digits, - or _, at most ${nameLength}.`;
   }
-  if (step === 2 && form.signIn === 'login') {
+  if (step === 2 && form.signIn === 'login' && !isFile(form)) {
     if (form.user.trim() === '') return 'Type the login dbtour signs in as.';
     if (form.password === '') return 'Type the login\'s password: it goes to this machine\'s keychain, nowhere else.';
   }
@@ -54,6 +71,12 @@ export function formProblem(step: number, form: SetupForm): string | undefined {
 
 /** The one line a done step folds to. */
 export function stepSummary(step: number, form: SetupForm, done: { reader?: string; tables?: number }): string {
+  if (isFile(form)) {
+    if (step === 1) return `${form.file}${form.name === fileName(form.file) ? '' : `, called ${form.name}`}`;
+    if (step === 2) return 'None: a file, opened read-only';
+    if (step === 3) return 'It opened, and is saved';
+    if (step === 4 && done.reader) return 'Yes: queries open the file read-only';
+  }
   switch (step) {
     case 1:
       return `${form.database} on ${form.server}${form.name === form.database ? '' : `, called ${form.name}`}`;

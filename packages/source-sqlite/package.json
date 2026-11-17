@@ -1,6 +1,6 @@
 {
   "name": "dbtour-source-sqlite",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "description": "SQLite source for dbtour: tables, views, keys, relations, indexes, triggers, sizes and the comments in each CREATE, read from a file opened read-only, with nothing to install.",
   "type": "module",
   "license": "MIT",
@@ -42,9 +42,9 @@
     "node-sqlite"
   ],
   "peerDependencies": {
-    "dbtour": "0.10.2"
+    "dbtour": "0.11.0"
   },
   "devDependencies": {
-    "dbtour": "0.10.2"
+    "dbtour": "0.11.0"
   }
 }

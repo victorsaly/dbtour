@@ -10,13 +10,18 @@ sources:
     connection: ${DBTOUR_MSSQL}             # the name of an environment variable, never the string itself
     exclude: [dbo.sys*, "*.webpages_*"]     # optional: tables to leave out
     reader: ${DBTOUR_MSSQL_READER}          # optional: a read-only login of its own, for dbtour sql and query
+  - type: sqlite
+    name: Notes
+    file: notes.db                          # a SQLite file, from the folder dbtour.yaml is in; no secret
+    reader: read-only                       # optional: queries open the file read-only; it has no logins
 notes: dbtour.notes.yaml                    # optional
 addons:
   - explorer                                # the page; leave out for Markdown only
 ```
 
-The packages: `dbtour` (the command), `dbtour-source-mssql` (SQL Server), `dbtour-addon-explorer` (the page).
-Install all three in the project, `npm install --save-dev dbtour dbtour-source-mssql dbtour-addon-explorer`:
+The packages: `dbtour` (the command), `dbtour-source-mssql` (SQL Server), `dbtour-source-sqlite` (SQLite, with
+the SQLite Node ships), `dbtour-addon-explorer` (the page). Install the command, the source for the database
+and the page in the project, `npm install --save-dev dbtour dbtour-source-mssql dbtour-addon-explorer`:
 the command finds the source and the page by name in the project, so `npx dbtour` on its own cannot extract
 or draw the page. Only `dbtour mcp`, which reads the model alone, runs without them.
 
@@ -44,15 +49,18 @@ Without a `dbtour.yaml`, dbtour keeps databases in `~/.dbtour` (`DBTOUR_HOME` el
 with no secret in it, a folder per database for its model, notes and page, and every password in the system's
 keychain under "dbtour · <name> · login" or "· reader". `dbtour-keychain` must be installed beside `dbtour`.
 
-A person starts with one line, `npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p
-dbtour-keychain dbtour serve`: it opens the home, whose setup does what the commands below do in five steps
-(database, sign-in, test, reader, read), the reader's statements shown before a button runs them.
+A person starts with one line, `npx -y -p dbtour -p dbtour-source-mssql -p dbtour-source-sqlite -p
+dbtour-addon-explorer -p dbtour-keychain dbtour serve`: it opens the home, whose setup does what the commands
+below do in five steps (database, sign-in, test, reader, read), the reader's statements shown before a button
+runs them. A SQLite file has no sign-in and no password, so the keychain plays no part.
 
 | Command | What it does |
 |---|---|
 | `npx dbtour add <name> --server <host> [--database <on the server>]` | Tests the connection, then saves it. Signs in with `az` unless `--sign-in login --user <login> --password-stdin`; the password comes only on stdin. `--password` is refused. |
+| `npx dbtour add <name> --file <path>` | A SQLite file: tested by opening it read-only and running one SELECT, then saved. No sign-in, no password. |
 | `npx dbtour reader <name> --create` | Prints the statements that make `dbtour_reader` (db_datareader alone) and exits 3. With `--confirm <name>` it runs them with the admin's sign-in, makes the password, keeps it in the keychain and signs in once to check. A login with any other role is refused. |
 | `npx dbtour reader <name> --user <login> --password-stdin` | Uses a read-only login the person has, after signing in with it. |
+| `npx dbtour reader <name> --read-only` | A file's reader: queries open it read-only. Nothing to sign in with. |
 | `npx dbtour read <name>` | Extracts and renders into the database's folder. |
 | `npx dbtour list` | Each database: type, server and database, how dbtour signs in, the reader, when it was read. Never a secret. |
 | `npx dbtour remove <name>` | Forgets it and its passwords. Keeps its folder, and says how to drop the reader. |

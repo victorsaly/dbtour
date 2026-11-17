@@ -1,10 +1,12 @@
 // The home's setup of a database, shaped like an entry: five numbered sections, each opening when the one
 // before is done, done ones folded to a line, the current one's number red. Each step is posted to dbtour
 // serve, which does it as dbtour add, reader and read do: nothing is saved until the database answers, a
-// password goes to the keychain and never comes back, and the database changes only on the second yes.
+// password goes to the keychain and never comes back, and the database changes only on the second yes. A
+// SQLite file takes the same steps: its path, no sign-in (that step folds to its line), a test, and a yes to
+// queries, which open the file read-only.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { databaseHref, type Served } from './served.ts';
-import { azLine, clock, formProblem, setupSteps, startCommand, stepSummary, suggestName, took, type AzState, type SetupForm } from './setup.ts';
+import { azLine, clock, fileName, formProblem, isFile, setupSteps, startCommand, stepSummary, suggestName, took, type AzState, type SetupForm } from './setup.ts';
 
 interface State {
   kinds: { type: string; name: string; installed: boolean }[];
@@ -20,7 +22,20 @@ interface Plan {
   account: string;
 }
 
-type ReaderChoice = 'create' | 'own' | 'skip';
+/** A login made or given for a server; for a file, read-only, or none for now. */
+type ReaderChoice = 'create' | 'own' | 'read-only' | 'skip';
+
+/** The kinds offered before dbtour serve says which are installed. */
+const knownKinds: State['kinds'] = [
+  { type: 'mssql', name: 'SQL Server', installed: true },
+  { type: 'sqlite', name: 'SQLite', installed: true },
+];
+
+/** What each kind is, under its name in the choice. */
+const kindDetails: Record<string, string> = {
+  mssql: 'A server: Azure SQL or your own, signed in with az or a login.',
+  sqlite: 'A file on this machine, opened read-only. No sign-in, no password.',
+};
 
 /** A line of the log beside the steps: when, what, and its dot (grey doing, green done, red refused). */
 interface LogLine {
@@ -42,7 +57,7 @@ export async function post<T>(served: Served, step: string, input: Record<string
 /** `onReader` is told when the database has a reader, so the rail's dot can turn green without a reload. */
 export function SetupPage({ served, first, onReader }: { served: Served; first: boolean; onReader?: () => void }) {
   const [at, setAt] = useState(1);
-  const [form, setForm] = useState<SetupForm>({ type: 'mssql', server: '', database: '', name: '', signIn: 'az', user: '', password: '' });
+  const [form, setForm] = useState<SetupForm>({ type: 'mssql', server: '', database: '', file: '', name: '', signIn: 'az', user: '', password: '' });
   const [named, setNamed] = useState(false);
   const [state, setState] = useState<State>();
   const [busy, setBusy] = useState<string>();
@@ -95,7 +110,7 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
   }, [at]);
   // The reader's statements are read once the database is saved, so the person sees them before choosing.
   useEffect(() => {
-    if (at !== 4 || choice !== 'create' || plan) return;
+    if (at !== 4 || choice !== 'create' || plan || isFile(form)) return;
     setBusy('Reading what it would change…');
     call<Plan>('reader-plan', { name: form.name }, `Reading what making dbtour_reader would change in ${form.name}`)
       .then(setPlan, (e: Error) => setError(e.message))
@@ -104,7 +119,9 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
 
   const set = (change: Partial<SetupForm>) => {
     setError(undefined);
-    setForm((f) => ({ ...f, ...change, ...(change.database !== undefined && !named ? { name: suggestName(change.database) } : {}) }));
+    if (change.type !== undefined) setChoice(isFile(change as SetupForm) ? 'read-only' : 'create');
+    const suggested = !named && (change.database !== undefined ? suggestName(change.database) : change.file !== undefined ? fileName(change.file) : undefined);
+    setForm((f) => ({ ...f, ...change, ...(suggested !== false && suggested !== undefined ? { name: suggested } : {}) }));
   };
   /** Runs a step: its fields checked here first, then dbtour serve's answer, then the next step. */
   const go = async (doing: string, work: () => Promise<void>, next = at + 1) => {
@@ -125,26 +142,36 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
     setChoice(next);
     setError(undefined);
   };
-  const where = { name: form.name, type: form.type, server: form.server.trim(), database: form.database.trim() };
-  const kind = state?.kinds.find((k) => k.type === form.type);
+  const file = isFile(form);
+  const where = file ? { name: form.name, type: form.type, file: form.file.trim() } : { name: form.name, type: form.type, server: form.server.trim(), database: form.database.trim() };
+  const kinds = state?.kinds ?? knownKinds;
+  const kind = kinds.find((k) => k.type === form.type);
   const az = azLine(state?.az);
 
   const bodies: Record<number, ReactNode> = {
     1: (
       <>
         <p className="setup-lead">Where the database is. dbtour reads its catalogue (tables, columns, keys, relations) and never a row.</p>
+        <div className="setup-choices" role="radiogroup" aria-label="Kind">
+          {kinds.map((k) => (
+            <Choice key={k.type} name="kind" checked={form.type === k.type} onChange={() => set({ type: k.type })} title={k.name} detail={kindDetails[k.type] ?? ''}>
+              {!k.installed && (
+                <span className="setup-help is-problem">
+                  Its source, dbtour-source-{k.type}, is not installed: stop dbtour serve and start it with every package, <code>{startCommand}</code>
+                </span>
+              )}
+            </Choice>
+          ))}
+        </div>
         <div className="setup-fields">
-          <div className="setup-field">
-            <span className="label">Kind</span>
-            <span className="setup-value">{kind?.name ?? 'SQL Server'}</span>
-            {kind && !kind.installed && (
-              <span className="setup-help is-problem">
-                Its source, dbtour-source-{kind.type}, is not installed: stop dbtour serve and start it with every package, <code>{startCommand}</code>
-              </span>
-            )}
-          </div>
-          <Field label="Server" value={form.server} onChange={(server) => set({ server })} placeholder="e.g. shop-sql.database.windows.net" help="As your SQL tool connects to it; a port after a comma: localhost,1433." />
-          <Field label="Database" value={form.database} onChange={(database) => set({ database })} placeholder="e.g. Shop" help="Its name on that server." />
+          {file ? (
+            <Field label="File" value={form.file} onChange={(path) => set({ file: path })} placeholder="e.g. ~/data/shop.db" help="Its path on this machine; ~ is your home folder. dbtour opens it read-only." />
+          ) : (
+            <>
+              <Field label="Server" value={form.server} onChange={(server) => set({ server })} placeholder="e.g. shop-sql.database.windows.net" help="As your SQL tool connects to it; a port after a comma: localhost,1433." />
+              <Field label="Database" value={form.database} onChange={(database) => set({ database })} placeholder="e.g. Shop" help="Its name on that server." />
+            </>
+          )}
           <Field
             label="Name in dbtour"
             value={form.name}
@@ -157,7 +184,7 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
           />
         </div>
         <Actions busy={busy}>
-          <button type="button" className="button setup-go" onClick={() => go('Checking…', () => call('check', where, `Checking the names for ${where.name}`).then(() => undefined))}>
+          <button type="button" className="button setup-go" disabled={kind?.installed === false} onClick={() => go('Checking…', () => call('check', where, `Checking ${file ? 'the file and the name' : 'the names'} for ${where.name}`).then(() => undefined), file ? 3 : 2)}>
             Next
           </button>
         </Actions>
@@ -197,7 +224,9 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
     3: (
       <>
         <p className="setup-lead">
-          dbtour signs in to {form.database} on {form.server} {form.signIn === 'az' ? 'with az' : `as ${form.user}`}, asks whether it answers, and saves it only if it does.
+          {file
+            ? `dbtour opens ${form.file} read-only, runs one SELECT, and saves it only if it answers.`
+            : `dbtour signs in to ${form.database} on ${form.server} ${form.signIn === 'az' ? 'with az' : `as ${form.user}`}, asks whether it answers, and saves it only if it does.`}{' '}
           Nothing in the database changes.
         </p>
         <Actions busy={busy}>
@@ -205,8 +234,9 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
             type="button"
             className="button setup-go"
             onClick={() =>
-              go('Signing in…', async () => {
-                await call('add', { ...where, signIn: form.signIn, user: form.user, password: form.signIn === 'login' ? form.password : undefined }, `Signing in to ${where.database} on ${where.server}`);
+              go(file ? 'Opening it…' : 'Signing in…', async () => {
+                if (file) return void (await call('add', where, `Opening ${form.file} read-only`));
+                await call('add', { ...where, signIn: form.signIn, user: form.user, password: form.signIn === 'login' ? form.password : undefined }, `Signing in to ${form.database} on ${form.server}`);
                 // Kept by the keychain now: the page forgets it.
                 set({ password: '' });
               })
@@ -217,7 +247,33 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
         </Actions>
       </>
     ),
-    4: (
+    4: file ? (
+      <>
+        <p className="setup-lead">With a yes, this database's page runs your queries, each with the file opened read-only, so SQLite refuses any write. Without, it shows the structure.</p>
+        <div className="setup-choices" role="radiogroup" aria-label="Reader">
+          <Choice name="reader" checked={choice === 'read-only'} onChange={() => pick('read-only')} title="Let queries read it" detail="Nothing to sign in with and nothing kept but the yes." />
+          <Choice name="reader" checked={choice === 'skip'} onChange={() => pick('skip')} title="Not now" detail={`The page shows the structure and runs no query. dbtour reader ${form.name} --read-only says yes later.`} />
+        </div>
+        <Actions busy={busy}>
+          <button
+            type="button"
+            className="button setup-go"
+            onClick={() =>
+              go('', async () => {
+                if (choice === 'skip') {
+                  setReader(undefined);
+                  return note('No queries for now: the page will show the structure');
+                }
+                setReader((await call<{ reader: string }>('reader-use', { name: form.name }, `Letting queries read ${form.name}`)).reader);
+                onReader?.();
+              })
+            }
+          >
+            {choice === 'skip' ? 'Next' : 'Let queries read it'}
+          </button>
+        </Actions>
+      </>
+    ) : (
       <>
         <p className="setup-lead">A reader is a login that can only read (db_datareader alone). With one, this database's page runs your queries; without, it shows the structure.</p>
         <div className="setup-choices" role="radiogroup" aria-label="Reader">
@@ -318,7 +374,7 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
                   <h2 className="setup-title">{title}</h2>
                   {step < at && <span className="setup-summary">{stepSummary(step, form, { reader, tables: read?.tables })}</span>}
                   {/* Before the test saves it, the database and the sign-in can still change; not while a step runs. */}
-                  {step < at && at <= 3 && !busy && (
+                  {step < at && at <= 3 && !busy && !(file && step === 2) && (
                     <button type="button" className="sql-copy setup-change" onClick={() => {
                         setAt(step);
                         setError(undefined);
@@ -344,7 +400,7 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
         {read && (
           <section className="setup-done" aria-label="Done">
             <p>
-              {form.name} is set up{reader ? ', with a reader that runs your queries' : ''}.
+              {form.name} is set up{reader ? (file ? ', and runs your queries read-only' : ', with a reader that runs your queries') : ''}.
             </p>
             <div className="actions">
               <a className="button setup-go" href={databaseHref(form.name)}>
@@ -357,7 +413,15 @@ export function SetupPage({ served, first, onReader }: { served: Served; first: 
           </section>
         )}
         <p className="sql-hint databases-hint">
-          An agent can do the same in a terminal: <code>npx dbtour add {form.name || '<name>'} --server {form.server || '<host>'}</code>, then <code>dbtour reader</code> and <code>dbtour read</code>. Passwords never go on its command line.
+          {file ? (
+            <>
+              An agent can do the same in a terminal: <code>npx dbtour add {form.name || '<name>'} --file {form.file || '<path>'}</code>, then <code>dbtour reader {form.name || '<name>'} --read-only</code> and <code>dbtour read</code>.
+            </>
+          ) : (
+            <>
+              An agent can do the same in a terminal: <code>npx dbtour add {form.name || '<name>'} --server {form.server || '<host>'}</code>, then <code>dbtour reader</code> and <code>dbtour read</code>. Passwords never go on its command line.
+            </>
+          )}
         </p>
       </article>
       <aside className="panel setup-log" aria-label="Log">
