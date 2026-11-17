@@ -7,6 +7,12 @@
 
 [![version](https://img.shields.io/badge/version-0.11.1-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
+[![npm](https://img.shields.io/npm/v/dbtour)](https://www.npmjs.com/package/dbtour)
+
+<a href="https://skills.victorsaly.com/dbtour#film"><img src="media/tour.png" alt="A table's entry in dbtour: dbo.Member, 160 rows, the 3rd largest of 35 tables, its size, the tables it references and those that reference it, and a map of its neighbourhood" width="860"></a>
+
+**[Watch the tour](https://skills.victorsaly.com/dbtour#film)**: the setup, a table's entry, the map and a query,
+against a real SQL Server in about a minute.
 
 </div>
 
@@ -14,8 +20,8 @@ dbtour reads a database, writes what it finds to one model file in your reposito
 Markdown GitHub shows with diagrams, and as a page developers search, follow relations in and hand to an agent.
 
 It reads the catalogue, never the rows, and an agent gets the same model through `dbtour mcp` and the
-Claude Code plugin ([below](#ask-claude)). SQL Server and SQLite today; other databases follow the
-[plan](PLAN.md).
+Claude Code plugin ([below](#ask-claude)). It works with SQL Server, Azure SQL and SQLite today; PostgreSQL
+and MySQL follow the [plan](PLAN.md). Free and MIT licensed, for Claude Code, Codex, Cursor and any MCP client.
 
 ## Start in one line
 
