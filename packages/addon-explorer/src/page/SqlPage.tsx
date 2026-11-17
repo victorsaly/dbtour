@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import { driverName } from 'dbtour/markdown';
 import type { Model } from 'dbtour/model';
+import { dialectOf, firstRows } from './dialect.ts';
 import { SqlEditor } from './Sql.tsx';
 
 export function SqlPage({ model }: { model: Model }) {
   const [database, setDatabase] = useState(model.databases[0]?.name);
   const chosen = model.databases.find((d) => d.name === database) ?? model.databases[0];
-  const initial = `-- A query against ${chosen?.name ?? 'the database'}. Autocomplete knows every table and column;\n-- each table's page starts one from that table and what it references.\nSELECT TOP (100)\n    \n`;
+  const rows = firstRows(dialectOf(chosen?.driver), 100);
+  const initial = `-- A query against ${chosen?.name ?? 'the database'}. Autocomplete knows every table and column;\n-- each table's page starts one from that table and what it references.\n${rows.select}\n    \n${rows.end ? `${rows.end}\n` : ''}`;
   return (
     <article className="page sql-page">
       <header className="entry-head">

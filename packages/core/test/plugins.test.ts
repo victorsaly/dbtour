@@ -18,6 +18,12 @@ test('loadSource returns the extract function, and says what to install when it 
   await assert.rejects(loadSource({ type: 'odd', name: 'x' }, async () => ({})), /does not export extract/);
 });
 
+test('a source says it opens its database read-only only with readOnly: true', async () => {
+  const extract = async () => ({ name: 'x', driver: 'sqlite', schemas: [], relations: [] });
+  assert.equal((await loadSource({ type: 'fake', name: 'x' }, async () => ({ extract, readOnly: true }))).readOnly, true);
+  assert.equal((await loadSource({ type: 'fake', name: 'x' }, async () => ({ extract, readOnly: 'yes' }))).readOnly, undefined);
+});
+
 test('an add-on type maps to a package name unless a module is given', () => {
   assert.equal(addonModuleName({ type: 'explorer' }), 'dbtour-addon-explorer');
   assert.equal(addonModuleName({ type: 'explorer', module: './page.ts' }), './page.ts');

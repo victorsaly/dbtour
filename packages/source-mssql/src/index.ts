@@ -3,11 +3,13 @@
 // mssql:// URL. It is read from the environment variable dbtour.yaml names, never from the file.
 import { readFileSync } from 'node:fs';
 import sql from 'mssql';
-import { maxResultBytes, type Database, type QueryResult, type RunOptions, type SourceConfig } from 'dbtour';
-import { mapRecordsets, RowCollector, toRecordsets } from './map.ts';
+import { maxResultBytes, RowCollector, type Database, type QueryResult, type RunOptions, type SourceConfig } from 'dbtour';
+import { mapRecordsets, toRecordsets } from './map.ts';
 import { extraRoles, grantsQuery, readerStatements, rightsQuery, writeRights } from './setup.ts';
 
-export { mapRecordsets, RowCollector, sizeOf, toRecordsets, formatType } from './map.ts';
+export { mapRecordsets, toRecordsets, formatType } from './map.ts';
+// Kept here, where they were first, for code that imports them from this package; they are core's now.
+export { RowCollector, sizeOf } from 'dbtour';
 export { connectionString, readerStatements } from './setup.ts';
 
 /**

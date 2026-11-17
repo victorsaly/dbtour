@@ -3,7 +3,7 @@
 // system's keychain.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { PassThrough } from 'node:stream';
 import { tmpdir } from 'node:os';
@@ -27,16 +27,33 @@ interface Harness {
   home: string;
 }
 
-function harness(options: { roles?: string[]; grants?: string[]; rights?: string[]; exists?: boolean; failTest?: boolean; stdin?: string; during?: () => Promise<void> } = {}): Harness {
+function harness(options: { roles?: string[]; grants?: string[]; rights?: string[]; exists?: boolean; failTest?: boolean; stdin?: string; during?: () => Promise<void>; noKeychain?: boolean } = {}): Harness {
   const home = join(mkdtempSync(join(tmpdir(), 'dbtour-ws-')), '.dbtour');
   const out: string[] = [];
   const err: string[] = [];
   const calls: string[] = [];
   const secrets = new Map<string, string>();
-  const store: SecretStore = {
-    get: async (a) => secrets.get(a),
-    set: async (a, s) => void secrets.set(a, s),
-    remove: async (a) => secrets.delete(a),
+  // A keychain that fails the test when it is touched: a file has no password to keep.
+  const untouched = async (): Promise<never> => assert.fail('the keychain was used');
+  const store: SecretStore = options.noKeychain
+    ? { get: untouched, set: untouched, remove: untouched }
+    : {
+        get: async (a) => secrets.get(a),
+        set: async (a, s) => void secrets.set(a, s),
+        remove: async (a) => secrets.delete(a),
+      };
+  // A source like SQLite's: a file it opens read-only, no logins, so nothing for setup but the file.
+  const file: Source = {
+    readOnly: true,
+    extract: async (c) => {
+      calls.push(`extract file ${c.file}`);
+      return { ...shopModel.databases[0], name: c.name, driver: 'sqlite' };
+    },
+    run: async (c, sql) => {
+      calls.push(`run file ${c.file} ${c.reader ?? 'no reader'} ${sql}`);
+      if (!existsSync(String(c.file))) throw new Error(`There is no database at ${c.file}`);
+      return { columns: ['ok'], rows: [[1]], truncated: false, limit: 1 };
+    },
   };
   const source: Source = {
     extract: async (c) => {
@@ -75,7 +92,7 @@ function harness(options: { roles?: string[]; grants?: string[]; rights?: string
     env: { DBTOUR_HOME: home },
     secrets: store,
     stdin,
-    load: async () => source,
+    load: async (c) => (c.type === 'sqlite' ? file : source),
     loadAddon: async () => ({ render: (model: Model) => ({ 'index.html': `<title>${model.databases[0]?.name ?? 'home'}</title>` }) }),
     az: async () => ({ state: 'signed in', user: 'ann@example.com' }),
   };
@@ -278,7 +295,7 @@ test('serve with nothing set up opens the home in the browser, and its setup tak
     assert.match(h.out.join('\n'), /Nothing is set up yet: the page at http:\/\/127\.0\.0\.1:\d+\/ walks you through it/);
 
     const state = await s.step('state', {});
-    assert.deepEqual(state.json, { kinds: [{ type: 'mssql', name: 'SQL Server', installed: true }], keychain: true, az: { state: 'signed in', user: 'ann@example.com' }, names: [] });
+    assert.deepEqual(state.json, { kinds: [{ type: 'mssql', name: 'SQL Server', installed: true }, { type: 'sqlite', name: 'SQLite', installed: true }], keychain: true, az: { state: 'signed in', user: 'ann@example.com' }, names: [] });
 
     // 1, the database: checked here before anything connects.
     assert.equal((await s.step('check', where)).status, 200);
@@ -390,6 +407,71 @@ test('a database removed and set up again under its name is not read until it is
   const s = await served(h);
   try {
     assert.deepEqual(s.front.databases.map((d: { name: string; read: boolean }) => [d.name, d.read]), [['Shop', false]], 'the old page is not shown as the new one');
+  } finally {
+    await s.stop();
+  }
+});
+
+/** A SQLite file somewhere on this machine, as a person's own would be. */
+function sqliteFile(): string {
+  const path = join(mkdtempSync(join(tmpdir(), 'dbtour-file-')), 'notes.db');
+  writeFileSync(path, 'SQLite format 3');
+  return path;
+}
+
+test('a SQLite file is set up by its path: tested with a query, opened read-only, and the keychain never touched', async () => {
+  const h = harness({ noKeychain: true });
+  const path = sqliteFile();
+  assert.equal(await main(['add', 'Notes', '--file', path], h.io), 0);
+  assert.deepEqual(settings(h).databases, [{ name: 'Notes', type: 'sqlite', file: path, signIn: 'file' }], 'the type from the file; no server, no login');
+  assert.deepEqual(h.calls, [`run file ${path} read-only SELECT 1`], 'tested once, read-only');
+  assert.match(h.out.join('\n'), /Added Notes: .*notes\.db, opened read-only[\s\S]*dbtour read Notes[\s\S]*dbtour reader Notes --read-only/);
+
+  assert.equal(await main(['add', 'Gone', '--file', join(path, '..', 'gone.db')], h.io), 1);
+  assert.match(h.err.join('\n'), /There is no file at .*gone\.db/);
+  assert.equal(await main(['add', 'Both', '--file', path, '--server', 'x'], h.io), 1);
+  assert.match(h.err.join('\n'), /--file or --server, not both/);
+  assert.deepEqual(settings(h).databases.map((d: { name: string }) => d.name), ['Notes'], 'nothing saved for either');
+
+  assert.equal(await main(['read', 'Notes'], h.io), 0);
+  assert.equal(h.calls.at(-1), `extract file ${path}`);
+  assert.equal(await main(['sql', 'SELECT 2'], h.io), 2, 'no reader yet');
+  assert.match(h.err.join('\n'), /reader Notes --read-only/);
+  assert.equal(await main(['reader', 'Notes', '--read-only'], h.io), 0);
+  assert.equal(settings(h).databases[0].reader, 'read-only');
+  assert.equal(await main(['sql', 'SELECT 2'], h.io), 0);
+  assert.equal(h.calls.at(-1), `run file ${path} read-only SELECT 2`);
+  assert.equal(await main(['reader', 'Notes', '--create'], h.io), 1, 'a file has no logins to make');
+  assert.match(h.err.join('\n'), /Notes is a file, with no logins: dbtour reader Notes --read-only/);
+
+  h.out.length = 0;
+  assert.equal(await main(['list'], h.io), 0);
+  assert.match(h.out.join('\n'), /Notes\s+sqlite\s+\S*notes\.db\s+file\s+read-only\s+read \d{4}/);
+  assert.equal(await main(['remove', 'Notes'], h.io), 0);
+  assert.doesNotMatch(h.out.join('\n'), /DROP USER/);
+  assert.deepEqual(settings(h).databases, []);
+});
+
+test('the setup page takes a SQLite file through the same five steps: no sign-in, and a reader that is a yes', async () => {
+  const h = harness({ noKeychain: true });
+  const path = sqliteFile();
+  const s = await served(h);
+  try {
+    const where = { name: 'Notes', type: 'sqlite', file: path };
+    assert.equal((await s.step('check', where)).status, 200);
+    const missingFile = await s.step('check', { ...where, file: join(path, '..', 'gone.db') });
+    assert.deepEqual([missingFile.status, missingFile.json.error], [422, `There is no file at ${join(path, '..', 'gone.db')}: give the path to the database on this machine`]);
+    assert.equal(h.calls.length, 0, 'checked without opening it');
+
+    const added = await s.step('add', where);
+    assert.deepEqual([added.status, added.json.name, added.json.signIn, added.json.log], [200, 'Notes', 'file', ['It opened read-only and answered', `Saved Notes in ${join(h.home, 'databases.json')}`]]);
+    const reader = await s.step('reader-use', { name: 'Notes' });
+    assert.deepEqual([reader.status, reader.json], [200, { name: 'Notes', reader: 'read-only', log: ['Queries open the file read-only: SQLite refuses any write'] }]);
+    const read = await s.step('read', { name: 'Notes' });
+    assert.deepEqual([read.status, read.json.tables], [200, 6]);
+    const [served_] = (await s.meta()).databases;
+    assert.deepEqual(served_, { ...served_, name: 'Notes', driver: 'sqlite', file: path, reader: true, read: true });
+    assert.equal(served_.server, undefined);
   } finally {
     await s.stop();
   }

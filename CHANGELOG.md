@@ -1,6 +1,37 @@
 # Changelog
 
-## 0.10.2 (unreleased)
+## 0.11.0 (unreleased)
+
+- SQLite, the first of milestone 8's sources: `dbtour-source-sqlite` reads a file with the SQLite Node
+  ships (`node:sqlite`), so there is nothing to install or build. It reads tables and views, columns, keys,
+  relations, indexes (partial, and on expressions), CHECKs, generated columns, collations and triggers, and
+  each table's rows and bytes from the file's own pages, never its rows. SQLite keeps no descriptions, but it
+  keeps each `CREATE TABLE` as it was written: a comment on a column's line, or the line before it, describes
+  the column, and one on the line of the opening bracket, the table. A foreign key finds its table and columns
+  however REFERENCES spells them, as SQLite does, and `INTEGER PRIMARY KEY DESC`, which SQLite keeps as an
+  ordinary key rather than the rowid, is not taken for an identity. In `dbtour.yaml` it takes `file: shop.db`,
+  from the folder `dbtour.yaml` is in; a path is no secret, so it is written there.
+- A source without logins has a reader of its own kind: `reader: read-only`. Each SQLite query runs in a
+  process of its own with the file opened read-only and `query_only` on, so SQLite refuses any write
+  whatever the statement, and the process is killed at the timeout, even in the middle of one long step. An
+  integer past 2^53 comes back whole, as text, and a BLOB as bytes, written as hex.
+- The setup on the page offers SQLite in the same five steps: its kind, then its path (`~` is the home
+  folder) and a name taken from the file; Sign in folds to "None: a file, opened read-only"; the test opens
+  it and runs one SELECT; Reader is a yes to queries, or not now. No password, so the keychain is not used.
+  From a terminal: `dbtour add notes --file notes.db`, then `dbtour reader notes --read-only`. The one-line
+  start fetches the SQLite source too.
+- The SQL editor speaks its database's dialect: SQLite's keywords, `LIMIT 100` where T-SQL has `TOP (100)`
+  in the starter query, the SQL page and the snippets (`sl100` in SQLite, `st100` in T-SQL), Format in SQLite's
+  layout, and the editor's bar and hints say which. A name that needs quotes is quoted as its database
+  needs, against its own reserved words: `[brackets]` in T-SQL, `"double quotes"` in SQLite, so a SQLite
+  column named `limit` is written `"limit"`. The Size block says a SQLite count is the cells of its pages, not
+  an estimate.
+- The query check refuses a comment inside a comment: SQL Server and PostgreSQL nest them, SQLite and MySQL
+  end one at its first `*/`, so what one database reads as a comment another may run.
+- A trigger may run before its statement, as SQLite's and PostgreSQL's do. `RowCollector` and `sizeOf`, which
+  every source that runs queries needs, are core's now; `dbtour-source-mssql` still exports them.
+
+## 0.10.2 (2 November 2026)
 
 - Tab after `*` over a CTE or a subquery no longer writes a protected column the editor could not see
   through, from the review of 0.10.1. A protected column that a later UNION branch puts at a place the

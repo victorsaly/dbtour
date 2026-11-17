@@ -57,9 +57,9 @@ const setOperators = new Set(['UNION', 'ALL', 'EXCEPT', 'INTERSECT']);
 
 /**
  * The code with every string, quoted name and comment blanked to spaces, so what is left is keywords and plain
- * names; or what is left open. Positions are kept, so a semicolon found here is one in the query.
+ * names; or why it cannot be read. Positions are kept, so a semicolon found here is one in the query.
  */
-function blank(sql: string): { code: string } | { open: string } {
+function blank(sql: string): { code: string } | { refused: string } {
   let code = '';
   let i = 0;
   const closing = (end: string, what: string): string | undefined => {
@@ -81,7 +81,7 @@ function blank(sql: string): { code: string } | { open: string } {
     const c = sql[i];
     if (c === "'" || c === '"' || c === '[') {
       const open = closing(c === '[' ? ']' : c, c === "'" ? 'a string' : 'a quoted name');
-      if (open) return { open };
+      if (open) return { refused: leftOpen(open) };
     } else if (sql.startsWith('--', i)) {
       // A carriage return ends the comment as a line feed does, as SQL Server reads it.
       const rest = sql.slice(i).search(/[\r\n]/);
@@ -89,22 +89,14 @@ function blank(sql: string): { code: string } | { open: string } {
       code += ' '.repeat(stop - i);
       i = stop;
     } else if (sql.startsWith('/*', i)) {
-      // Block comments nest in T-SQL.
-      let depth = 0;
-      let j = i;
-      while (j < sql.length) {
-        if (sql.startsWith('/*', j)) {
-          depth++;
-          j += 2;
-        } else if (sql.startsWith('*/', j)) {
-          depth--;
-          j += 2;
-          if (depth === 0) break;
-        } else j++;
-      }
-      if (depth > 0) return { open: 'a comment' };
-      code += ' '.repeat(j - i);
-      i = j;
+      // T-SQL and PostgreSQL nest block comments, SQLite and MySQL end one at its first */, so a comment
+      // inside a comment hides code from one of them that another runs: refused, whichever this is.
+      const end = sql.indexOf('*/', i + 2);
+      const inner = sql.indexOf('/*', i + 2);
+      if (inner !== -1 && (end === -1 || inner < end)) return { refused: 'The query has a comment inside a comment, which databases read differently: take the inner /* out, then run it again.' };
+      if (end === -1) return { refused: leftOpen('a comment') };
+      code += ' '.repeat(end + 2 - i);
+      i = end + 2;
     } else {
       code += c;
       i++;
@@ -113,9 +105,13 @@ function blank(sql: string): { code: string } | { open: string } {
   return { code };
 }
 
+function leftOpen(what: string): string {
+  return `The query leaves ${what} open: close it, then run it again.`;
+}
+
 export function checkQuery(sql: string): Checked {
   const blanked = blank(sql);
-  if ('open' in blanked) return { ok: false, reason: `The query leaves ${blanked.open} open: close it, then run it again.` };
+  if ('refused' in blanked) return { ok: false, reason: blanked.refused };
   const { code } = blanked;
   if (code.trim() === '') return { ok: false, reason: 'There is no query to run: write one SELECT, or a WITH followed by a SELECT.' };
   // One trailing semicolon ends the statement; any other starts a second one.
@@ -190,4 +186,64 @@ export function resultText(result: QueryResult): string {
       ? 'No rows.'
       : `${counted(n)}.`;
   return `${[header, ...rows].join('\n')}\n\n${said}`;
+}
+
+/** Roughly how many bytes a value holds in memory: text two to a character, bytes as they are. */
+export function sizeOf(value: unknown): number {
+  if (value === null || value === undefined) return 1;
+  if (typeof value === 'string') return value.length * 2;
+  if (value instanceof Uint8Array) return value.length;
+  return 8;
+}
+
+/**
+ * The rows of a query as they stream in, kept until one is past the limit or they outgrow the byte budget.
+ * add() says whether to go on; a source's run() cancels the query when it says no, so neither the rows nor their size
+ * is ever more than one row past what is kept.
+ */
+export class RowCollector {
+  private columns: string[] = [];
+  private rows: unknown[][] = [];
+  private bytes = 0;
+  private stopped?: 'limit' | 'size';
+  private readonly limit: number;
+  private readonly budget: number;
+
+  constructor(limit: number, budget: number) {
+    this.limit = limit;
+    this.budget = budget;
+  }
+
+  /** A new result set: its columns, and its rows from nothing. */
+  start(columns: { name: string }[]): void {
+    this.columns = columns.map((c, i) => c.name || `(column ${i + 1})`);
+    this.rows = [];
+    this.bytes = 0;
+  }
+
+  add(row: unknown[]): boolean {
+    if (this.rows.length >= this.limit) {
+      this.stopped = 'limit';
+      return false;
+    }
+    const size = row.reduce<number>((sum, value) => sum + sizeOf(value), 0);
+    if (this.bytes + size > this.budget) {
+      this.stopped = 'size';
+      return false;
+    }
+    this.rows.push(row);
+    this.bytes += size;
+    return true;
+  }
+
+  /** Whether add() has stopped it; a cancelled query's error is then expected, not a failure. */
+  get done(): boolean {
+    return this.stopped !== undefined;
+  }
+
+  result(): QueryResult {
+    const result: QueryResult = { columns: this.columns, rows: this.rows, truncated: this.stopped !== undefined, limit: this.limit };
+    if (this.stopped) result.reason = this.stopped;
+    return result;
+  }
 }

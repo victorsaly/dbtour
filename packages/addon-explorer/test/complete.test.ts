@@ -157,6 +157,26 @@ test('snippets write the start of a read: whole names lead, a part does not', as
   assert.deepEqual(pickOf({ label: 'SELECT' }), { key: undefined, reopen: false }, 'a keyword is not counted');
 });
 
+test('a SQLite database is written as SQLite: LIMIT where T-SQL has TOP, and SQLite\'s keywords', async () => {
+  const model = shop();
+  model.databases[0].driver = 'sqlite';
+  const listed = await suggest('sl100|', { model });
+  assert.deepEqual([listed[0]?.label, listed[0]?.detail], ['sl100', 'SELECT * FROM …']);
+  assert.ok(!(await suggest('st100|', { model })).some((s) => s.label === 'st100'), 'no TOP in SQLite');
+  assert.ok(!(await suggest('sl100|')).some((s) => s.label === 'sl100'), 'nor LIMIT in T-SQL');
+  assert.ok((await applies('SELECT * FROM dbo.Orders LIM|', { model })).includes('LIMIT'));
+  assert.ok(!(await applies('SELECT * FROM dbo.Orders LIM|')).includes('LIMIT'));
+  assert.equal((await applies('SELECT | FROM [dbo].[Orders]', { explicit: true, model }))[0], 'Id', 'bracketed names, which SQLite reads too');
+});
+
+test('in SQLite, a column named with a word SQLite reserves is written in "double quotes"', async () => {
+  const model = shop();
+  model.databases[0].driver = 'sqlite';
+  model.databases[0].schemas[0].tables.find((t) => t.name === 'Customers')!.columns[1].name = 'limit';
+  assert.ok((await applies('SELECT lim| FROM dbo.Customers', { model })).includes('"limit"'));
+  assert.ok((await applies('SELECT c.| FROM dbo.Customers c', { model, explicit: true })).includes('"limit"'));
+});
+
 test('what was picked before comes first among equals, never above a better match', async () => {
   const used = { 'column:dbo.Orders.Total': 5 };
   const top = await suggest('SELECT | FROM dbo.Orders', { explicit: true, used });

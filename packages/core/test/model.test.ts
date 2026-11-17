@@ -92,7 +92,7 @@ test('validate names what the catalogue fields have wrong', () => {
   (orders as unknown as Record<string, unknown>).properties = { Retention: 7 };
   (orders as unknown as Record<string, unknown>).temporal = { history: 'dbo.OrdersHistory' };
   (orders as unknown as Record<string, unknown>).partitioning = { scheme: 'ps', function: 'pf', column: 'At', partitions: -1 };
-  (orders as unknown as Record<string, unknown>).triggers = [{ name: 'tr', timing: 'before', events: 'insert', enabled: 'yes' }];
+  (orders as unknown as Record<string, unknown>).triggers = [{ name: 'tr', timing: 'during', events: 'insert', enabled: 'yes' }];
   (orders as unknown as Record<string, unknown>).changeTracking = 'on';
   (orders.columns[3] as unknown as Record<string, unknown>).encrypted = { type: 'scrambled', key: 'CEK' };
   (orders.indexes[0] as unknown as Record<string, unknown>).disabled = 1;
@@ -105,7 +105,7 @@ test('validate names what the catalogue fields have wrong', () => {
     /tables\[1\]\.properties\.Retention must be a string/,
     /tables\[1\]\.temporal\.start must be a non-empty string/,
     /tables\[1\]\.partitioning\.partitions must be a number of 0 or more/,
-    /tables\[1\]\.triggers\[0\]\.timing must be "after" or "instead of"/,
+    /tables\[1\]\.triggers\[0\]\.timing must be "before" or "after" or "instead of"/,
     /tables\[1\]\.triggers\[0\]\.events must be a list of strings/,
     /tables\[1\]\.triggers\[0\]\.enabled must be true or false/,
     /tables\[1\]\.changeTracking must be true or false when given/,

@@ -644,7 +644,7 @@ test('with nothing set up, the home walks through the five steps to the database
     const current = () => page.locator('.setup-step.is-current .setup-title').textContent();
     assert.equal(await current(), 'Database');
 
-    await page.getByLabel('Server').fill('shop.example');
+    await page.getByLabel('Server', { exact: true }).fill('shop.example');
     await page.getByLabel('Database', { exact: true }).fill('Shop');
     assert.equal(await page.getByLabel('Name in dbtour').inputValue(), 'Shop', 'named after the database');
     await page.getByRole('button', { name: 'Next' }).click();
@@ -689,6 +689,80 @@ test('with nothing set up, the home walks through the five steps to the database
     assert.equal(await page.locator('.side').getByRole('link', { name: 'All databases' }).getAttribute('href'), '/', 'the list is loaded again');
     await page.locator('main').getByRole('link', { name: 'Add a database' }).click();
     await page.locator('h1', { hasText: 'Add a database' }).waitFor();
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test('a SQLite file goes through the same five steps: its path, no sign-in, a test, a yes for queries, the read', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+  model.databases[0].driver = 'sqlite';
+  const root = mkdtempSync(join(tmpdir(), 'dbtour-setup-file-'));
+  const databases: { name: string; driver: string; file: string; reader: boolean; read: boolean; tables?: number }[] = [];
+  const steps: { step: string; input: Record<string, unknown> }[] = [];
+  const setup = async (step: string, input: Record<string, unknown>): Promise<unknown> => {
+    steps.push({ step, input });
+    const name = String(input.name ?? '');
+    if (step === 'state') return { kinds: [{ type: 'mssql', name: 'SQL Server', installed: true }, { type: 'sqlite', name: 'SQLite', installed: true }], keychain: false, az: { state: 'missing' }, names: [] };
+    if (step === 'check') return { ok: true };
+    if (step === 'add') {
+      databases.push({ name, driver: 'sqlite', file: String(input.file), reader: false, read: false });
+      return { name, signIn: 'file', log: ['It opened read-only and answered'] };
+    }
+    if (step === 'reader-use') {
+      databases[0].reader = true;
+      return { name, reader: 'read-only', log: ['Queries open the file read-only: SQLite refuses any write'] };
+    }
+    if (step === 'read') {
+      mkdirSync(join(root, name), { recursive: true });
+      writeFileSync(join(root, name, 'index.html'), render(model)['index.html']);
+      Object.assign(databases[0], { read: true, tables: 6 });
+      return { name, tables: 6, log: [] };
+    }
+    throw new Error(`no step ${step}`);
+  };
+  const html = render({ ...model, databases: [], groups: [] })['index.html'];
+  const server = await startServer({ root, port: 0, token: 'e2e', sources: [], home: { html, databases: () => databases, setup } });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${server.url}/`);
+    await page.locator('h1', { hasText: 'Add a database' }).waitFor();
+    const current = () => page.locator('.setup-step.is-current .setup-title').textContent();
+
+    await page.getByRole('radio', { name: /SQLite/ }).check();
+    assert.equal(await page.getByLabel('Server', { exact: true }).count(), 0, 'a file has no server');
+    await page.getByLabel('File', { exact: true }).fill('/data/shop.db');
+    assert.equal(await page.getByLabel('Name in dbtour').inputValue(), 'shop', 'named after the file');
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    // No sign-in to choose: it folds to its line, and the test is next.
+    await page.locator('.setup-step.is-current .setup-title', { hasText: 'Test' }).waitFor();
+    assert.match((await page.locator('.setup-step').nth(1).textContent()) ?? '', /None: a file, opened read-only/);
+    assert.equal(await page.locator('.setup-step').nth(1).getByRole('button', { name: 'Change' }).count(), 0, 'nothing to change in a sign-in it has not');
+    await page.getByRole('button', { name: 'Test and save' }).click();
+
+    await page.locator('.setup-step.is-current .setup-title', { hasText: 'Reader' }).waitFor();
+    assert.equal(await page.getByRole('radio', { name: /Let queries read it/ }).isChecked(), true);
+    await page.getByRole('button', { name: 'Let queries read it' }).click();
+    await page.locator('.side-status.is-live').waitFor();
+
+    await page.locator('.setup-step.is-current .setup-title', { hasText: 'Read' }).waitFor();
+    assert.equal(await current(), 'Read');
+    await page.getByRole('button', { name: 'Read shop' }).click();
+    await page.getByRole('link', { name: 'Open shop' }).waitFor();
+    assert.match((await page.locator('.setup-step').nth(3).textContent()) ?? '', /Yes: queries open the file read-only/);
+    assert.match((await page.locator('.databases-hint').textContent()) ?? '', /npx dbtour add shop --file \/data\/shop\.db/);
+    assert.deepEqual(steps.map((s) => s.step), ['state', 'check', 'add', 'reader-use', 'read']);
+    assert.deepEqual(steps[2].input, { name: 'shop', type: 'sqlite', file: '/data/shop.db' }, 'no server, no sign-in, no password');
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

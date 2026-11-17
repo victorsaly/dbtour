@@ -8,17 +8,12 @@
 // few snippets write the start of a read. What the reader picks is counted, and comes first among equals. Pure,
 // so the cases in test/complete.test.ts and the bench in test/ranking.test.ts run it as the editor does.
 import { snippet, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from '@codemirror/autocomplete';
-import { keywordCompletionSource, MSSQL, schemaCompletionSource, SQLDialect, type SQLNamespace } from '@codemirror/lang-sql';
+import { keywordCompletionSource, schemaCompletionSource, type SQLNamespace } from '@codemirror/lang-sql';
 import { ensureSyntaxTree, LanguageSupport, syntaxTree } from '@codemirror/language';
 import { Facet, type EditorState, type Extension, type TransactionSpec } from '@codemirror/state';
 import { findTable, localRef, relationsOf, tableRef, type Model } from 'dbtour/model';
+import { dialectOf, type Dialect } from './dialect.ts';
 import { aliasFor, completionSchema, isProtected, joinCompletions, quoteName, quoteRef, type Suggestion, type TableSuggestions } from './query.ts';
-
-/**
- * T-SQL as SQL Server reads it by default: names are not case-sensitive, so a completed OrderLines needs no
- * quotes, and a name that does need them gets [brackets], as T-SQL is written, rather than "double quotes".
- */
-export const tsql = SQLDialect.define({ ...MSSQL.spec, caseInsensitiveIdentifiers: true, identifierQuotes: '["' });
 
 // CodeMirror ranks by how well a label matches what is typed, then by boost; its SQL keywords have -1 and
 // schema names 0. A column of the caret's own query at 2, and of an outer query's at 1, comes above both when
@@ -32,7 +27,8 @@ const schemaBoost = -0.5;
 // A table that has every column the select list names comes a point above one that has none, a part for
 // some: the same scale as a pick, so a better typed match still leads.
 const tableFitBoost = 1;
-// After a table and its alias, the words that can follow it; ON leads after a JOIN, where it is due.
+// After a table and its alias, the words that can follow it; ON leads after a JOIN, where it is due. LIMIT too
+// where the dialect asks for rows with it: CodeMirror's T-SQL lists the word, which SQL Server refuses.
 const afterTableWords = new Set([
   'AS', 'WITH', 'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'OUTER', 'APPLY', 'ON', 'AND', 'OR',
   'GROUP', 'ORDER', 'HAVING', 'UNION', 'EXCEPT', 'INTERSECT', 'OPTION', 'FOR', 'SET', 'OUTPUT', 'PIVOT', 'UNPIVOT',
@@ -73,6 +69,8 @@ export interface Keyed extends Completion {
 export interface Snippet {
   name: string;
   template: string;
+  /** Only where the first rows are asked for this way: TOP (100) in T-SQL, LIMIT 100 in SQLite. */
+  rows?: Dialect['rows'];
 }
 
 /**
@@ -81,7 +79,8 @@ export interface Snippet {
  */
 export const snippets: Snippet[] = [
   { name: 'ssf', template: 'SELECT * FROM ' },
-  { name: 'st100', template: 'SELECT TOP (100) * FROM ' },
+  { name: 'st100', template: 'SELECT TOP (100) * FROM ', rows: 'top' },
+  { name: 'sl100', template: 'SELECT * FROM ${}\nLIMIT 100', rows: 'limit' },
   { name: 'scf', template: 'SELECT COUNT(*) FROM ' },
   { name: 'cte', template: 'WITH ${name} AS (\n  SELECT ${}\n)\nSELECT * FROM ${name}' },
   { name: 'wex', template: 'WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${condition})' },
@@ -91,6 +90,7 @@ export const snippets: Snippet[] = [
 export interface Setup {
   model: Model;
   databaseName: string;
+  dialect: Dialect;
   defaultSchema: string;
   index: Map<string, Known>;
 }
@@ -222,8 +222,12 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
     if (!reading) readings.set(context, (reading = readAt(context.state, context.pos, index)));
     return reading;
   };
-  const keywords = keywordCompletionSource(tsql, true);
-  const names = schemaCompletionSource({ dialect: tsql, schema: schema as unknown as SQLNamespace, defaultSchema });
+  const database = model.databases.find((d) => d.name === databaseName) ?? model.databases[0];
+  const dialect = dialectOf(database?.driver);
+  const { language } = dialect;
+  const keywords = keywordCompletionSource(language, true);
+  const followTable = dialect.rows === 'limit' ? new Set([...afterTableWords, 'LIMIT']) : afterTableWords;
+  const names = schemaCompletionSource({ dialect: language, schema: schema as unknown as SQLNamespace, defaultSchema });
   const sources: CompletionSource[] = [
     (context) => {
       const at = read(context);
@@ -232,7 +236,7 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
       const result = keywords(context) as CompletionResult | null;
       if (!result || !at.afterTable) return result;
       const joining = at.afterTable.joining;
-      const options = result.options.filter((o) => afterTableWords.has(o.label)).map((o) => (joining && o.label === 'ON' ? { ...o, boost: (o.boost ?? 0) + onBoost } : o));
+      const options = result.options.filter((o) => followTable.has(o.label)).map((o) => (joining && o.label === 'ON' ? { ...o, boost: (o.boost ?? 0) + onBoost } : o));
       return { ...result, options };
     },
     // Where a table takes an alias, the tables come from here, written with one; in a [quoted name], from
@@ -243,11 +247,13 @@ export function sqlSupport(model: Model, databaseName: string | undefined, used:
     },
     (context) => withRanks(columns(context, read(context), model), ranked),
     (context) => withRanks(tables(context, read(context), model, index), ranked),
-    (context) => withRanks(snippetsAt(context, read(context)), ranked),
+    (context) => withRanks(snippetsAt(context, read(context), dialect), ranked),
     (context) => withRanks(joins(context, read(context), model, databaseName), ranked),
   ];
-  const databaseNameHere = (model.databases.find((d) => d.name === databaseName) ?? model.databases[0])?.name ?? '';
-  return [setup.of({ model, databaseName: databaseNameHere, defaultSchema, index }), new LanguageSupport(tsql.language, sources.map((autocomplete) => tsql.language.data.of({ autocomplete })))];
+  return [
+    setup.of({ model, databaseName: database?.name ?? '', dialect, defaultSchema, index }),
+    new LanguageSupport(language.language, sources.map((autocomplete) => language.language.data.of({ autocomplete }))),
+  ];
 }
 
 function withRanks(result: CompletionResult | null, ranked: (options: Keyed[]) => Keyed[]): CompletionResult | null {
@@ -276,11 +282,12 @@ function joins(context: CompletionContext, reading: Reading, model: Model, datab
 
 /** Columns where a column belongs, after ON the conditions that join on the keys, and after * the columns. */
 function columns(context: CompletionContext, reading: Reading, model: Model): CompletionResult | null {
+  const dialect = setupOf(context.state)?.dialect;
   if (reading.quiet || reading.quoted) return null;
   if (reading.star) {
     // Only on Ctrl+Space: typed, the list would open after every *, and Enter would take it for a new line.
     if (!context.explicit) return null;
-    const options = expansions(reading, model).map((e, i): Keyed => ({
+    const options = expansions(reading, model, dialect).map((e, i): Keyed => ({
       label: context.state.sliceDoc(reading.star!.from, context.pos),
       displayLabel: `${e.count} columns`,
       detail: e.detail,
@@ -294,13 +301,13 @@ function columns(context: CompletionContext, reading: Reading, model: Model): Co
     // The alias written before the dot: in a self-join two aliases name the same table.
     const written = reading.qualifier?.length === 1 ? reading.qualifier[0].toLowerCase() : undefined;
     const table = reading.scope.find((s) => s.depth === 0 && s.known === known && (written === undefined || s.name.toLowerCase() === written));
-    const options = known.suggestions.children.map((c, i) => leading(column(c, i, ownColumnBoost, '', 0, known), reading.by, table, c.label));
+    const options = known.suggestions.children.map((c, i) => leading(column(c, i, ownColumnBoost, '', 0, known, dialect), reading.by, table, c.label));
     return { from: reading.dotted.from, options, validFor: /^\w*$/ };
   }
   if (reading.afterDot || reading.tableSpot) return null;
   const word = context.matchBefore(/\w*$/)!;
   const options: Completion[] = [];
-  if (reading.on) options.push(...conditions(model, reading.on.joined, reading.on.earlier));
+  if (reading.on) options.push(...conditions(model, reading.on.joined, reading.on.earlier, dialect));
   const by = reading.by;
   // Where GROUP BY's list starts, in a query that aggregates: what it does not, as the select list writes it.
   if (by?.clause === 'GROUP' && by.start && by.items.some((i) => i.aggregate) && !by.items.some((i) => i.unsure)) {
@@ -313,14 +320,14 @@ function columns(context: CompletionContext, reading: Reading, model: Model): Co
     const qualify = reading.scope.length > 1;
     reading.scope.forEach((table, t) => {
       const boost = table.depth === 0 ? ownColumnBoost : outerColumnBoost;
-      table.known.suggestions.children.forEach((c, i) => options.push(leading(column(c, i, boost, qualify ? quoteName(table.name) : '', t, table.known), by, table, c.label)));
+      table.known.suggestions.children.forEach((c, i) => options.push(leading(column(c, i, boost, qualify ? quoteName(table.name, dialect) : '', t, table.known, dialect), by, table, c.label)));
     });
     // ORDER BY can read the names the select list gives; GROUP BY and WHERE cannot.
     if (by?.clause === 'ORDER') {
       by.items.forEach((item, at) => {
         if (!item.aliased || !item.name || by.written.some((w) => sameColumn(w, [item.name!.toLowerCase()]))) return;
         const detail = item.text.length > detailLongest ? `${item.text.slice(0, detailLongest - 1)}…` : item.text;
-        options.push({ label: item.name, apply: quoteName(item.name), type: 'property', detail, boost: ownColumnBoost + selectAliasBoost, sortText: String(at).padStart(4, '0') });
+        options.push({ label: item.name, apply: quoteName(item.name, dialect), type: 'property', detail, boost: ownColumnBoost + selectAliasBoost, sortText: String(at).padStart(4, '0') });
       });
     }
   }
@@ -347,8 +354,8 @@ function sameColumn(a: string[], b: string[]): boolean {
 }
 
 /** A column's suggestion, written after its table's name when `qualifier` is given; listed in table order. */
-function column(suggestion: TableSuggestions['children'][number], at: number, boost: number, qualifier: string, table: number, known: Known): Keyed {
-  const name = quoteName(suggestion.label);
+function column(suggestion: TableSuggestions['children'][number], at: number, boost: number, qualifier: string, table: number, known: Known, dialect?: Dialect): Keyed {
+  const name = quoteName(suggestion.label, dialect);
   return {
     ...suggestion,
     key: `column:${known.ref}.${suggestion.label}`,
@@ -360,10 +367,10 @@ function column(suggestion: TableSuggestions['children'][number], at: number, bo
 }
 
 /** The ON conditions between the table just joined and those before it: from the keys, never guessed. */
-function conditions(model: Model, joined: InScope, earlier: InScope[]): Completion[] {
+function conditions(model: Model, joined: InScope, earlier: InScope[], dialect?: Dialect): Completion[] {
   const out: Completion[] = [];
   const pair = (ownColumns: string[], other: InScope, otherColumns: string[]) => {
-    const text = ownColumns.map((c, i) => `${quoteName(joined.name)}.${quoteName(c)} = ${quoteName(other.name)}.${quoteName(otherColumns[i])}`).join(' AND ');
+    const text = ownColumns.map((c, i) => `${quoteName(joined.name, dialect)}.${quoteName(c, dialect)} = ${quoteName(other.name, dialect)}.${quoteName(otherColumns[i], dialect)}`).join(' AND ');
     const detail = `${localRef(model, joined.known.ref)} ↔ ${localRef(model, other.known.ref)}`;
     if (!out.some((o) => o.label === text)) out.push({ label: text, type: 'keyword', detail, boost: writtenOutBoost, key: `on:${detail}` } as Keyed);
   };
@@ -381,6 +388,7 @@ function conditions(model: Model, joined: InScope, earlier: InScope[]): Completi
  * an alias the query has not taken, as the joins after JOIN are; and the schemas, to go on with a dot.
  */
 function tables(context: CompletionContext, reading: Reading, model: Model, index: Map<string, Known>): CompletionResult | null {
+  const dialect = setupOf(context.state)?.dialect;
   if (reading.quiet || reading.quoted || reading.dotted || !reading.tableSpot || !reading.aliasable) return null;
   // Open as soon as the space after FROM or JOIN is typed: a table is all that can come there.
   const word = context.matchBefore(/\w*$/)!;
@@ -398,7 +406,7 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
     schemas.add(schemaName);
     if (schema !== undefined && schemaName.toLowerCase() !== schema) continue;
     const table = known.suggestions.self;
-    const name = schema === undefined ? quoteRef(local) : quoteName(table.label);
+    const name = schema === undefined ? quoteRef(local, dialect) : quoteName(table.label, dialect);
     options.push({
       ...table,
       key: `table:${known.ref}`,
@@ -412,7 +420,7 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
     for (const cte of ctesAt(cteScopes(context.state), context.pos).values()) {
       const written = cte.written;
       const columns = cteColumns(context.state, cte, index).map((c) => c.label);
-      options.push({ label: written, type: 'type', detail: 'CTE', apply: reading.aliased ? quoteName(written) : `${quoteName(written)} AS ${aliasFor(written, new Set(reading.taken))}`, boost: fit(columns) });
+      options.push({ label: written, type: 'type', detail: 'CTE', apply: reading.aliased ? quoteName(written, dialect) : `${quoteName(written, dialect)} AS ${aliasFor(written, new Set(reading.taken))}`, boost: fit(columns) });
     }
   }
   // The schemas, to go on with a dot, after the tables and before the keywords.
@@ -421,11 +429,11 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
 }
 
 /** The snippets, once a word is typed where a query or a clause can start: not after a dot, nor where a table goes. */
-function snippetsAt(context: CompletionContext, reading: Reading): CompletionResult | null {
+function snippetsAt(context: CompletionContext, reading: Reading, dialect: Dialect): CompletionResult | null {
   if (reading.quiet || reading.quoted || reading.afterDot || reading.dotted || reading.tableSpot || reading.star) return null;
   const word = context.matchBefore(/\w+$/);
   if (!word) return null;
-  const options = snippets.map((s): Keyed => {
+  const options = snippets.filter((s) => s.rows === undefined || s.rows === dialect.rows).map((s): Keyed => {
     const fields = s.template.includes('${');
     return {
       label: s.name,
@@ -456,7 +464,7 @@ interface Expansion {
  * is qualified with), with their alias when more than one; first without the masked, encrypted and labelled
  * ones, as a starter leaves them out, then every column.
  */
-function expansions(reading: Reading, model: Model): Expansion[] {
+function expansions(reading: Reading, model: Model, dialect?: Dialect): Expansion[] {
   const star = reading.star;
   // A bare * over a table the model does not know, or a subquery whose columns it cannot all name, covers
   // columns that cannot be written here.
@@ -472,7 +480,7 @@ function expansions(reading: Reading, model: Model): Expansion[] {
       : (findTable(model, s.known.ref)?.table.columns ?? []).filter((c) => !c.hidden).map((c) => ({ name: c.name, protected: isProtected(c), table: s })),
   );
   if (!columns.length) return [];
-  const write = (list: typeof columns) => (star.spaced ? '' : ' ') + list.map(({ name, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(name)).join(', ');
+  const write = (list: typeof columns) => (star.spaced ? '' : ' ') + list.map(({ name, table }) => (qualify ? `${quoteName(table.name, dialect)}.` : '') + quoteName(name, dialect)).join(', ');
   const open = columns.filter((c) => !c.protected);
   const left = columns.filter((c) => c.protected).map((c) => c.name);
   const all = { text: write(columns), count: columns.length, detail: 'every column', exposes: left.length > 0, left: [] };
@@ -491,7 +499,7 @@ export function starExpansion(state: EditorState): { spec: TransactionSpec; left
   const pos = state.selection.main.head;
   if (!found || !state.selection.main.empty) return null;
   const reading = readAt(state, pos, found.index);
-  const first = expansions(reading, found.model).find((e) => !e.exposes);
+  const first = expansions(reading, found.model, found.dialect).find((e) => !e.exposes);
   if (!first || !reading.star) return null;
   return { spec: { changes: { from: reading.star.from, to: pos, insert: first.text }, selection: { anchor: reading.star.from + first.text.length } }, left: first.left };
 }

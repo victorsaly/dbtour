@@ -8,11 +8,14 @@ export interface SourceConfig {
   connection?: string;
   /**
    * `${NAME}`: the variable holding the connection string queries run with, for a login of its own with
-   * db_datareader alone. Never the extract's connection.
+   * db_datareader alone. Never the extract's connection. `read-only` for a source without logins, which opens
+   * its database read-only for every query (SQLite).
    */
   reader?: string;
   /** A module to import instead of dbtour-source-<type>. */
   module?: string;
+  /** Given by dbtour, never written: the folder dbtour.yaml is in, which a relative path in it is read from. */
+  root?: string;
   [option: string]: unknown;
 }
 
@@ -99,13 +102,28 @@ export function resolveConnection(value: string | undefined, env: Record<string,
   return resolved;
 }
 
+/** The reader of a source that has no logins and opens its database read-only for each query. */
+export const readOnlyReader = 'read-only';
+
 /**
  * The connection queries run with: the source's reader, a login of its own. Refused when it is missing (exit
  * 2, with what to add), when it names the same variable as the extract's connection, or when the two
- * variables hold the same string, since then a query would run with a login that may write.
+ * variables hold the same string, since then a query would run with a login that may write. A source that
+ * opens its database read-only (`readOnly`) has no login to give: its reader is `read-only`, and nothing is
+ * resolved.
  */
-export function resolveReader(source: SourceConfig, env: Record<string, string | undefined>): string {
+export function resolveReader(source: SourceConfig, env: Record<string, string | undefined>, readOnly = false): string | undefined {
+  if (readOnly) {
+    if (source.reader === readOnlyReader) return undefined;
+    throw Object.assign(
+      new Error(`Source ${source.name} has no reader, the way dbtour runs queries: add "reader: ${readOnlyReader}" to it in ${configFile}, and each query opens the database read-only`),
+      { exitCode: 2 },
+    );
+  }
   const example = `\${DBTOUR_${source.type.toUpperCase()}_READER}`;
+  if (source.reader === readOnlyReader) {
+    throw new Error(`Source ${source.name} (${source.type}) signs in with a login, so its reader is a login too: name one with db_datareader alone as "reader: ${example}" in ${configFile}`);
+  }
   if (typeof source.reader !== 'string' || source.reader === '') {
     throw Object.assign(
       new Error(`Source ${source.name} has no reader, the login dbtour runs queries with: add "reader: ${example}" to it in ${configFile}, naming a login with db_datareader alone, and set that variable`),

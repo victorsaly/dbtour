@@ -8,8 +8,10 @@ import { checkQuery } from 'dbtour/sql';
 export interface ServedDatabase {
   name: string;
   driver: string;
-  server: string;
-  database: string;
+  server?: string;
+  database?: string;
+  /** A file's path (SQLite), in place of a server and a database. */
+  file?: string;
   reader: boolean;
   read: boolean;
   tables?: number;
@@ -34,7 +36,7 @@ export function parseServed(content: string | null | undefined): Served | undefi
     const value = JSON.parse(content) as Partial<Served>;
     if (typeof value.token !== 'string' || value.token === '' || !Array.isArray(value.sources)) return undefined;
     const served: Served = { token: value.token, sources: value.sources.filter((s) => typeof s?.name === 'string').map((s) => ({ name: s.name, reader: s.reader === true })) };
-    if (Array.isArray(value.databases) && value.databases.every((d) => typeof d?.name === 'string' && typeof d?.server === 'string')) served.databases = value.databases;
+    if (Array.isArray(value.databases) && value.databases.every((d) => typeof d?.name === 'string' && (typeof d?.server === 'string' || typeof d?.file === 'string'))) served.databases = value.databases;
     if (typeof value.current === 'string') served.current = value.current;
     if (value.setup === true) served.setup = true;
     return served;
@@ -128,7 +130,7 @@ export function databaseHref(name: string): string {
  */
 export function databaseEntries(databases: ServedDatabase[]): { number: string; name: string; href: string | undefined; tone: Tone; status: string; facts: string[] }[] {
   return databases.map((d, i) => {
-    const facts = [driverName(d.driver), `${d.database} on ${d.server}`];
+    const facts = [driverName(d.driver), d.file ?? `${d.database} on ${d.server}`];
     if (d.read && d.tables !== undefined) facts.push(`${d.tables} ${d.tables === 1 ? 'table' : 'tables'}`);
     if (d.read && d.bytes !== undefined) facts.push(formatBytes(d.bytes));
     if (d.read && d.readAt) facts.push(`read ${new Date(d.readAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`);

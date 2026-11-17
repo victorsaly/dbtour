@@ -11,7 +11,7 @@ package of its own so that dbtour's core keeps a single dependency.
 Start in one line, with nothing installed: the browser opens on a page that sets a database up step by step.
 
 ```bash
-npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p dbtour-keychain dbtour serve
+npx -y -p dbtour -p dbtour-source-mssql -p dbtour-source-sqlite -p dbtour-addon-explorer -p dbtour-keychain dbtour serve
 ```
 
 Or from a terminal, for an agent or a script:

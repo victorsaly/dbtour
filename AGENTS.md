@@ -17,9 +17,13 @@ For coding agents changing this repository. The design is in [PLAN.md](PLAN.md);
 - `packages/source-mssql`: SQL Server. `src/query.sql` is run as one batch and returns several result sets;
   `src/map.ts` turns the rows into a `Database` and is tested on fixture rows, no server needed.
   `test/e2e/` runs against SQL Server in Docker and is skipped when Docker is absent.
+- `packages/source-sqlite`: SQLite, through Node's own `node:sqlite`. `src/catalogue.ts` reads the pragmas and
+  dbstat into a `Database`, `src/parse.ts` reads what they leave out (and the comments) from each CREATE, and
+  `src/query.ts` runs one query in a process of its own, file opened read-only. Its tests make a real file
+  from `test/fixtures/shop.sql`, so they need nothing installed.
 - `packages/addon-explorer`: the page. `src/index.ts` is what `render` loads: it inlines `dist/` and the model
   into one index.html. `src/page/` is the React app that esbuild bundles into `dist/` (`npm run build`, run
-  for you before the tests). Its pure parts, `route.ts`, `graph.ts`, `layout.ts` and
+  for you before the tests). Its pure parts, `route.ts`, `graph.ts`, `layout.ts`, `dialect.ts` (each database's SQL) and
   `prompt.ts`, `catalogue.ts` and `plot.ts`, are tested in Node; the components by `test/e2e/` in Google
   Chrome, skipped when there is none. `fonts/` holds the two OFL fonts the build inlines; `src/mark.ts` is the
   logo's geometry, which `npm run brand` draws into `brand/`. The look is recorded in `DESIGN.md`.

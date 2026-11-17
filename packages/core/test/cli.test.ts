@@ -83,7 +83,7 @@ test('extract runs each source, writes schema.json and exits 1 when a source fai
   const load = async () => ({ extract: async (config: unknown) => { seen.push(config); return database; } });
   const a = io();
   assert.equal(await main(['extract'], { cwd, env: { DBTOUR_FAKE: 'Server=x' }, load, ...a.io }), 0);
-  assert.deepEqual(seen, [{ type: 'fake', name: 'Shop', connection: 'Server=x' }]);
+  assert.deepEqual(seen, [{ type: 'fake', name: 'Shop', connection: 'Server=x', root: cwd }], 'with the folder a relative path in dbtour.yaml is read from');
   const written = JSON.parse(readFileSync(join(cwd, 'docs/dbtour/schema.json'), 'utf8'));
   assert.equal(written.dbtour, 1);
   assert.equal(written.databases[0].name, 'Shop');
@@ -281,6 +281,33 @@ test('sql picks the one source with a reader, wants --source when several have o
   const d = io();
   assert.equal(await main(['sql', 'SELECT 1', '--source', 'Nope'], { cwd, env, load, ...d.io }), 1);
   assert.match(d.err.join('\n'), /no source named Nope: Sales, Stock, Logs/);
+});
+
+test('a source that opens its database read-only runs queries with reader: read-only, and no login of its own', async () => {
+  const cwd = project();
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: fake\n    name: Notes\n    file: notes.db\n    reader: read-only\n');
+  const ran: Record<string, unknown>[] = [];
+  const load = async () => ({
+    readOnly: true as const,
+    extract: async (): Promise<never> => { throw new Error('sql never extracts'); },
+    run: async (config: Record<string, unknown>) => (ran.push(config), { columns: ['n'], rows: [[1]], truncated: false, limit: 100 }),
+  });
+  const a = io();
+  assert.equal(await main(['sql', 'SELECT 1'], { cwd, env: {}, load, ...a.io }), 0);
+  assert.deepEqual(ran, [{ type: 'fake', name: 'Notes', file: 'notes.db', reader: 'read-only', root: cwd }]);
+
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: fake\n    name: Notes\n    file: notes.db\n');
+  const b = io();
+  assert.equal(await main(['sql', 'SELECT 1'], { cwd, env: {}, load, ...b.io }), 2);
+  assert.match(b.err.join('\n'), /Notes has no reader.*add "reader: read-only"/, 'what to add is what this source takes');
+
+  // A source with logins cannot be told its reader is the extract's connection opened some other way.
+  writeFileSync(join(cwd, 'dbtour.yaml'), 'sources:\n  - type: fake\n    name: Shop\n    connection: ${A}\n    reader: read-only\n');
+  const logins = async () => ({ extract: async (): Promise<never> => { throw new Error('no'); }, run: async () => (ran.push({ type: '', name: '', file: '', reader: '', root: '' }), { columns: [], rows: [], truncated: false, limit: 1 }) });
+  const c = io();
+  assert.equal(await main(['sql', 'SELECT 1'], { cwd, env: { A: 'a' }, load: logins, ...c.io }), 1);
+  assert.match(c.err.join('\n'), /Shop \(fake\) signs in with a login.*reader: \$\{DBTOUR_FAKE_READER\}/);
+  assert.equal(ran.length, 1);
 });
 
 test('the review: two sources of one name are ambiguous, and sql refuses to guess which', async () => {

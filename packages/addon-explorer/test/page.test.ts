@@ -15,8 +15,10 @@ import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/p
 import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
 import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, parseServed, railStatus, statusOf } from '../src/page/served.ts';
-import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
-import { azLine, clock, formProblem, setupSteps, startCommand, stepSummary, suggestName, took, type SetupForm } from '../src/page/setup.ts';
+import { dialectOf } from '../src/page/dialect.ts';
+import { formatQuery } from '../src/page/format.ts';
+import { completionSchema, joinCompletions, quoteName, quoteRef, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
+import { azLine, clock, fileName, formProblem, setupSteps, startCommand, stepSummary, suggestName, took, type SetupForm } from '../src/page/setup.ts';
 import { startCommand as coreStart } from '../../core/src/cli.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
 import { logoSvg, markSvg, markDataUri, markPulse, wordmarkDb, wordmarkTour } from '../src/mark.ts';
@@ -227,11 +229,15 @@ test('a table\'s place by rows reads as words, and only tables with stats are co
   assert.deepEqual([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111].map(ordinal), ['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd', '101st', '111th']);
 });
 
-test('the size terms say what each figure is, naming the database', () => {
-  const terms = sizeTerms('SQL Server');
+test('the size terms say what each figure is, as each database counts it', () => {
+  const terms = sizeTerms('mssql');
   assert.equal(terms.rows, "SQL Server's own count of the rows, an estimate: no row is read to make it.");
-  assert.match(terms.data, /^The pages the rows sit on/);
+  assert.match(terms.data, /^The pages the rows sit on: the table itself, its heap or clustered index/);
   assert.match(terms.indexes, /^The pages every other index takes/);
+  const lite = sizeTerms('sqlite');
+  assert.equal(lite.rows, 'Counted from the cells of its pages in the file, as it was when read: no row is read to make it.');
+  assert.doesNotMatch(lite.data, /heap|clustered/);
+  assert.match(sizeTerms('postgres').rows, /^PostgreSQL's own count/);
 });
 
 test('a profile rises for keys and the plot path has one pulse per column', () => {
@@ -444,6 +450,29 @@ test('a starter query: the table\'s columns, a join for a name-like column of ea
   assert.match(starterQuery(shop(), 'dbo.Customers'), /^-- dbo\.Customers\.\n/);
 });
 
+test('a SQLite table\'s starter asks for its first rows with LIMIT, and its dialect says how its reader is named', () => {
+  const model = shop();
+  model.databases[0].driver = 'sqlite';
+  assert.equal(starterQuery(model, 'dbo.vOrderTotals'), '-- dbo.vOrderTotals.\nSELECT\n    vot.OrderId,\n    vot.Total\nFROM dbo.vOrderTotals AS vot\nLIMIT 100;');
+  assert.match(starterQuery(model, 'dbo.Customers'), /\nORDER BY c\.Id DESC\nLIMIT 100;$/);
+  assert.match(sqlPrompt(model, 'SELECT 1', 'Shop'), /\(SQLite\).* a LIMIT or a filter/);
+  assert.deepEqual([dialectOf('sqlite').label, dialectOf('sqlite').reader], ['SQLite', 'read-only']);
+  assert.deepEqual([dialectOf('mssql').label, dialectOf(undefined).label], ['T-SQL', 'T-SQL']);
+  assert.deepEqual([dialectOf('postgres').label, dialectOf('postgres').reader, dialectOf('postgres') === dialectOf('postgres')], ['SQL', '${DBTOUR_POSTGRES_READER}', true]);
+  assert.equal(formatQuery('select id from orders where total>1 limit 5', dialectOf('sqlite')), 'SELECT\n  id\nFROM\n  orders\nWHERE\n  total > 1\nLIMIT\n  5');
+});
+
+test('a name is quoted as its database needs it: [brackets] in T-SQL, "double quotes" in SQLite, each with its own reserved words', () => {
+  const lite = dialectOf('sqlite');
+  assert.deepEqual(['Orders', 'limit', 'Order', 'a]b', 'a"b', 'Line No'].map((n) => quoteName(n, lite)), ['Orders', '"limit"', '"Order"', '"a]b"', '"a""b"', '"Line No"']);
+  assert.equal(quoteName('limit'), 'limit', 'a word T-SQL does not reserve');
+  assert.equal(quoteRef('main.limit', lite), 'main."limit"');
+  const model = shop();
+  model.databases[0].driver = 'sqlite';
+  model.databases[0].schemas[0].tables.find((t) => t.name === 'Customers')!.columns[1].name = 'limit';
+  assert.match(starterQuery(model, 'dbo.Customers'), /\bc\."limit",/);
+});
+
 test('a starter leaves protected columns out and says which, quotes a name SQL would misread, and uses local names', () => {
   const described = starterQuery(describe(shop()), 'dbo.Orders');
   assert.match(described, /^-- dbo\.Orders with what it references\.\n-- Masked, encrypted and labelled columns are left out: Status, CreatedAt\. Add them if the question needs them\.\n/);
@@ -595,19 +624,35 @@ test('a served home: the databases set up, numbered, each with its facts, its li
   const databases = [
     { name: 'Shop', driver: 'mssql', server: 'shop.example', database: 'Shop', reader: true, read: true, tables: 35, bytes: 1288490188, readAt: '2026-11-01T18:54:00.000Z' },
     { name: 'Logs', driver: 'mssql', server: 'logs.example', database: 'AppLogs', reader: false, read: false },
+    { name: 'notes', driver: 'sqlite', file: '/Users/ann/notes.db', reader: true, read: true, tables: 4 },
   ];
   const served = parseServed(JSON.stringify({ token: 't', sources: [], databases, current: 'Shop' }));
-  assert.deepEqual([served?.databases?.length, served?.current], [2, 'Shop']);
+  assert.deepEqual([served?.databases?.length, served?.current], [3, 'Shop'], 'a file, with no server, among them');
   assert.equal(parseServed(JSON.stringify({ token: 't', sources: [], databases: [{ nope: 1 }] }))?.databases, undefined, 'only what reads as databases');
   assert.deepEqual(databaseEntries(databases), [
     { number: '001', name: 'Shop', href: '/db/Shop/', tone: 'live', status: 'reader', facts: ['SQL Server', 'Shop on shop.example', '35 tables', '1.2 GB', 'read 1 Nov 2026'] },
     { number: '002', name: 'Logs', href: undefined, tone: 'idle', status: 'no reader', facts: ['SQL Server', 'AppLogs on logs.example', 'not read yet: dbtour read Logs'] },
+    { number: '003', name: 'notes', href: '/db/notes/', tone: 'live', status: 'reader', facts: ['SQLite', '/Users/ann/notes.db', '4 tables'] },
   ]);
 });
 
 test('the served home says when it can set up a database', () => {
   assert.equal(parseServed('{"token":"t","sources":[],"databases":[],"setup":true}')?.setup, true);
   assert.equal(parseServed('{"token":"t","sources":[],"databases":[]}')?.setup, undefined);
+});
+
+test('a SQLite file in the setup: named after the file, checked for its path, its sign-in and reader each a line', () => {
+  assert.deepEqual([fileName('~/data/shop orders.db'), fileName('C:\\data\\Shop.sqlite3'), fileName('notes'), fileName('')], ['shop-orders', 'Shop', 'notes', '']);
+  const file: SetupForm = { type: 'sqlite', server: '', database: '', file: '~/data/shop orders.db', name: 'shop-orders', signIn: 'az', user: '', password: '' };
+  assert.equal(formProblem(1, file), undefined, 'no server or database for a file');
+  assert.match(formProblem(1, { ...file, file: ' ' }) ?? '', /path to the SQLite file/);
+  assert.equal(formProblem(2, file), undefined);
+  assert.equal(stepSummary(1, file, {}), '~/data/shop orders.db');
+  assert.equal(stepSummary(1, { ...file, name: 'Orders' }, {}), '~/data/shop orders.db, called Orders');
+  assert.equal(stepSummary(2, file, {}), 'None: a file, opened read-only');
+  assert.equal(stepSummary(3, file, {}), 'It opened, and is saved');
+  assert.equal(stepSummary(4, file, { reader: 'read-only' }), 'Yes: queries open the file read-only');
+  assert.equal(stepSummary(4, file, {}), 'None for now: the page shows the structure, and runs no query');
 });
 
 test('the setup: five steps, a name suggested from the database, each step checked before it is sent', () => {
@@ -618,7 +663,7 @@ test('the setup: five steps, a name suggested from the database, each step check
   assert.equal(suggestName(''), '');
   assert.equal(suggestName('x'.repeat(80)).length, 64);
 
-  const form: SetupForm = { type: 'mssql', server: 'shop.example', database: 'Shop', name: 'Shop', signIn: 'az', user: '', password: '' };
+  const form: SetupForm = { type: 'mssql', server: 'shop.example', database: 'Shop', file: '', name: 'Shop', signIn: 'az', user: '', password: '' };
   assert.equal(formProblem(1, form), undefined);
   assert.match(formProblem(1, { ...form, server: ' ' }) ?? '', /server/);
   assert.match(formProblem(1, { ...form, database: '' }) ?? '', /database/);

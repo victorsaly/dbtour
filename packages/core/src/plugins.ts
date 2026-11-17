@@ -35,6 +35,11 @@ export interface Source {
   extract: Extract;
   /** Absent from a source that cannot run queries, or from one published before it could. */
   run?: Run;
+  /**
+   * The source has no logins, and run() opens its database read-only, so writing is refused there and not by a
+   * login's rights: its reader is `read-only` (SQLite).
+   */
+  readOnly?: true;
   setup?: Setup;
 }
 
@@ -55,9 +60,10 @@ export async function loadSource(source: SourceConfig, importer: Importer = (s) 
   }
   const extract = (loaded as { extract?: unknown } | null)?.extract;
   if (typeof extract !== 'function') throw new Error(`${name} does not export extract(config), so it is not a dbtour source`);
-  const { run, connectionString, readerState, readerStatements, createReader, readerRights } = loaded as Partial<Record<string, unknown>>;
+  const { run, readOnly, connectionString, readerState, readerStatements, createReader, readerRights } = loaded as Partial<Record<string, unknown>>;
   const found: Source = { extract: extract as Extract };
   if (typeof run === 'function') found.run = run as Run;
+  if (readOnly === true) found.readOnly = true;
   if ([connectionString, readerState, readerStatements, createReader, readerRights].every((f) => typeof f === 'function')) {
     found.setup = { connectionString, readerState, readerStatements, createReader, readerRights } as Setup;
   }

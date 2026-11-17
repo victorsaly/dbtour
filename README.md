@@ -5,7 +5,7 @@
 
 **Schema docs for your database, kept in your repository, for people and agents.**
 
-[![version](https://img.shields.io/badge/version-0.10.2-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.11.0-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 
 </div>
@@ -14,19 +14,21 @@ dbtour reads a database, writes what it finds to one model file in your reposito
 Markdown GitHub shows with diagrams, and as a page developers search, follow relations in and hand to an agent.
 
 It reads the catalogue, never the rows, and an agent gets the same model through `dbtour mcp` and the
-Claude Code plugin ([below](#ask-claude)). SQL Server first; other databases follow the [plan](PLAN.md).
+Claude Code plugin ([below](#ask-claude)). SQL Server and SQLite today; other databases follow the
+[plan](PLAN.md).
 
 ## Start in one line
 
 To look at a database on your own machine, with nothing installed and nothing to learn first:
 
 ```bash
-npx -y -p dbtour -p dbtour-source-mssql -p dbtour-addon-explorer -p dbtour-keychain dbtour serve
+npx -y -p dbtour -p dbtour-source-mssql -p dbtour-source-sqlite -p dbtour-addon-explorer -p dbtour-keychain dbtour serve
 ```
 
 Your browser opens on a page that sets the database up in five steps: where it is, how dbtour signs in (Entra
 through `az`, or a login whose password goes to the system's keychain), a test, a read-only login for queries
-if you want one, and the read. Then its page opens. Run the same line again to come back to it, or to add
+if you want one, and the read. A SQLite file takes the same steps with less in them: its path, no sign-in, a
+test, a yes to queries (each opens the file read-only), and the read. Then its page opens. Run the same line again to come back to it, or to add
 another. [Your databases, without a project](#your-databases-without-a-project) says what it keeps where.
 
 ## Use it in a project
@@ -62,6 +64,25 @@ notes: dbtour.notes.yaml          # optional
 addons:
   - explorer                      # the page; leave out for Markdown only
 ```
+
+A SQLite file needs no server, no login and no driver: the source uses the SQLite Node ships.
+
+```bash
+npm install --save-dev dbtour dbtour-source-sqlite dbtour-addon-explorer
+```
+
+```yaml
+sources:
+  - type: sqlite
+    name: Shop
+    file: shop.db                 # from the folder dbtour.yaml is in; a path is no secret
+    reader: read-only             # optional: dbtour sql and the page run queries, the file opened read-only
+```
+
+It reads what SQLite keeps: tables, views, keys, relations, indexes, CHECKs, generated columns, collations,
+triggers, and each table's rows and bytes from the file's pages. SQLite keeps no descriptions, but it keeps
+each `CREATE TABLE` as written, so a comment there is one: on a column's line, or the line before it, it
+describes the column; on the line of the opening bracket, the table.
 
 Several sources document several databases. With more than one, each table is named with its database,
 `Sales:dbo.Customers`, so two databases that both have a `dbo.Customers` keep them apart: in the Markdown
@@ -167,6 +188,9 @@ Through the MCP server they go to the model provider your agent uses. What dbtou
 what a name can reach (another database, a linked server) is the reader's permissions, so keep the reader to
 this database alone.
 
+A SQLite source has no logins, so its reader is `reader: read-only`: each query runs in a process of its own
+with the file opened read-only, where SQLite refuses any write, and the process is killed at 30 seconds.
+
 On the page, `dbtour serve` runs it the same way:
 
 ```bash
@@ -197,7 +221,8 @@ dbtour read Shop                                         # its model and its pag
 dbtour serve                                             # the home, at http://127.0.0.1:4321
 ```
 
-A login signs in with `--sign-in login --user <login> --password-stdin`: the password comes only on stdin, and
+A SQLite file is `dbtour add notes --file ~/data/notes.db`, tested by opening it read-only, then `dbtour reader
+notes --read-only` to let queries read it: no password, so no keychain. A login signs in with `--sign-in login --user <login> --password-stdin`: the password comes only on stdin, and
 `--password` is refused, as a command line ends up in shell history and an agent's log. `dbtour reader --create`
 makes `dbtour_reader` with `db_datareader` alone and a password nobody sees, once you confirm by naming the
 database again. With several databases set up, `sql`, `mcp` and `serve --database` must name one; dbtour never
