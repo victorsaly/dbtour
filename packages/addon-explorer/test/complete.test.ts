@@ -169,6 +169,14 @@ test('a SQLite database is written as SQLite: LIMIT where T-SQL has TOP, and SQL
   assert.equal((await applies('SELECT | FROM [dbo].[Orders]', { explicit: true, model }))[0], 'Id', 'bracketed names, which SQLite reads too');
 });
 
+test('in SQLite, a column named with a word SQLite reserves is written in "double quotes"', async () => {
+  const model = shop();
+  model.databases[0].driver = 'sqlite';
+  model.databases[0].schemas[0].tables.find((t) => t.name === 'Customers')!.columns[1].name = 'limit';
+  assert.ok((await applies('SELECT lim| FROM dbo.Customers', { model })).includes('"limit"'));
+  assert.ok((await applies('SELECT c.| FROM dbo.Customers c', { model, explicit: true })).includes('"limit"'));
+});
+
 test('what was picked before comes first among equals, never above a better match', async () => {
   const used = { 'column:dbo.Orders.Total': 5 };
   const top = await suggest('SELECT | FROM dbo.Orders', { explicit: true, used });

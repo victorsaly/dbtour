@@ -3,41 +3,27 @@
 // cannot run a query (it is a static file), so running stays with dbtour sql and the MCP query tool.
 import { driverName, formatCount } from 'dbtour/markdown';
 import { findTable, localRef, relationsOf, tableRef, type Column, type Database, type Model } from 'dbtour/model';
-import { dialectOf, firstRows } from './dialect.ts';
+import { dialectOf, everyReserved, firstRows, type Dialect } from './dialect.ts';
 import { prompt } from './prompt.ts';
 import { sqlTokens } from './sql.ts';
 
 /** The first hundred rows, as dbtour sql returns by default: enough to see what a table holds. */
 const starterRows = 100;
 
-// The words T-SQL reserves, and GO, which the query check refuses as a statement too: a column or table so
-// named is written [bracketed], so a starter never trips the check or the parser.
-const reserved = new Set(
-  ('ADD ALL ALTER AND ANY AS ASC AUTHORIZATION BACKUP BEGIN BETWEEN BREAK BROWSE BULK BY CASCADE CASE CHECK ' +
-    'CHECKPOINT CLOSE CLUSTERED COALESCE COLLATE COLUMN COMMIT COMPUTE CONSTRAINT CONTAINS CONTAINSTABLE CONTINUE ' +
-    'CONVERT CREATE CROSS CURRENT CURRENT_DATE CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR DATABASE DBCC ' +
-    'DEALLOCATE DECLARE DEFAULT DELETE DENY DESC DISK DISTINCT DISTRIBUTED DOUBLE DROP DUMP ELSE END ERRLVL ESCAPE ' +
-    'EXCEPT EXEC EXECUTE EXISTS EXIT EXTERNAL FETCH FILE FILLFACTOR FOR FOREIGN FREETEXT FREETEXTTABLE FROM FULL ' +
-    'FUNCTION GO GOTO GRANT GROUP HAVING HOLDLOCK IDENTITY IDENTITY_INSERT IDENTITYCOL IF IN INDEX INNER INSERT ' +
-    'INTERSECT INTO IS JOIN KEY KILL LEFT LIKE LINENO LOAD MERGE NATIONAL NOCHECK NONCLUSTERED NOT NULL NULLIF OF ' +
-    'OFF OFFSETS ON OPEN OPENDATASOURCE OPENQUERY OPENROWSET OPENXML OPTION OR ORDER OUTER OVER PERCENT PIVOT PLAN ' +
-    'PRECISION PRIMARY PRINT PROC PROCEDURE PUBLIC RAISERROR READ READTEXT RECONFIGURE REFERENCES REPLICATION ' +
-    'RESTORE RESTRICT RETURN REVERT REVOKE RIGHT ROLLBACK ROWCOUNT ROWGUIDCOL RULE SAVE SCHEMA SECURITYAUDIT SELECT ' +
-    'SEMANTICKEYPHRASETABLE SEMANTICSIMILARITYDETAILSTABLE SEMANTICSIMILARITYTABLE SESSION_USER SET SETUSER ' +
-    'SHUTDOWN SOME STATISTICS SYSTEM_USER TABLE TABLESAMPLE TEXTSIZE THEN TO TOP TRAN TRANSACTION TRIGGER TRUNCATE ' +
-    'TRY_CONVERT TSEQUAL UNION UNIQUE UNPIVOT UPDATE UPDATETEXT USE USER VALUES VARYING VIEW WAITFOR WHEN WHERE ' +
-    'WHILE WITH WITHIN WRITETEXT').split(' '),
-);
-
-/** A name as T-SQL needs it: as it is when plain, [bracketed] (with ] doubled) when not, or when reserved. */
-export function quoteName(name: string): string {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !reserved.has(name.toUpperCase()) ? name : `[${name.replace(/]/g, ']]')}]`;
+/**
+ * A name as its database needs it (T-SQL unless the dialect says otherwise): as it is when plain and not a
+ * word the database reserves, else quoted, [bracketed] with ] doubled in T-SQL, "quoted" with " doubled in
+ * SQLite, so a starter never trips the check or the parser.
+ */
+export function quoteName(name: string, dialect: Dialect = dialectOf('mssql')): string {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !dialect.reserved.has(name.toUpperCase())) return name;
+  return dialect.quote === '[' ? `[${name.replace(/]/g, ']]')}]` : `"${name.replace(/"/g, '""')}"`;
 }
 
 /** schema.table, each part quoted as needed. */
-export function quoteRef(ref: string): string {
+export function quoteRef(ref: string, dialect: Dialect = dialectOf('mssql')): string {
   const dot = ref.indexOf('.');
-  return `${quoteName(ref.slice(0, dot))}.${quoteName(ref.slice(dot + 1))}`;
+  return `${quoteName(ref.slice(0, dot), dialect)}.${quoteName(ref.slice(dot + 1), dialect)}`;
 }
 
 /** Masked, encrypted or labelled: someone protected it, so a starter leaves it out and says so. */
@@ -54,7 +40,7 @@ export function aliasFor(table: string, taken: Set<string>): string {
   const initials = words.map((w) => w[0].toLowerCase()).join('').replace(/[^a-z0-9]/g, '');
   const base = /^[a-z]/.test(initials) ? initials : `t${initials}`;
   let alias = base;
-  for (let n = 2; taken.has(alias) || reserved.has(alias.toUpperCase()); n++) alias = `${base}${n}`;
+  for (let n = 2; taken.has(alias) || everyReserved.has(alias.toUpperCase()); n++) alias = `${base}${n}`;
   taken.add(alias);
   return alias;
 }
@@ -84,11 +70,14 @@ export function starterQuery(model: Model, ref: string): string {
   const found = findTable(model, ref);
   if (!found) return `-- ${ref} is not a table dbtour knows.`;
   const { table } = found;
+  const dialect = dialectOf(found.database.driver);
+  const quote = (name: string) => quoteName(name, dialect);
+  const quoteTable = (ref: string) => quoteRef(ref, dialect);
   const taken = new Set<string>();
   const alias = aliasFor(table.name, taken);
   const kept = table.columns.filter((c) => !isProtected(c));
   const left = table.columns.filter(isProtected);
-  const select = kept.map((c) => `${alias}.${quoteName(c.name)}`);
+  const select = kept.map((c) => `${alias}.${quote(c.name)}`);
   const joins: string[] = [];
   for (const relation of relationsOf(model, found.ref).out) {
     const target = findTable(model, relation.to.table);
@@ -96,21 +85,21 @@ export function starterQuery(model: Model, ref: string): string {
     const show = nameColumn(target.table.columns, target.table.primaryKey);
     if (!show) continue;
     const other = aliasFor(target.table.name, taken);
-    const on = relation.from.columns.map((from, i) => `${other}.${quoteName(relation.to.columns[i])} = ${alias}.${quoteName(from)}`).join(' AND ');
-    joins.push(`LEFT JOIN ${quoteRef(localRef(model, target.ref))} AS ${other} ON ${on}`);
-    select.push(`${other}.${quoteName(show.name)} AS ${quoteName(singular(target.table.name) + show.name)}`);
+    const on = relation.from.columns.map((from, i) => `${other}.${quote(relation.to.columns[i])} = ${alias}.${quote(from)}`).join(' AND ');
+    joins.push(`LEFT JOIN ${quoteTable(localRef(model, target.ref))} AS ${other} ON ${on}`);
+    select.push(`${other}.${quote(show.name)} AS ${quote(singular(target.table.name) + show.name)}`);
   }
   const lines = [`-- ${localRef(model, found.ref)}${joins.length ? ' with what it references' : ''}.`];
   if (left.length) lines.push(`-- Masked, encrypted and labelled columns are left out: ${left.map((c) => c.name).join(', ')}. Add them if the question needs them.`);
   // Every column protected: how many rows, rather than * selecting what the comment says was left out.
   if (!select.length) {
-    lines.push('SELECT COUNT(*) AS [Rows]', `FROM ${quoteRef(localRef(model, found.ref))} AS ${alias};`);
+    lines.push(`SELECT COUNT(*) AS ${dialect.quote === '[' ? '[Rows]' : '"Rows"'}`, `FROM ${quoteTable(localRef(model, found.ref))} AS ${alias};`);
     return lines.join('\n');
   }
-  const rows = firstRows(dialectOf(found.database.driver), starterRows);
+  const rows = firstRows(dialect, starterRows);
   lines.push(rows.select, ...select.map((s, i, all) => `    ${s}${i < all.length - 1 ? ',' : ''}`));
-  lines.push(`FROM ${quoteRef(localRef(model, found.ref))} AS ${alias}`, ...joins);
-  if (table.primaryKey?.length) lines.push(`ORDER BY ${table.primaryKey.map((k) => `${alias}.${quoteName(k)} DESC`).join(', ')}`);
+  lines.push(`FROM ${quoteTable(localRef(model, found.ref))} AS ${alias}`, ...joins);
+  if (table.primaryKey?.length) lines.push(`ORDER BY ${table.primaryKey.map((k) => `${alias}.${quote(k)} DESC`).join(', ')}`);
   if (rows.end) lines.push(rows.end);
   lines[lines.length - 1] += ';';
   return lines.join('\n');
@@ -251,12 +240,13 @@ export interface JoinSuggestion extends Suggestion {
  * point at it.
  */
 export function joinCompletions(model: Model, sql: string, databaseName: string | undefined): JoinSuggestion[] {
+  const dialect = dialectOf(databaseNamed(model, databaseName).driver);
   const present = queryTables(model, sql, databaseName);
   const aliases = queryAliases(model, sql, databaseName);
   const taken = new Set(Object.values(aliases).map((a) => a.toLowerCase()));
   const offered = new Set<string>();
   const suggestions: JoinSuggestion[] = [];
-  const nameOf = (ref: string) => aliases[ref] ?? quoteRef(localRef(model, ref));
+  const nameOf = (ref: string) => aliases[ref] ?? quoteRef(localRef(model, ref), dialect);
   for (const ref of present) {
     const { out, in: inward } = relationsOf(model, ref);
     const pairs = [
@@ -269,8 +259,8 @@ export function joinCompletions(model: Model, sql: string, databaseName: string 
       if (!target) continue;
       offered.add(pair.other);
       const alias = aliasFor(target.table.name, taken);
-      const on = pair.otherColumns.map((c, i) => `${alias}.${quoteName(c)} = ${nameOf(ref)}.${quoteName(pair.ownColumns[i])}`).join(' AND ');
-      const local = quoteRef(localRef(model, pair.other));
+      const on = pair.otherColumns.map((c, i) => `${alias}.${quoteName(c, dialect)} = ${nameOf(ref)}.${quoteName(pair.ownColumns[i], dialect)}`).join(' AND ');
+      const local = quoteRef(localRef(model, pair.other), dialect);
       suggestions.push({ label: localRef(model, pair.other), type: 'type', detail: pair.detail, apply: `${local} AS ${alias} ON ${on}` });
     }
   }

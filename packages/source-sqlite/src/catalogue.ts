@@ -40,6 +40,7 @@ export function readCatalogue(db: DatabaseSync, options: ReadOptions): Database 
   const sqlOf = new Map(schema.map((row) => [`${row.type}:${row.name}`, row.sql ?? '']));
   const relations: Relation[] = [];
   const tables: Table[] = [];
+  const named = new Map(listed.map((t) => [t.name.toLowerCase(), t.name]));
 
   for (const entry of listed) {
     // A virtual table's shadow tables hold its data: the virtual table stands for them.
@@ -49,8 +50,10 @@ export function readCatalogue(db: DatabaseSync, options: ReadOptions): Database 
     const parsed = parseTable(view ? '' : text);
     const rows = all<ColumnRow>('SELECT cid, name, type, "notnull", dflt_value, pk, hidden FROM pragma_table_xinfo(?)', entry.name);
     const keyColumns = rows.filter((r) => r.pk > 0).sort((a, b) => a.pk - b.pk).map((r) => r.name);
-    // An INTEGER PRIMARY KEY is the rowid itself: never NULL, and SQLite gives it the next number.
-    const rowid = !entry.wr && keyColumns.length === 1 ? rows.find((r) => r.name === keyColumns[0] && /^integer$/i.test(r.type)) : undefined;
+    const keyIndex = view ? undefined : all<IndexListRow>('SELECT name, origin FROM pragma_index_list(?)', entry.name).find((i) => i.origin === 'pk');
+    // An INTEGER PRIMARY KEY is the rowid itself: never NULL, and SQLite gives it the next number. Not when
+    // it has an index of its own, as `INTEGER PRIMARY KEY DESC` does, which SQLite keeps as an ordinary key.
+    const rowid = !entry.wr && !keyIndex && keyColumns.length === 1 ? rows.find((r) => r.name === keyColumns[0] && /^integer$/i.test(r.type)) : undefined;
     const table: Table = { name: entry.name, kind: view ? 'view' : 'table', columns: [], indexes: [], constraints: [] };
     if (parsed.description) table.description = parsed.description;
     if (view) table.definition = text;
@@ -75,8 +78,7 @@ export function readCatalogue(db: DatabaseSync, options: ReadOptions): Database 
     }
     if (keyColumns.length) {
       table.primaryKey = keyColumns;
-      const own = all<IndexListRow>('SELECT name, origin FROM pragma_index_list(?)', entry.name).find((i) => i.origin === 'pk');
-      table.constraints.unshift({ name: parsed.primaryName ?? own?.name ?? '(primary key)', kind: 'primary', columns: keyColumns });
+      table.constraints.unshift({ name: parsed.primaryName ?? keyIndex?.name ?? '(primary key)', kind: 'primary', columns: keyColumns });
     }
     for (const check of parsed.checks) table.constraints.push({ name: check.name ?? unnamed('check', table), kind: 'check', columns: [], definition: check.definition });
 
@@ -99,12 +101,16 @@ export function readCatalogue(db: DatabaseSync, options: ReadOptions): Database 
     const foreign = groupBy(all<ForeignRow>('SELECT id, seq, "table", "from", "to", on_update, on_delete FROM pragma_foreign_key_list(?)', entry.name), (r) => r.id);
     for (const [, keys] of [...foreign].sort(([a], [b]) => b - a)) {
       keys.sort((a, b) => a.seq - b.seq);
-      const target = keys[0].table;
+      // SQLite matches a key's table and columns without case, and the pragma gives them as REFERENCES spelt
+      // them: the names are the table's own, so the relation finds it.
+      const target = named.get(keys[0].table.toLowerCase()) ?? keys[0].table;
+      const targetColumns = all<ColumnRow>('SELECT name, pk FROM pragma_table_info(?)', target);
+      const columnOf = (name: string) => targetColumns.find((c) => c.name.toLowerCase() === name.toLowerCase())?.name ?? name;
       // A key that names no column of the table it references means that table's primary key.
-      const targetKey = keys.some((k) => k.to === null) ? all<ColumnRow>('SELECT name, pk FROM pragma_table_info(?)', target).filter((r) => r.pk > 0).sort((a, b) => a.pk - b.pk).map((r) => r.name) : [];
+      const targetKey = targetColumns.filter((r) => r.pk > 0).sort((a, b) => a.pk - b.pk).map((r) => r.name);
       const relation: Relation = {
         from: { table: `main.${entry.name}`, columns: keys.map((k) => k.from) },
-        to: { table: `main.${target}`, columns: keys.map((k, i) => k.to ?? targetKey[i] ?? '') },
+        to: { table: `main.${target}`, columns: keys.map((k, i) => (k.to === null ? (targetKey[i] ?? '') : columnOf(k.to))) },
       };
       if (keys[0].on_delete !== 'NO ACTION') relation.onDelete = keys[0].on_delete;
       if (keys[0].on_update !== 'NO ACTION') relation.onUpdate = keys[0].on_update;

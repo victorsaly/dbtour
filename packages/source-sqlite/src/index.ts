@@ -41,6 +41,14 @@ export async function extract(config: SourceConfig): Promise<Database> {
   }
 }
 
+/**
+ * The rows with each BLOB a Buffer again: the process sends one as a Uint8Array, which dbtour's answers would
+ * write as a list of numbers, and a Buffer as hex.
+ */
+function withBuffers(result: QueryResult): QueryResult {
+  return { ...result, rows: result.rows.map((row) => row.map((v) => (v instanceof Uint8Array && !Buffer.isBuffer(v) ? Buffer.from(v.buffer, v.byteOffset, v.byteLength) : v))) };
+}
+
 // The query's process runs the .ts beside this file in the repository, and the .js the build makes of it in the package.
 const queryFile = new URL(import.meta.url.endsWith('.ts') ? './query.ts' : './query.js', import.meta.url);
 
@@ -60,7 +68,7 @@ export async function run(config: SourceConfig, sql: string, options: RunOptions
         const seconds = options.timeoutMs / 1000;
         fail(new Error(`The query ran past ${seconds} ${seconds === 1 ? 'second' : 'seconds'} and was cancelled: narrow it with a filter on an indexed column, or LIMIT`));
       }, options.timeoutMs);
-      child.once('message', (message: Answer) => ('error' in message ? fail(new Error(message.error)) : done(message.result)));
+      child.once('message', (message: Answer) => ('error' in message ? fail(new Error(message.error)) : done(withBuffers(message.result))));
       child.once('error', fail);
       child.once('exit', (code, signal) => fail(new Error(`The query's process stopped (${signal ?? `exit ${code}`}) before it answered: run it again`)));
       child.send(job);

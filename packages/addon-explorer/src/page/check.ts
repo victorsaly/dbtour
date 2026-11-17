@@ -37,7 +37,7 @@ export function unknownNames(state: EditorState): Diagnostic[] {
     if (schema === undefined || !tables.has(schema)) continue;
     const written = parts.join('.');
     const nearest = closest(parts[parts.length - 1], tables.get(schema)!);
-    const fix = nearest === undefined ? undefined : [...parts.slice(0, -1), nearest].map(quoteName).join('.');
+    const fix = nearest === undefined ? undefined : [...parts.slice(0, -1), nearest].map((part) => quoteName(part, found.dialect)).join('.');
     marks.push(mark(item.at, item.to, `dbtour knows no table ${written} in ${found.databaseName}`, fix));
   }
   const tableAt = new Set(items.map((item) => item.at));
@@ -59,7 +59,7 @@ export function unknownNames(state: EditorState): Diagnostic[] {
       const columns = known.suggestions.children.map((c) => c.label);
       if (columns.some((c) => c.toLowerCase() === name.toLowerCase())) return;
       const nearest = closest(name, columns);
-      marks.push(mark(column.from, end, `${localRef(found.model, known.ref)} has no column ${name} in dbtour`, nearest === undefined ? undefined : quoteName(nearest)));
+      marks.push(mark(column.from, end, `${localRef(found.model, known.ref)} has no column ${name} in dbtour`, nearest === undefined ? undefined : quoteName(nearest, found.dialect)));
     },
   });
   return marks.sort((a, b) => a.from - b.from);

@@ -38,3 +38,12 @@ test('run cancels a query that runs past the timeout, and says what to do', asyn
   await assert.rejects(run(config, forever, { limit: 10, timeoutMs: 300 }), /ran past 0\.3 seconds and was cancelled: .*LIMIT/);
   assert.ok(Date.now() - started < 5000, 'answered at the timeout, not when SQLite gave up');
 });
+
+test('the review: an integer past 2^53 comes back whole as text, and a BLOB as bytes', async () => {
+  const config = { type: 'sqlite', name: 'Shop', ...shop() };
+  const result = await run(config, "SELECT 9007199254740993 AS big, -9007199254740993 AS low, 5 AS small, X'00AB' AS bytes", options);
+  const [[big, low, small, bytes]] = result.rows;
+  assert.deepEqual([big, low, small], ['9007199254740993', '-9007199254740993', 5]);
+  assert.ok(Buffer.isBuffer(bytes), 'bytes, which dbtour writes as hex');
+  assert.equal((bytes as Buffer).toString('hex'), '00ab');
+});

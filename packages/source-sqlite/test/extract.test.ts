@@ -86,3 +86,17 @@ test('the file is read from the folder dbtour.yaml is in, and what is wrong with
   await assert.rejects(extract({ type: 'sqlite', name: 'Shop', file: 'notes.txt', root }), /is not a SQLite database/);
   assert.equal(readOnly, true);
 });
+
+test('the review: a key names its table in any case, and an INTEGER PRIMARY KEY DESC is not the rowid', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dbtour-sqlite-'));
+  const db = new DatabaseSync(join(root, 'odd.db'));
+  db.exec(`CREATE TABLE Customers (Id INTEGER PRIMARY KEY);
+CREATE TABLE orders (customer INTEGER REFERENCES customers (ID));
+CREATE TABLE notes (id INTEGER PRIMARY KEY DESC, body TEXT);`);
+  db.close();
+  const database = await extract({ type: 'sqlite', name: 'Odd', file: 'odd.db', root });
+  assert.deepEqual(database.relations, [{ from: { table: 'main.orders', columns: ['customer'] }, to: { table: 'main.Customers', columns: ['Id'] } }], 'SQLite matches the names without case');
+  assert.equal(validate({ dbtour: 1, databases: [database], apis: [], links: [], groups: [] }).ok, true);
+  const [id] = database.schemas[0].tables.find((t) => t.name === 'notes')!.columns;
+  assert.deepEqual(id, { name: 'id', type: 'INTEGER', nullable: true }, 'its own index, NULL allowed, no number given');
+});

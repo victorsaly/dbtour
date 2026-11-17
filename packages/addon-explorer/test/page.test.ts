@@ -17,7 +17,7 @@ import { sqlTokens } from '../src/page/sql.ts';
 import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, parseServed, railStatus, statusOf } from '../src/page/served.ts';
 import { dialectOf } from '../src/page/dialect.ts';
 import { formatQuery } from '../src/page/format.ts';
-import { completionSchema, joinCompletions, quoteName, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
+import { completionSchema, joinCompletions, quoteName, quoteRef, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
 import { azLine, clock, fileName, formProblem, setupSteps, startCommand, stepSummary, suggestName, took, type SetupForm } from '../src/page/setup.ts';
 import { startCommand as coreStart } from '../../core/src/cli.ts';
 import { describe } from '../../core/test/fixtures/described.ts';
@@ -460,6 +460,17 @@ test('a SQLite table\'s starter asks for its first rows with LIMIT, and its dial
   assert.deepEqual([dialectOf('mssql').label, dialectOf(undefined).label], ['T-SQL', 'T-SQL']);
   assert.deepEqual([dialectOf('postgres').label, dialectOf('postgres').reader, dialectOf('postgres') === dialectOf('postgres')], ['SQL', '${DBTOUR_POSTGRES_READER}', true]);
   assert.equal(formatQuery('select id from orders where total>1 limit 5', dialectOf('sqlite')), 'SELECT\n  id\nFROM\n  orders\nWHERE\n  total > 1\nLIMIT\n  5');
+});
+
+test('a name is quoted as its database needs it: [brackets] in T-SQL, "double quotes" in SQLite, each with its own reserved words', () => {
+  const lite = dialectOf('sqlite');
+  assert.deepEqual(['Orders', 'limit', 'Order', 'a]b', 'a"b', 'Line No'].map((n) => quoteName(n, lite)), ['Orders', '"limit"', '"Order"', '"a]b"', '"a""b"', '"Line No"']);
+  assert.equal(quoteName('limit'), 'limit', 'a word T-SQL does not reserve');
+  assert.equal(quoteRef('main.limit', lite), 'main."limit"');
+  const model = shop();
+  model.databases[0].driver = 'sqlite';
+  model.databases[0].schemas[0].tables.find((t) => t.name === 'Customers')!.columns[1].name = 'limit';
+  assert.match(starterQuery(model, 'dbo.Customers'), /\bc\."limit",/);
 });
 
 test('a starter leaves protected columns out and says which, quotes a name SQL would misread, and uses local names', () => {

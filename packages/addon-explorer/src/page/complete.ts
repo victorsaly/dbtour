@@ -282,11 +282,12 @@ function joins(context: CompletionContext, reading: Reading, model: Model, datab
 
 /** Columns where a column belongs, after ON the conditions that join on the keys, and after * the columns. */
 function columns(context: CompletionContext, reading: Reading, model: Model): CompletionResult | null {
+  const dialect = setupOf(context.state)?.dialect;
   if (reading.quiet || reading.quoted) return null;
   if (reading.star) {
     // Only on Ctrl+Space: typed, the list would open after every *, and Enter would take it for a new line.
     if (!context.explicit) return null;
-    const options = expansions(reading, model).map((e, i): Keyed => ({
+    const options = expansions(reading, model, dialect).map((e, i): Keyed => ({
       label: context.state.sliceDoc(reading.star!.from, context.pos),
       displayLabel: `${e.count} columns`,
       detail: e.detail,
@@ -300,13 +301,13 @@ function columns(context: CompletionContext, reading: Reading, model: Model): Co
     // The alias written before the dot: in a self-join two aliases name the same table.
     const written = reading.qualifier?.length === 1 ? reading.qualifier[0].toLowerCase() : undefined;
     const table = reading.scope.find((s) => s.depth === 0 && s.known === known && (written === undefined || s.name.toLowerCase() === written));
-    const options = known.suggestions.children.map((c, i) => leading(column(c, i, ownColumnBoost, '', 0, known), reading.by, table, c.label));
+    const options = known.suggestions.children.map((c, i) => leading(column(c, i, ownColumnBoost, '', 0, known, dialect), reading.by, table, c.label));
     return { from: reading.dotted.from, options, validFor: /^\w*$/ };
   }
   if (reading.afterDot || reading.tableSpot) return null;
   const word = context.matchBefore(/\w*$/)!;
   const options: Completion[] = [];
-  if (reading.on) options.push(...conditions(model, reading.on.joined, reading.on.earlier));
+  if (reading.on) options.push(...conditions(model, reading.on.joined, reading.on.earlier, dialect));
   const by = reading.by;
   // Where GROUP BY's list starts, in a query that aggregates: what it does not, as the select list writes it.
   if (by?.clause === 'GROUP' && by.start && by.items.some((i) => i.aggregate) && !by.items.some((i) => i.unsure)) {
@@ -319,14 +320,14 @@ function columns(context: CompletionContext, reading: Reading, model: Model): Co
     const qualify = reading.scope.length > 1;
     reading.scope.forEach((table, t) => {
       const boost = table.depth === 0 ? ownColumnBoost : outerColumnBoost;
-      table.known.suggestions.children.forEach((c, i) => options.push(leading(column(c, i, boost, qualify ? quoteName(table.name) : '', t, table.known), by, table, c.label)));
+      table.known.suggestions.children.forEach((c, i) => options.push(leading(column(c, i, boost, qualify ? quoteName(table.name, dialect) : '', t, table.known, dialect), by, table, c.label)));
     });
     // ORDER BY can read the names the select list gives; GROUP BY and WHERE cannot.
     if (by?.clause === 'ORDER') {
       by.items.forEach((item, at) => {
         if (!item.aliased || !item.name || by.written.some((w) => sameColumn(w, [item.name!.toLowerCase()]))) return;
         const detail = item.text.length > detailLongest ? `${item.text.slice(0, detailLongest - 1)}…` : item.text;
-        options.push({ label: item.name, apply: quoteName(item.name), type: 'property', detail, boost: ownColumnBoost + selectAliasBoost, sortText: String(at).padStart(4, '0') });
+        options.push({ label: item.name, apply: quoteName(item.name, dialect), type: 'property', detail, boost: ownColumnBoost + selectAliasBoost, sortText: String(at).padStart(4, '0') });
       });
     }
   }
@@ -353,8 +354,8 @@ function sameColumn(a: string[], b: string[]): boolean {
 }
 
 /** A column's suggestion, written after its table's name when `qualifier` is given; listed in table order. */
-function column(suggestion: TableSuggestions['children'][number], at: number, boost: number, qualifier: string, table: number, known: Known): Keyed {
-  const name = quoteName(suggestion.label);
+function column(suggestion: TableSuggestions['children'][number], at: number, boost: number, qualifier: string, table: number, known: Known, dialect?: Dialect): Keyed {
+  const name = quoteName(suggestion.label, dialect);
   return {
     ...suggestion,
     key: `column:${known.ref}.${suggestion.label}`,
@@ -366,10 +367,10 @@ function column(suggestion: TableSuggestions['children'][number], at: number, bo
 }
 
 /** The ON conditions between the table just joined and those before it: from the keys, never guessed. */
-function conditions(model: Model, joined: InScope, earlier: InScope[]): Completion[] {
+function conditions(model: Model, joined: InScope, earlier: InScope[], dialect?: Dialect): Completion[] {
   const out: Completion[] = [];
   const pair = (ownColumns: string[], other: InScope, otherColumns: string[]) => {
-    const text = ownColumns.map((c, i) => `${quoteName(joined.name)}.${quoteName(c)} = ${quoteName(other.name)}.${quoteName(otherColumns[i])}`).join(' AND ');
+    const text = ownColumns.map((c, i) => `${quoteName(joined.name, dialect)}.${quoteName(c, dialect)} = ${quoteName(other.name, dialect)}.${quoteName(otherColumns[i], dialect)}`).join(' AND ');
     const detail = `${localRef(model, joined.known.ref)} ↔ ${localRef(model, other.known.ref)}`;
     if (!out.some((o) => o.label === text)) out.push({ label: text, type: 'keyword', detail, boost: writtenOutBoost, key: `on:${detail}` } as Keyed);
   };
@@ -387,6 +388,7 @@ function conditions(model: Model, joined: InScope, earlier: InScope[]): Completi
  * an alias the query has not taken, as the joins after JOIN are; and the schemas, to go on with a dot.
  */
 function tables(context: CompletionContext, reading: Reading, model: Model, index: Map<string, Known>): CompletionResult | null {
+  const dialect = setupOf(context.state)?.dialect;
   if (reading.quiet || reading.quoted || reading.dotted || !reading.tableSpot || !reading.aliasable) return null;
   // Open as soon as the space after FROM or JOIN is typed: a table is all that can come there.
   const word = context.matchBefore(/\w*$/)!;
@@ -404,7 +406,7 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
     schemas.add(schemaName);
     if (schema !== undefined && schemaName.toLowerCase() !== schema) continue;
     const table = known.suggestions.self;
-    const name = schema === undefined ? quoteRef(local) : quoteName(table.label);
+    const name = schema === undefined ? quoteRef(local, dialect) : quoteName(table.label, dialect);
     options.push({
       ...table,
       key: `table:${known.ref}`,
@@ -418,7 +420,7 @@ function tables(context: CompletionContext, reading: Reading, model: Model, inde
     for (const cte of ctesAt(cteScopes(context.state), context.pos).values()) {
       const written = cte.written;
       const columns = cteColumns(context.state, cte, index).map((c) => c.label);
-      options.push({ label: written, type: 'type', detail: 'CTE', apply: reading.aliased ? quoteName(written) : `${quoteName(written)} AS ${aliasFor(written, new Set(reading.taken))}`, boost: fit(columns) });
+      options.push({ label: written, type: 'type', detail: 'CTE', apply: reading.aliased ? quoteName(written, dialect) : `${quoteName(written, dialect)} AS ${aliasFor(written, new Set(reading.taken))}`, boost: fit(columns) });
     }
   }
   // The schemas, to go on with a dot, after the tables and before the keywords.
@@ -462,7 +464,7 @@ interface Expansion {
  * is qualified with), with their alias when more than one; first without the masked, encrypted and labelled
  * ones, as a starter leaves them out, then every column.
  */
-function expansions(reading: Reading, model: Model): Expansion[] {
+function expansions(reading: Reading, model: Model, dialect?: Dialect): Expansion[] {
   const star = reading.star;
   // A bare * over a table the model does not know, or a subquery whose columns it cannot all name, covers
   // columns that cannot be written here.
@@ -478,7 +480,7 @@ function expansions(reading: Reading, model: Model): Expansion[] {
       : (findTable(model, s.known.ref)?.table.columns ?? []).filter((c) => !c.hidden).map((c) => ({ name: c.name, protected: isProtected(c), table: s })),
   );
   if (!columns.length) return [];
-  const write = (list: typeof columns) => (star.spaced ? '' : ' ') + list.map(({ name, table }) => (qualify ? `${quoteName(table.name)}.` : '') + quoteName(name)).join(', ');
+  const write = (list: typeof columns) => (star.spaced ? '' : ' ') + list.map(({ name, table }) => (qualify ? `${quoteName(table.name, dialect)}.` : '') + quoteName(name, dialect)).join(', ');
   const open = columns.filter((c) => !c.protected);
   const left = columns.filter((c) => c.protected).map((c) => c.name);
   const all = { text: write(columns), count: columns.length, detail: 'every column', exposes: left.length > 0, left: [] };
@@ -497,7 +499,7 @@ export function starExpansion(state: EditorState): { spec: TransactionSpec; left
   const pos = state.selection.main.head;
   if (!found || !state.selection.main.empty) return null;
   const reading = readAt(state, pos, found.index);
-  const first = expansions(reading, found.model).find((e) => !e.exposes);
+  const first = expansions(reading, found.model, found.dialect).find((e) => !e.exposes);
   if (!first || !reading.star) return null;
   return { spec: { changes: { from: reading.star.from, to: pos, insert: first.text }, selection: { anchor: reading.star.from + first.text.length } }, left: first.left };
 }
