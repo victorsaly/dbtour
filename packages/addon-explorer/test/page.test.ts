@@ -3,18 +3,19 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { relationsOf, type Model } from 'dbtour/model';
 import { pageHtml, render } from '../src/index.ts';
-import { canonicalRoute, parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, sqlHash, type Route } from '../src/page/route.ts';
+import { canonicalRoute, databaseHash, databaseMapHash, parseRoute, routeHash, tableHash, diagramHash, groupHash, mapHash, sqlHash, type Route } from '../src/page/route.ts';
+import { databaseFacts, databaseOf, onlyDatabase, tablesOf } from '../src/page/databases.ts';
 import { allTables, mergeParallel, relationId } from '../src/page/graph.ts';
 import { tools, toolById, storedTool, rememberTool } from '../src/page/tools.ts';
 import { neighbours, withNeighbours, expand, subgraph } from '../src/page/graph.ts';
 import { layout, nodeHeight, nodeWidth } from '../src/page/layout.ts';
 import { prompt } from '../src/page/prompt.ts';
-import { catalogue, neighboursOf, ordered, orders, rememberOrder, sized, storedOrder } from '../src/page/catalogue.ts';
+import { catalogue, neighboursOf, scopedCatalogue, ordered, orders, rememberOrder, sized, storedOrder } from '../src/page/catalogue.ts';
 import { profile, plotPath, tickTips, tickWidth, tickCentre } from '../src/page/plot.ts';
 import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/page/size.ts';
 import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
-import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, parseServed, railStatus, statusOf } from '../src/page/served.ts';
+import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, openedFrom, parseServed, railStatus, statusOf } from '../src/page/served.ts';
 import { dialectOf } from '../src/page/dialect.ts';
 import { formatQuery } from '../src/page/format.ts';
 import { completionSchema, joinCompletions, quoteName, quoteRef, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
@@ -554,6 +555,12 @@ test('the page knows it is served from the meta tag dbtour serve writes, and whi
   assert.deepEqual(connectionFor({ token: 't', sources: [{ name: 'Prod', reader: true }] }, 'Shop'), { state: 'ready', source: 'Prod' });
 });
 
+test('a page that is not served says where it was opened, a file or a website, as neither can reach the database', () => {
+  assert.equal(openedFrom('file:'), 'opened from a file');
+  assert.equal(openedFrom('https:'), 'opened from a website', 'a deployed page was never a file to its reader');
+  assert.equal(openedFrom('http:'), 'opened from a website');
+});
+
 test('the connection dot says how the last run went: grey before one and while it runs, green answered, red failed', () => {
   const ready = { state: 'ready', source: 'Shop' } as const;
   assert.deepEqual(statusOf(ready, {}), { tone: 'idle', text: 'Connected · Shop' });
@@ -689,4 +696,50 @@ test('the setup: five steps, a name suggested from the database, each step check
   assert.equal(startCommand, coreStart, 'the page fixes a missing package with the command the CLI gives');
   assert.equal(clock(new Date(2026, 10, 2, 9, 5, 7)), '09:05:07');
   assert.deepEqual([took(840.4), took(6230), took(1000)], ['840\u00a0ms', '6.2\u00a0s', '1.0\u00a0s']);
+});
+
+test('a database has an address of its own, and its map another', () => {
+  assert.equal(databaseHash('Chinook'), '#db/Chinook');
+  assert.equal(databaseMapHash('Chinook'), '#db/Chinook/map');
+  assert.deepEqual(parseRoute('#db/Chinook'), { kind: 'database', name: 'Chinook' });
+  assert.deepEqual(parseRoute('#db/Chinook/map'), { kind: 'database', name: 'Chinook', map: true });
+  assert.deepEqual(parseRoute(databaseHash('Sales 2024/EU')), { kind: 'database', name: 'Sales 2024/EU' }, 'a space or a slash in a name survives the address');
+  assert.deepEqual(parseRoute(databaseMapHash('Sales 2024/EU')), { kind: 'database', name: 'Sales 2024/EU', map: true });
+  assert.deepEqual(parseRoute('#db/'), { kind: 'home' }, 'no name, no database');
+  assert.deepEqual(parseRoute('#db/Chinook/rows'), { kind: 'home' }, 'only its map is under it');
+});
+
+test('a route is in a database when all it shows is: its home, its map, a table, a diagram of its tables', () => {
+  const model = scope(twoDatabases());
+  assert.equal(databaseOf(model, { kind: 'database', name: 'Billing' }), 'Billing');
+  assert.equal(databaseOf(model, { kind: 'database', name: 'Nowhere' }), undefined, 'a name the model lacks is no database');
+  assert.equal(databaseOf(model, { kind: 'table', ref: 'Billing:dbo.Payments' }), 'Billing');
+  assert.equal(databaseOf(model, { kind: 'table', ref: 'dbo.Customers' }), undefined, 'a name both have is in neither');
+  assert.equal(databaseOf(model, { kind: 'diagram', refs: ['Sales:dbo.Customers', 'Sales:dbo.Invoices'] }), 'Sales');
+  assert.equal(databaseOf(model, { kind: 'diagram', refs: ['Sales:dbo.Customers', 'Billing:dbo.Customers'] }), undefined, 'a diagram across two is in neither');
+  for (const kind of ['home', 'map', 'sql'] as const) assert.equal(databaseOf(model, { kind }), undefined);
+});
+
+test('one database of several is a model of its own: its tables, and the groups that touch it', () => {
+  const model = scope(twoDatabases());
+  model.groups.push({ name: 'Money', tables: ['Billing:dbo.Payments', 'Sales:dbo.Invoices'] }, { name: 'People', tables: ['Sales:dbo.Customers'] });
+  const billing = onlyDatabase(model, 'Billing')!;
+  assert.deepEqual(billing.databases.map((d) => d.name), ['Billing']);
+  assert.deepEqual(billing.groups.map((g) => g.name), ['Money'], 'People has no table of Billing');
+  assert.deepEqual(tablesOf(billing.databases[0]), ['Billing:dbo.Customers', 'Billing:dbo.Payments'], 'named as they are among several');
+  assert.equal(onlyDatabase(model, 'Nowhere'), undefined);
+  const cat = catalogue(model);
+  const scoped = scopedCatalogue(cat, billing);
+  assert.deepEqual(scoped.entries.map((e) => `${e.number} ${e.ref}`), ['003 Billing:dbo.Customers', '004 Billing:dbo.Payments'], 'a table keeps the number it has in the whole catalogue');
+  assert.deepEqual([...scoped.colours.keys()], ['Billing:dbo'], 'and its schema the colour');
+  assert.equal(scoped.colours.get('Billing:dbo'), cat.colours.get('Billing:dbo'));
+  assert.equal(scoped.byRef.get('Sales:dbo.Customers')?.number, '001', 'a table of another database is still found, for a relation that leaves this one');
+});
+
+test('a database on the home of several says its kind, what it holds and how big it is', () => {
+  const several: Model = JSON.parse(readFileSync(new URL('../../../examples/several/docs/schema.json', import.meta.url), 'utf8'));
+  const facts = (name: string) => databaseFacts(several.databases.find((d) => d.name === name)!);
+  assert.deepEqual(facts('Shop'), ['SQL Server 16.0.1000', '5 tables', '1 view', '4 relations', '190 MB']);
+  assert.deepEqual(facts('Northwind').slice(1, 4), ['13 tables', '17 views', '13 relations']);
+  assert.deepEqual(databaseFacts({ name: 'Empty', driver: 'sqlite', schemas: [{ name: 'main', tables: [{ name: 't', kind: 'table', columns: [], indexes: [], constraints: [] }] }], relations: [] }), ['SQLite', '1 table', '0 relations'], 'no views and no sizes: neither is said');
 });

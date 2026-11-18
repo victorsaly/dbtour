@@ -4,6 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -279,7 +281,7 @@ test('what the catalogue says: an About block in sentences, a Protection column,
   }
 });
 
-test('two databases with a table of the same name: each is its own entry, an old link finds the one it can', async (t) => {
+test('two databases: the home lists them, one is read at a time and the rail switches; a table of the same name is its own entry in each', async (t) => {
   const browser = await launch();
   if (!browser) {
     t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
@@ -293,11 +295,47 @@ test('two databases with a table of the same name: each is its own entry, an old
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
 
+    // The home is the databases, not their tables: choose one to read it.
     await page.goto(url);
-    await page.locator('.tree').waitFor();
-    assert.equal(await page.locator('.tree li a').count(), 4, 'both databases\' tables are listed, the two Customers apart');
+    await page.locator('h1', { hasText: 'Databases' }).waitFor();
+    assert.deepEqual(await page.locator('.database-entry a.name').allTextContents(), ['Sales', 'Billing']);
+    assert.match((await page.locator('.database-entry').nth(1).textContent()) ?? '', /SQL Server.*2 tables.*1 relation/);
+    assert.equal(await page.locator('.tree li a').count(), 0, 'no table is listed before a database is chosen');
+    assert.equal(await page.locator('.switcher [aria-current="page"]').textContent(), 'All databases');
+
+    await page.locator('.database-entry a.name', { hasText: 'Billing' }).click();
+    await page.locator('.home h1', { hasText: 'Billing' }).waitFor();
+    assert.equal(new URL(page.url()).hash, '#db/Billing');
+    assert.equal(await page.locator('.home .entry-head').count(), 1, 'one database, its own heading');
+    assert.deepEqual(await page.locator('.plots .name').allTextContents(), ['Customers', 'Payments'], 'its tables and no other\'s');
+    assert.deepEqual(await page.locator('.tree li a .name').allTextContents(), ['Customers', 'Payments'], 'the rail lists them too');
+    assert.match((await page.locator('.switcher [aria-current="page"]').textContent()) ?? '', /^Billing/);
+
+    // Its map is its own tables; the editor opens on it; and both keep the rail where it was.
+    await page.locator('.side a', { hasText: 'Map of Billing' }).click();
+    assert.equal(new URL(page.url()).hash, '#db/Billing/map');
+    await page.waitForFunction(nodeCount(2));
+    await page.locator('.side a', { hasText: 'Write SQL' }).click();
+    await page.locator('.sql-page .cm-content').waitFor();
+    assert.equal(await page.locator('.sql-database select').inputValue(), 'Billing');
+    assert.match((await page.locator('.switcher [aria-current="page"]').textContent()) ?? '', /^Billing/, 'the editor is in no database, so the rail stays');
+
+    // The rail switches to another, and All databases comes back to the list.
+    await page.locator('.switcher a', { hasText: 'Sales' }).click();
+    await page.locator('.home h1', { hasText: 'Sales' }).waitFor();
+    assert.deepEqual(await page.locator('.plots .name').allTextContents(), ['Customers', 'Invoices']);
+    await page.locator('.switcher a', { hasText: 'All databases' }).click();
+    await page.locator('h1', { hasText: 'Databases' }).waitFor();
+    assert.equal(new URL(page.url()).hash, '');
+    assert.equal(await page.locator('.side a', { hasText: 'Map of the whole catalogue' }).count(), 1);
+    await page.goto(`${url}#db/Nowhere`);
+    await page.locator('h1', { hasText: 'No database named Nowhere' }).waitFor();
+    await page.goto(url);
+    await page.locator('h1', { hasText: 'Databases' }).waitFor();
     await page.keyboard.press('/');
     await page.keyboard.type('customers');
+    // All the hits are read at once, which waits for none: the first is waited for.
+    await page.locator('.hits a').first().waitFor();
     const hits = (await page.locator('.hits a').allTextContents()).slice(0, 2).join(' | ');
     assert.match(hits, /Sales:dbo\.Customers.*Billing:dbo\.Customers/, 'the two tables come first, each with its database');
 
@@ -373,6 +411,7 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     assert.equal(new URL(page.url()).hash, '#sql');
     const sqlEditor = page.locator('.sql-page .cm-content');
     assert.match((await sqlEditor.textContent()) ?? '', /A query against Shop/);
+    assert.match((await page.locator('.sql-hint').last().textContent()) ?? '', /^Not connected: opened from a file, the page cannot reach the database/);
 
     // A snippet writes the start of a read and opens the tables, and Tab takes one; Tab after * writes the
     // columns; Format lays it out.
@@ -447,6 +486,48 @@ test('on a phone, a suggestion\'s description sits clear of the list, and a name
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
+  }
+});
+
+test('deployed to a website, the page is whole and its editor says a website cannot reach the database', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  // A static host: the one file render wrote, and nothing else to ask for.
+  const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+  const html = render(model)['index.html'];
+  const asked: string[] = [];
+  const host = createServer((request, response) => {
+    asked.push(request.url ?? '');
+    if (request.url !== '/shop') {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(html);
+  });
+  await new Promise<void>((resolve) => host.listen(0, '127.0.0.1', resolve));
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${(host.address() as AddressInfo).port}/shop`);
+    await page.getByRole('heading', { name: 'Shop' }).waitFor();
+    await page.keyboard.press('/');
+    await page.keyboard.type('cust');
+    await page.keyboard.press('Enter');
+    await page.locator('h1', { hasText: 'Customers' }).waitFor();
+    await page.locator('a', { hasText: 'Write SQL' }).click();
+    await page.locator('.sql-page .cm-content').waitFor();
+    assert.equal((await page.locator('.sql-state .status').textContent())?.trim(), 'Not connected');
+    assert.match((await page.locator('.sql-hint').last().textContent()) ?? '', /^Not connected: opened from a website, the page cannot reach the database/);
+    assert.equal(await page.locator('.sql-run').count(), 0, 'nothing to run a query through');
+    assert.deepEqual(asked, ['/shop'], 'the page is one file: fonts, script and model are in it');
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    host.close();
   }
 });
 

@@ -1,7 +1,9 @@
 // The shell: the rail with the search and the index, and the view the hash names.
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { Model } from 'dbtour/model';
-import { catalogue } from './catalogue.ts';
+import { catalogue, scopedCatalogue } from './catalogue.ts';
+import { databaseOf, onlyDatabase, tablesOf } from './databases.ts';
+import { AllDatabases } from './Several.tsx';
 import { allTables } from './graph.ts';
 import { canonicalRoute, parseRoute } from './route.ts';
 import { buildIndex } from 'dbtour/search';
@@ -31,6 +33,15 @@ function CatalogueApp({ model }: { model: Model }) {
   const index = useMemo(() => buildIndex(model), [model]);
   const cat = useMemo(() => catalogue(model), [model]);
   const searchInput = useRef<HTMLInputElement>(null);
+  // With several databases the reader is in one of them or at the home of all. A view that is in none (the
+  // editor, the whole map, a group) keeps the one they came from, so the rail does not lose its place; the
+  // home lets go of it.
+  const several = model.databases.length > 1;
+  const stayed = useRef<string | undefined>(undefined);
+  const here = databaseOf(model, route);
+  if (route.kind === 'home') stayed.current = undefined;
+  else if (here) stayed.current = here;
+  const database = several ? stayed.current : undefined;
 
   useEffect(() => {
     // "/" focuses the search from anywhere, unless the user is already typing somewhere.
@@ -49,8 +60,27 @@ function CatalogueApp({ model }: { model: Model }) {
   let view;
   switch (route.kind) {
     case 'home':
-      view = <Home model={model} cat={cat} />;
+      view = several ? <AllDatabases model={model} /> : <Home model={model} cat={cat} />;
       break;
+    case 'database': {
+      const one = onlyDatabase(model, route.name);
+      if (!one) {
+        view = (
+          <article className="page">
+            <h1>No database named {route.name}</h1>
+            <p>
+              This page has {model.databases.map((d) => d.name).join(', ') || 'none'}. <a href="#">All databases</a> lists them.
+            </p>
+          </article>
+        );
+      } else if (route.map) {
+        view = <DiagramView model={model} cat={cat} refs={tablesOf(one.databases[0])} title={`${route.name}, the whole database`} description="Every table of this database and every relation. Names keeps it readable; Keys and Columns add detail." defaultMode="names" />;
+      } else {
+        // Keyed by its name: the order chosen and the lines drawn are this database's, not the last one's.
+        view = <Home key={route.name} model={one} cat={scopedCatalogue(cat, one)} />;
+      }
+      break;
+    }
     case 'table':
       view = <TableView model={model} cat={cat} tableRef={route.ref} column={route.column} />;
       break;
@@ -61,7 +91,7 @@ function CatalogueApp({ model }: { model: Model }) {
       view = <DiagramView model={model} cat={cat} refs={allTables(model)} title="The whole catalogue" description="Every table and every relation. Names keeps it readable; Keys and Columns add detail." defaultMode="names" />;
       break;
     case 'sql':
-      view = <SqlPage model={model} />;
+      view = <SqlPage model={model} database={database} />;
       break;
     case 'group': {
       const group = model.groups.find((g) => g.name === route.name);
@@ -79,7 +109,7 @@ function CatalogueApp({ model }: { model: Model }) {
 
   return (
     <div className="app">
-      <Sidebar model={model} cat={cat} index={index} route={route} inputRef={searchInput} />
+      <Sidebar model={model} cat={cat} index={index} route={route} database={database} inputRef={searchInput} />
       <main className="main">{view}</main>
     </div>
   );

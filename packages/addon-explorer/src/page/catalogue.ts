@@ -40,6 +40,16 @@ export function catalogue(model: Model): Catalogue {
   return { entries, byRef: new Map(entries.map((e) => [e.ref, e])), colours };
 }
 
+/**
+ * The catalogue of one database of several: only its tables and its schemas' colours. A table keeps the
+ * number it has in the whole catalogue, so an entry is the same entry wherever it is listed, and a table of
+ * another database is still found by its ref, for a relation or a group that leaves this one.
+ */
+export function scopedCatalogue(cat: Catalogue, model: Model): Catalogue {
+  const schemas = new Set(model.databases.flatMap((d) => d.schemas.map((s) => s.name)));
+  return { entries: cat.entries.filter((e) => schemas.has(e.schema)), byRef: cat.byRef, colours: new Map([...cat.colours].filter(([name]) => schemas.has(name))) };
+}
+
 /** The entries before and after one, in catalogue order; undefined at either end. */
 export function neighboursOf(cat: Catalogue, ref: string): { previous?: Entry; next?: Entry } {
   const i = cat.entries.findIndex((e) => e.ref === ref);

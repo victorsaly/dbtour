@@ -8,6 +8,8 @@ export type Route =
   | { kind: 'table'; ref: string; column?: string }
   | { kind: 'diagram'; refs: string[] }
   | { kind: 'group'; name: string }
+  /** #db/Chinook: one database of several, as its own catalogue; #db/Chinook/map, its tables as a graph. */
+  | { kind: 'database'; name: string; map?: true }
   /** #map: the whole catalogue as a graph. */
   | { kind: 'map' }
   /** #sql: an editor for a query across the tables. */
@@ -25,6 +27,14 @@ export function parseRoute(hash: string): Route {
     // A ref that is not schema.table is dropped; the rest still draw, and none at all goes home.
     const refs = rest.split(',').filter((r) => r !== '').map(decode).filter(isRef);
     return refs.length > 0 ? { kind: 'diagram', refs } : { kind: 'home' };
+  }
+  if (head === 'db') {
+    // The name is encoded whole, slashes too, so what follows a slash is the view under it: only the map.
+    const cut = rest.indexOf('/');
+    const name = decode(cut === -1 ? rest : rest.slice(0, cut));
+    const under = cut === -1 ? '' : rest.slice(cut + 1);
+    if (name === '' || (under !== '' && under !== 'map')) return { kind: 'home' };
+    return under === 'map' ? { kind: 'database', name, map: true } : { kind: 'database', name };
   }
   if (head === 'group') return rest === '' ? { kind: 'home' } : { kind: 'group', name: decode(rest) };
   const parts = decode(raw).split('.');
@@ -51,6 +61,8 @@ export function routeHash(route: Route): string {
       return `#diagram/${route.refs.map(encode).join(',')}`;
     case 'group':
       return `#group/${encode(route.name)}`;
+    case 'database':
+      return `#db/${encode(route.name)}${route.map ? '/map' : ''}`;
     case 'map':
       return '#map';
     case 'sql':
@@ -73,6 +85,8 @@ export function canonicalRoute(route: Route, model: Model): Route {
 export const tableHash = (ref: string, column?: string): string => routeHash({ kind: 'table', ref, column });
 export const diagramHash = (refs: string[]): string => routeHash({ kind: 'diagram', refs });
 export const groupHash = (name: string): string => routeHash({ kind: 'group', name });
+export const databaseHash = (name: string): string => routeHash({ kind: 'database', name });
+export const databaseMapHash = (name: string): string => routeHash({ kind: 'database', name, map: true });
 export const sqlHash = '#sql';
 export const mapHash = '#map';
 

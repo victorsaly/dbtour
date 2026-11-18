@@ -2070,3 +2070,20 @@ table.columns tr.is-pointed td {
     padding-left: 0;
   }
 }
+
+/* A page of several databases: the rail's count of each one's tables, the line that says where the reader is,
+   and what a database says of itself under its facts. */
+.switcher .count {
+  font-size: 10.5px;
+  color: var(--ink-2);
+  padding-right: 2px;
+}
+/* The red edge marks a database in the list; the line above it, when it is where the reader is, is only inked. */
+.switcher a.switcher-home.is-current {
+  color: var(--ink);
+  box-shadow: none;
+}
+.database-entry .about {
+  grid-column: 2 / -1;
+  color: var(--ink);
+}

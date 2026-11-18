@@ -1,6 +1,31 @@
 # Changelog
 
-## 0.11.1 (unreleased)
+## 0.11.2 (unreleased)
+
+- A live example on the web: the page `render` writes for `examples/several`, three databases on one page, is at
+  [skills.victorsaly.com/dbtour/example](https://skills.victorsaly.com/dbtour/example), so the catalogue, an
+  entry, the map and the editor can be tried before anything is installed. It is the one file as rendered; the
+  README links it.
+- An example with several databases, `examples/several`: one page for three, of two kinds. Shop is the made-up
+  shop on SQL Server; Chinook and Northwind are two well-known samples, read as SQLite files, catalogue only.
+  Its notes name each table with its database, and a group gathers the orders of all three. The model is
+  committed, so `npm run example` renders it with nothing installed; `npm run example:several` downloads the
+  two files (each checked against its SHA-256) and reads them again. The live example is this one.
+- A page of several databases is read one database at a time. Its home lists them, each an entry with its
+  kind, tables, views, relations and size; choosing one opens that database alone, at an address of its own
+  (`#db/Chinook`), with its tables in the index and a map of its own (`#db/Chinook/map`). The rail lists the
+  databases to switch between, with All databases back to the list, as the home `dbtour serve` gives a
+  machine's databases does. The editor opens on the database the reader came from, search still looks in
+  every one, and a link to a table opens it with the rail in its database. Before, every database's tables
+  ran in one index under headings that sat with no space between them. A page of one database is as it was.
+- A test holds both examples to the code: each model is one dbtour accepts, `dbtour.yaml` lists its databases,
+  and every note finds its table.
+- A deployed page no longer says it was opened from a file. Its editor still cannot reach the database, and
+  now says so as a website: "Not connected: opened from a website, the page cannot reach the database", with
+  the same ways to run the query. Found putting the example on the web. A browser test opens the page from a
+  static host and checks that it is whole from the one file, with nothing else asked for.
+
+## 0.11.1 (18 November 2026)
 
 - A SQL Server on this machine can be set up: one in Docker, or a developer's own, has a certificate it signed
   itself, which dbtour refused. It is trusted when the server is this machine (`localhost`, `127.0.0.1`, `::1`,

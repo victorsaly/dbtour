@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObjec
 import { tableRef, type Model } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
 import { Mark, Wordmark } from './Logo.tsx';
-import { groupHash, mapHash, sqlHash, tableHash, type Route } from './route.ts';
+import { databaseMapHash, groupHash, mapHash, sqlHash, tableHash, type Route } from './route.ts';
+import { onlyDatabase } from './databases.ts';
+import { DatabaseSwitcher } from './Several.tsx';
 import { servedPage } from './Sql.tsx';
 import { railStatus } from './served.ts';
 import { Switcher } from './Databases.tsx';
@@ -29,10 +31,12 @@ interface Props {
   cat: Catalogue;
   index: Entry[];
   route: Route;
+  /** Among several databases, the one being read; none at the home of all, or when the model has one. */
+  database?: string;
   inputRef: RefObject<HTMLInputElement | null>;
 }
 
-export function Sidebar({ model, cat, index, route, inputRef }: Props) {
+export function Sidebar({ model, cat, index, route, database, inputRef }: Props) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const hits = useMemo(() => search(index, query), [index, query]);
@@ -68,14 +72,18 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
   const currentGroup = route.kind === 'group' ? route.name : undefined;
   const current = currentTable ? cat.byRef.get(currentTable) : undefined;
   const searching = query.trim() !== '';
+  const onMap = route.kind === 'database' && route.map === true;
 
+  // Among several databases the index is the one being read: its tables and the groups that touch it. At the
+  // home of all there is no table to list, the databases themselves are the index, so only the groups show.
+  const several = model.databases.length > 1;
+  const shown = !several ? model : database ? (onlyDatabase(model, database) ?? model) : { ...model, databases: [] };
   const tree = (
     <nav className="tree" aria-label="Index">
-      {!phone && <div className="label">Index</div>}
-      {model.databases.map((database) => (
-        <section key={database.name}>
-          {model.databases.length > 1 && <h2>{database.name}</h2>}
-          {database.schemas.map((schema) => (
+      {!phone && shown.databases.length > 0 && <div className="label">Index</div>}
+      {shown.databases.map((listed) => (
+        <section key={listed.name}>
+          {listed.schemas.map((schema) => (
             <div key={schema.name} className="schema">
               <div className="schema-head">
                 <span className="block" style={{ background: cat.colours.get(schema.name) }} />
@@ -101,11 +109,11 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
           ))}
         </section>
       ))}
-      {model.groups.length > 0 && (
+      {shown.groups.length > 0 && (
         <section>
           <div className="label">Groups</div>
           <ul>
-            {model.groups.map((group) => {
+            {shown.groups.map((group) => {
               const isCurrent = group.name === currentGroup;
               return (
                 <li key={group.name}>
@@ -128,7 +136,7 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
         <Mark size={22} />
         <Wordmark />
       </a>
-      <div className="side-db label">{model.databases.map((d) => d.name).join(' · ')}</div>
+      {several ? <DatabaseSwitcher model={model} database={database} home={route.kind === 'home'} /> : <div className="side-db label">{model.databases.map((d) => d.name).join(' · ')}</div>}
       {served?.databases && <Switcher served={served} />}
       <div className="search">
         <input
@@ -149,9 +157,15 @@ export function Sidebar({ model, cat, index, route, inputRef }: Props) {
         />
         {!searching && <kbd>/</kbd>}
       </div>
-      <a className={`side-map${route.kind === 'map' ? ' is-current' : ''}`} href={mapHash} aria-current={route.kind === 'map' ? 'page' : undefined}>
-        Map of the whole catalogue
-      </a>
+      {database ? (
+        <a className={`side-map${onMap ? ' is-current' : ''}`} href={databaseMapHash(database)} aria-current={onMap ? 'page' : undefined}>
+          Map of {database}
+        </a>
+      ) : (
+        <a className={`side-map${route.kind === 'map' ? ' is-current' : ''}`} href={mapHash} aria-current={route.kind === 'map' ? 'page' : undefined}>
+          Map of the whole catalogue
+        </a>
+      )}
       <a className={`side-map${route.kind === 'sql' ? ' is-current' : ''}`} href={sqlHash} aria-current={route.kind === 'sql' ? 'page' : undefined}>
         Write SQL
       </a>
