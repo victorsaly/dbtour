@@ -5,7 +5,7 @@
 
 **Schema docs for your database, kept in your repository, for people and agents.**
 
-[![version](https://img.shields.io/badge/version-0.11.2-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.11.3-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 [![npm](https://img.shields.io/npm/v/dbtour)](https://www.npmjs.com/package/dbtour)
 

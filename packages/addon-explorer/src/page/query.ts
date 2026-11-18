@@ -105,6 +105,40 @@ export function starterQuery(model: Model, ref: string): string {
   return lines.join('\n');
 }
 
+/**
+ * The join a line on the map draws: both tables' columns, the protected ones left out as the starter leaves
+ * them, joined on the relation from the first table to the second (the first one, when two run in parallel).
+ * A column name both tables have is told apart by its table, so the result has no two columns alike.
+ */
+export function joinQuery(model: Model, fromRef: string, toRef: string): string {
+  const from = findTable(model, fromRef);
+  const to = findTable(model, toRef);
+  if (!from || !to) return `-- ${!from ? fromRef : toRef} is not a table dbtour knows.`;
+  const relation = relationsOf(model, from.ref).out.find((r) => r.to.table === to.ref);
+  if (!relation) return `-- ${localRef(model, from.ref)} and ${localRef(model, to.ref)} are not related: no key or note joins them.`;
+  const dialect = dialectOf(from.database.driver);
+  const quote = (name: string) => quoteName(name, dialect);
+  const taken = new Set<string>();
+  const a = aliasFor(from.table.name, taken);
+  const b = aliasFor(to.table.name, taken);
+  const mine = from.table.columns.filter((c) => !isProtected(c));
+  const names = new Set(mine.map((c) => c.name.toLowerCase()));
+  const select = [
+    ...mine.map((c) => `${a}.${quote(c.name)}`),
+    ...to.table.columns.filter((c) => !isProtected(c)).map((c) => `${b}.${quote(c.name)}${names.has(c.name.toLowerCase()) ? ` AS ${quote(to.table.name + c.name)}` : ''}`),
+  ];
+  const left = [...from.table.columns, ...to.table.columns].filter(isProtected);
+  const lines = [`-- ${localRef(model, from.ref)} joined to ${localRef(model, to.ref)} on ${relation.from.columns.join(', ')}.`];
+  if (left.length) lines.push(`-- Masked, encrypted and labelled columns are left out: ${left.map((c) => c.name).join(', ')}. Add them if the question needs them.`);
+  const rows = firstRows(dialect, starterRows);
+  const on = relation.from.columns.map((column, i) => `${b}.${quote(relation.to.columns[i])} = ${a}.${quote(column)}`).join(' AND ');
+  lines.push(rows.select, ...select.map((s, i, all) => `    ${s}${i < all.length - 1 ? ',' : ''}`));
+  lines.push(`FROM ${quoteRef(localRef(model, from.ref), dialect)} AS ${a}`, `JOIN ${quoteRef(localRef(model, to.ref), dialect)} AS ${b} ON ${on}`);
+  if (rows.end) lines.push(rows.end);
+  lines[lines.length - 1] += ';';
+  return lines.join('\n');
+}
+
 function databaseNamed(model: Model, name: string | undefined): Database {
   return model.databases.find((d) => d.name === name) ?? model.databases[0];
 }
