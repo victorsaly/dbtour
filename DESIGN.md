@@ -136,7 +136,8 @@ Strategy: restrained. No gradient, no shadow, no radius.
   that marks where the reader is everywhere else (3px, left) over a 2px ink outline; what it touches keeps
   full ink, the rest goes to 28% opacity. Its card is 340px in the links panel's place: the entry's block,
   number and ref, a mono-caps line of facts, hairline buttons for what can be done, then References and
-  Referenced by as mono rows. A line answers a click 24px wide. Below 800px the card sits under the map.
+  Referenced by as mono rows. A line answers a click 24px wide. Below 800px the card sits under the map,
+  and on an entry it always does: the embedded map keeps 256px and its frame grows by the card.
 - **Map nodes**: 240px wide, a 34px head with block, number and name, 22px rows, 6px padding; sizes
   `layout.ts` counts with. Three levels: Names (the head alone), Keys, Columns, chosen in a segmented
   control whose active item carries a 2px red underline. Edges are white hairlines with mono labels;

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { scope, type Model } from 'dbtour/model';
 import { catalogue } from '../src/page/catalogue.ts';
-import { subgraph } from '../src/page/graph.ts';
+import { drawnLinks, subgraph } from '../src/page/graph.ts';
 import { inked, linkCard, tableCard, without } from '../src/page/mapcard.ts';
 import { joinQuery } from '../src/page/query.ts';
 import { databaseOf } from '../src/page/databases.ts';
@@ -94,4 +94,14 @@ test('the editor opens seeded from a table, or from the join of two, at an addre
   const model = scope(twoDatabases());
   assert.equal(databaseOf(model, { kind: 'sql', table: 'Billing:dbo.Payments' }), 'Billing', 'the editor seeded from a table is in its database');
   assert.equal(databaseOf(model, { kind: 'sql' }), undefined);
+});
+
+test('a table that references itself draws no line through itself; its card still lists the relation', () => {
+  const model = several();
+  const graph = subgraph(model, ['Chinook:main.Customer', 'Chinook:main.Employee']);
+  assert.equal(graph.relations.length, 2, 'Customer to Employee, and Employee to itself');
+  assert.deepEqual(drawnLinks(graph.relations).map((l) => l.id), ['Chinook:main.Customer>Chinook:main.Employee']);
+  const card = tableCard(model, catalogue(model), graph, 'Chinook:main.Employee')!;
+  assert.deepEqual(card.references, [{ columns: ['ReportsTo'], table: 'Chinook:main.Employee', onMap: true, virtual: false }]);
+  assert.deepEqual([...inked(graph, { kind: 'table', ref: 'Chinook:main.Employee' })!.links], ['Chinook:main.Customer>Chinook:main.Employee'], 'nothing to ink that is not drawn');
 });

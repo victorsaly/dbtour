@@ -62,6 +62,15 @@ export function mergeParallel(relations: Relation[]): Link[] {
   return [...links.values()];
 }
 
+/**
+ * The lines the map draws: parallel relations merged, and none from a table to itself. A line from a node back
+ * into the same node runs straight through its name; the relation is on the table's card and in the links
+ * panel instead.
+ */
+export function drawnLinks(relations: Relation[]): Link[] {
+  return mergeParallel(relations).filter((link) => link.from !== link.to);
+}
+
 /** Only tables the model has, and only relations with both ends among them. */
 export function subgraph(model: Model, refs: string[]): Subgraph {
   const tables = [...new Set(refs)].filter((ref) => findTable(model, ref) !== undefined);

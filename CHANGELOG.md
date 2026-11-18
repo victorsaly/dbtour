@@ -14,6 +14,11 @@
 - The editor opens seeded: `#sql/dbo.Orders` starts from that table's query, sharing the draft its entry
   keeps, and `#sql/dbo.Orders/dbo.Customers` from the join of the two, with both tables' columns, the
   protected ones left out and a name both have told apart by its table. The page says what it started from.
+- The small map on an entry answers a click too: the card of the table or the line sits under it, with the
+  same facts, relations and actions. It is the entry's neighbourhood, so nothing is added to it or hidden
+  from it, a table that is not on it opens as an entry, and the entry's own table has no "Open the entry".
+- A table that references itself (an employee's manager) no longer has a line drawn from its right side
+  back into it, through its own name. The relation is on its card and in the links panel.
 - A table dragged on the map stays where it was put when the detail changes or a line is hidden; Reset layout
   puts every table back. Hiding a line no longer redraws the map from the start.
 - A map the reader has not panned or zoomed is fitted again when the card opens or closes, so no table sits

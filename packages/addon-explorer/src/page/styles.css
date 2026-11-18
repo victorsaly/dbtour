@@ -976,8 +976,9 @@ pre {
 }
 
 /* The map on an entry page: names only, a fixed height, a way to the full one. */
+/* The frame grows by its card when a table or a line is selected; the map itself keeps its height. */
 .diagram.embedded {
-  height: 300px;
+  height: auto;
   margin-top: 26px;
   outline: var(--hair) solid var(--line);
 }
@@ -2091,11 +2092,11 @@ table.columns tr.is-pointed td {
 
 /* The map answers a click. What is selected carries the red edge that marks where the reader is everywhere
    else; what it touches stays inked, the rest fades. Its card takes the links panel's place. */
-.diagram:not(.embedded) .node,
-.diagram:not(.embedded) .react-flow__edge {
+.diagram .node,
+.diagram .react-flow__edge {
   cursor: pointer;
 }
-.diagram:not(.embedded) .node:focus-visible {
+.diagram .node:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
@@ -2226,4 +2227,16 @@ table.columns tr.is-pointed td {
     border-left: 0;
     border-top: var(--hair) solid var(--line);
   }
+}
+
+/* On an entry the map keeps the height it always had, and the card of what is selected sits under it. */
+.diagram.embedded .canvas {
+  flex: none;
+  height: 256px;
+}
+.diagram.embedded .map-card {
+  width: auto;
+  max-height: none;
+  border-left: 0;
+  border-top: var(--hair) solid var(--line);
 }

@@ -2,7 +2,7 @@
 // Pure, so it is tested in Node; Diagram.tsx draws it.
 import { findTable, relationsOf, type Model, type Table } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
-import { mergeParallel, type Subgraph } from './graph.ts';
+import { drawnLinks, mergeParallel, type Subgraph } from './graph.ts';
 import { sizeCaption } from './size.ts';
 
 /** What the reader clicked on the map: a table, or the line between two. */
@@ -15,7 +15,7 @@ export type Selection = { kind: 'table'; ref: string } | { kind: 'link'; id: str
  */
 export function inked(graph: Subgraph, selection: Selection | undefined): { tables: Set<string>; links: Set<string> } | undefined {
   if (!selection) return undefined;
-  const links = mergeParallel(graph.relations);
+  const links = drawnLinks(graph.relations);
   if (selection.kind === 'link') {
     const link = links.find((l) => l.id === selection.id);
     return link ? { tables: new Set([link.from, link.to]), links: new Set([link.id]) } : undefined;

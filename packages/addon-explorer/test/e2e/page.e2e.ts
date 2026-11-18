@@ -85,6 +85,22 @@ test('the page searches, opens a table, draws its neighbourhood, expands it and 
     await page.waitForFunction(`document.querySelectorAll('.diagram.embedded .react-flow__node').length === 2`);
     assert.equal(await page.locator('.diagram.embedded .node-rows').count(), 0, 'names only');
 
+    // It answers a click as the full map does: a card under it, for a neighbour or for the entry's own table.
+    const small = page.locator('.diagram.embedded');
+    await small.locator('.react-flow__node', { hasText: 'Orders' }).click();
+    await small.locator('.map-card').waitFor();
+    assert.equal(new URL(page.url()).hash, '#dbo.Customers', 'a click selects; it does not leave the entry');
+    assert.equal(await small.locator('.map-card h2').textContent(), 'dbo.Orders');
+    assert.equal(await small.locator('.map-card a', { hasText: 'Open the entry' }).getAttribute('href'), '#dbo.Orders');
+    assert.equal(await small.locator('.map-card a', { hasText: 'Write SQL' }).getAttribute('href'), '#sql/dbo.Orders');
+    assert.equal(await small.locator('.map-card', { hasText: /Hide from the map|Add its neighbours/ }).count(), 0, 'the small map is the entry\'s neighbourhood: nothing is added to it or hidden from it');
+    assert.equal(await small.locator('.map-card a.card-go', { hasText: 'dbo.OrderLines' }).getAttribute('href'), '#dbo.OrderLines', 'a table that is not on the small map opens as an entry');
+    await small.locator('.map-card .card-go', { hasText: 'dbo.Customers' }).click();
+    await page.waitForFunction(`document.querySelector('.diagram.embedded .map-card h2')?.textContent === 'dbo.Customers'`);
+    assert.equal(await small.locator('.map-card a', { hasText: 'Open the entry' }).count(), 0, 'its own entry is this page');
+    await small.locator('.map-card .card-close').click();
+    await page.waitForFunction(`!document.querySelector('.diagram.embedded .map-card')`);
+
     await page.locator('.actions a', { hasText: 'Open the map' }).click();
     await page.locator('.diagram:not(.embedded) h1', { hasText: 'and around it' }).waitFor();
     assert.equal(new URL(page.url()).hash, '#diagram/dbo.Customers,dbo.Orders');
