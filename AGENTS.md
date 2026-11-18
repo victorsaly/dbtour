@@ -23,7 +23,7 @@ For coding agents changing this repository. The design is in [PLAN.md](PLAN.md);
   from `test/fixtures/shop.sql`, so they need nothing installed.
 - `packages/addon-explorer`: the page. `src/index.ts` is what `render` loads: it inlines `dist/` and the model
   into one index.html. `src/page/` is the React app that esbuild bundles into `dist/` (`npm run build`, run
-  for you before the tests). Its pure parts, `route.ts`, `graph.ts`, `layout.ts`, `dialect.ts` (each database's SQL) and
+  for you before the tests). Its pure parts, `route.ts`, `graph.ts`, `layout.ts`, `databases.ts` (one database of several), `dialect.ts` (each database's SQL) and
   `prompt.ts`, `catalogue.ts` and `plot.ts`, are tested in Node; the components by `test/e2e/` in Google
   Chrome, skipped when there is none. `fonts/` holds the two OFL fonts the build inlines; `src/mark.ts` is the
   logo's geometry, which `npm run brand` draws into `brand/`. The look is recorded in `DESIGN.md`.

@@ -16,5 +16,6 @@ npm run example            # renders it; open examples/several/docs/index.html
 npm run example:several    # downloads the two files into data/ and reads them again
 ```
 
+The page opens on the three of them; choose one to read its catalogue, and the rail switches to another.
 With several databases a table is named with its own, `Chinook:main.Track`, in the notes, in links and in
 search. Each database keeps its own SQL in the editor: T-SQL for Shop, SQLite's for the other two.

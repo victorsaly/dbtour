@@ -281,7 +281,7 @@ test('what the catalogue says: an About block in sentences, a Protection column,
   }
 });
 
-test('two databases with a table of the same name: each is its own entry, an old link finds the one it can', async (t) => {
+test('two databases: the home lists them, one is read at a time and the rail switches; a table of the same name is its own entry in each', async (t) => {
   const browser = await launch();
   if (!browser) {
     t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
@@ -295,15 +295,47 @@ test('two databases with a table of the same name: each is its own entry, an old
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
 
+    // The home is the databases, not their tables: choose one to read it.
     await page.goto(url);
-    await page.locator('.tree').waitFor();
-    assert.equal(await page.locator('.tree li a').count(), 4, 'both databases\' tables are listed, the two Customers apart');
-    // Each database opens the home with a heading of its own, set apart from the one above it.
-    const heads = await page.locator('.home .entry-head').evaluateAll((all) => all.map((h) => h.getBoundingClientRect()).map((r) => ({ top: r.top, bottom: r.bottom })));
-    assert.equal(heads.length, 2);
-    assert.ok(heads[1].top - heads[0].bottom >= 24, `a database's heading stands clear of the one before it, not ${heads[1].top - heads[0].bottom}px under it`);
+    await page.locator('h1', { hasText: 'Databases' }).waitFor();
+    assert.deepEqual(await page.locator('.database-entry a.name').allTextContents(), ['Sales', 'Billing']);
+    assert.match((await page.locator('.database-entry').nth(1).textContent()) ?? '', /SQL Server.*2 tables.*1 relation/);
+    assert.equal(await page.locator('.tree li a').count(), 0, 'no table is listed before a database is chosen');
+    assert.equal(await page.locator('.switcher [aria-current="page"]').textContent(), 'All databases');
+
+    await page.locator('.database-entry a.name', { hasText: 'Billing' }).click();
+    await page.locator('.home h1', { hasText: 'Billing' }).waitFor();
+    assert.equal(new URL(page.url()).hash, '#db/Billing');
+    assert.equal(await page.locator('.home .entry-head').count(), 1, 'one database, its own heading');
+    assert.deepEqual(await page.locator('.plots .name').allTextContents(), ['Customers', 'Payments'], 'its tables and no other\'s');
+    assert.deepEqual(await page.locator('.tree li a .name').allTextContents(), ['Customers', 'Payments'], 'the rail lists them too');
+    assert.match((await page.locator('.switcher [aria-current="page"]').textContent()) ?? '', /^Billing/);
+
+    // Its map is its own tables; the editor opens on it; and both keep the rail where it was.
+    await page.locator('.side a', { hasText: 'Map of Billing' }).click();
+    assert.equal(new URL(page.url()).hash, '#db/Billing/map');
+    await page.waitForFunction(nodeCount(2));
+    await page.locator('.side a', { hasText: 'Write SQL' }).click();
+    await page.locator('.sql-page .cm-content').waitFor();
+    assert.equal(await page.locator('.sql-database select').inputValue(), 'Billing');
+    assert.match((await page.locator('.switcher [aria-current="page"]').textContent()) ?? '', /^Billing/, 'the editor is in no database, so the rail stays');
+
+    // The rail switches to another, and All databases comes back to the list.
+    await page.locator('.switcher a', { hasText: 'Sales' }).click();
+    await page.locator('.home h1', { hasText: 'Sales' }).waitFor();
+    assert.deepEqual(await page.locator('.plots .name').allTextContents(), ['Customers', 'Invoices']);
+    await page.locator('.switcher a', { hasText: 'All databases' }).click();
+    await page.locator('h1', { hasText: 'Databases' }).waitFor();
+    assert.equal(new URL(page.url()).hash, '');
+    assert.equal(await page.locator('.side a', { hasText: 'Map of the whole catalogue' }).count(), 1);
+    await page.goto(`${url}#db/Nowhere`);
+    await page.locator('h1', { hasText: 'No database named Nowhere' }).waitFor();
+    await page.goto(url);
+    await page.locator('h1', { hasText: 'Databases' }).waitFor();
     await page.keyboard.press('/');
     await page.keyboard.type('customers');
+    // All the hits are read at once, which waits for none: the first is waited for.
+    await page.locator('.hits a').first().waitFor();
     const hits = (await page.locator('.hits a').allTextContents()).slice(0, 2).join(' | ');
     assert.match(hits, /Sales:dbo\.Customers.*Billing:dbo\.Customers/, 'the two tables come first, each with its database');
 
