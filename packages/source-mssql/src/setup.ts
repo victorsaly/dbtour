@@ -9,11 +9,23 @@ function quote(value: string): string {
 }
 
 /**
+ * Whether the server is this machine: localhost, its loopback addresses, or "." and "(local)", with a port after
+ * a comma or a named instance after a backslash.
+ */
+export function isThisMachine(server: string): boolean {
+  const host = server.trim().split(/[,\\]/)[0].toLowerCase();
+  return ['localhost', '127.0.0.1', '::1', '.', '(local)'].includes(host);
+}
+
+/**
  * The connection string for a target. Signed in with az, the driver asks Azure's default credential, which
  * finds the az sign-in; with a login, its password, read from the keychain a moment before. Encrypted always.
+ * A SQL Server on this machine (Docker's, a developer's own) has a certificate it signed itself, which no
+ * authority vouches for: it is trusted there, as the connection never leaves the machine, and checked anywhere else.
  */
 export function connectionString(target: Target): string {
   const parts = [`Server=${quote(target.server)}`, `Database=${quote(target.database)}`, 'Encrypt=true'];
+  if (isThisMachine(target.server)) parts.push('TrustServerCertificate=true');
   if (target.signIn === 'az') parts.push('Authentication=Active Directory Integrated');
   else parts.push(`User Id=${quote(target.user ?? '')}`, `Password=${quote(target.password ?? '')}`);
   return parts.join(';');
@@ -44,25 +56,28 @@ export function writeRights(permissions: string[]): string[] {
   return [...new Set(rights)];
 }
 
+// Every name these give is put in the database's collation: in a contained database the catalogue's own differs,
+// and SQL Server refuses a UNION whose parts are in two.
+
 /**
  * What a user was given beyond its roles, read through the admin's connection: every permission granted to the
  * user itself, on anything, and each schema it owns. `@user` is the user's name.
  */
-export const grantsQuery = `SELECT p.permission_name AS name FROM sys.database_permissions AS p
+export const grantsQuery = `SELECT p.permission_name COLLATE DATABASE_DEFAULT AS name FROM sys.database_permissions AS p
 WHERE p.grantee_principal_id = DATABASE_PRINCIPAL_ID(@user) AND p.state IN ('G', 'W')
 UNION ALL
-SELECT N'OWNERSHIP OF SCHEMA ' + s.name FROM sys.schemas AS s WHERE s.principal_id = DATABASE_PRINCIPAL_ID(@user)`;
+SELECT N'OWNERSHIP OF SCHEMA ' + s.name COLLATE DATABASE_DEFAULT FROM sys.schemas AS s WHERE s.principal_id = DATABASE_PRINCIPAL_ID(@user)`;
 
 /**
  * What the login signed in can do, however it came by it: its effective permissions on the database (from any
  * role, fixed or not), every grant to it or a role it is in on any object or schema, and each schema it owns.
  */
-export const rightsQuery = `SELECT permission_name AS name FROM fn_my_permissions(NULL, 'DATABASE')
+export const rightsQuery = `SELECT permission_name COLLATE DATABASE_DEFAULT AS name FROM fn_my_permissions(NULL, 'DATABASE')
 UNION
-SELECT p.permission_name FROM sys.database_permissions AS p
+SELECT p.permission_name COLLATE DATABASE_DEFAULT FROM sys.database_permissions AS p
 WHERE p.state IN ('G', 'W') AND (p.grantee_principal_id = DATABASE_PRINCIPAL_ID() OR IS_ROLEMEMBER(USER_NAME(p.grantee_principal_id)) = 1)
 UNION
-SELECT N'OWNERSHIP OF SCHEMA ' + s.name FROM sys.schemas AS s WHERE s.principal_id = DATABASE_PRINCIPAL_ID()`;
+SELECT N'OWNERSHIP OF SCHEMA ' + s.name COLLATE DATABASE_DEFAULT FROM sys.schemas AS s WHERE s.principal_id = DATABASE_PRINCIPAL_ID()`;
 
 /** Roles a reader may have: db_datareader, and public, which every user is in. Any other could write. */
 export function extraRoles(roles: string[]): string[] {

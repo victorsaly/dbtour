@@ -1,6 +1,21 @@
 # Changelog
 
-## 0.11.0 (unreleased)
+## 0.11.1 (unreleased)
+
+- A SQL Server on this machine can be set up: one in Docker, or a developer's own, has a certificate it signed
+  itself, which dbtour refused. It is trusted when the server is this machine (`localhost`, `127.0.0.1`, `::1`,
+  `.` or `(local)`, with a port or an instance), as the connection never leaves it, and the connection is
+  still encrypted; a server anywhere else has its certificate checked as before. Found filming dbtour against a
+  local SQL Server.
+- The check of what a reader can do no longer fails in a contained database, whose catalogue has a collation
+  of its own: each part of its UNION is put in the database's collation.
+- The family has icons: each way to use dbtour (the app, the CLI, the skill, the MCP server, the plugin, the
+  packages) is the mark's cylinder with a sign of its own, drawn from `mark.ts` into `brand/family/` by
+  `npm run brand`.
+- The README opens with the 30-second film as a loop and links to both films; it names the family, shows what
+  each takes in and gives back, has stills of the page and the roadmap.
+
+## 0.11.0 (17 November 2026)
 
 - SQLite, the first of milestone 8's sources: `dbtour-source-sqlite` reads a file with the SQLite Node
   ships (`node:sqlite`), so there is nothing to install or build. It reads tables and views, columns, keys,
