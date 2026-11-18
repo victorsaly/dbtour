@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.11.1 (unreleased)
+## 0.11.2 (unreleased)
+
+- `dbtour init --file data/app.db` writes `dbtour.yaml` for a SQLite file: its path and a read-only reader,
+  the same as `dbtour add --file` saves. `init --source sqlite` used to write a SQL Server template,
+  `connection: ${DBTOUR_SQLITE}`, and asked for a connection string a file does not have. The skill, its
+  reference and the README say how.
+- The SQL Server end-to-end test runs on a real server for the first time, and now also checks temporal
+  tables and hidden columns. It had never run: `LineNo` is a reserved word in T-SQL, and its rollback check
+  updated three rows to one email under a unique constraint. Run on SQL Server 2022, every extract assertion
+  holds, the columnstore and size checks among them.
+- The skill's evals have a case for a SQLite file (`document-a-sqlite-file`). `sql-reads-first` reads a
+  stand-in for the MCP server (`evals/mocks/dbtour/`), since the eval tool no longer starts a plugin's real
+  one: the agent now reads the tables through the tools and writes the query from the names they return.
+
+## 0.11.1 (18 November 2026)
 
 - A SQL Server on this machine can be set up: one in Docker, or a developer's own, has a certificate it signed
   itself, which dbtour refused. It is trusted when the server is this machine (`localhost`, `127.0.0.1`, `::1`,
