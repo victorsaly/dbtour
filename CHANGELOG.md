@@ -9,6 +9,11 @@
   local SQL Server.
 - The check of what a reader can do no longer fails in a contained database, whose catalogue has a collation
   of its own: each part of its UNION is put in the database's collation.
+- The family has icons: each way to use dbtour (the app, the CLI, the skill, the MCP server, the plugin, the
+  packages) is the mark's cylinder with a sign of its own, drawn from `mark.ts` into `brand/family/` by
+  `npm run brand`.
+- The README opens with the 30-second film as a loop and links to both films; it names the family, shows what
+  each takes in and gives back, has stills of the page and the roadmap.
 
 ## 0.11.0 (17 November 2026)
 

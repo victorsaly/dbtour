@@ -9,10 +9,11 @@
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 [![npm](https://img.shields.io/npm/v/dbtour)](https://www.npmjs.com/package/dbtour)
 
-<a href="https://skills.victorsaly.com/dbtour#film"><img src="media/tour.png" alt="A table's entry in dbtour: dbo.Member, 160 rows, the 3rd largest of 35 tables, its size, the tables it references and those that reference it, and a map of its neighbourhood" width="860"></a>
+<a href="https://skills.victorsaly.com/dbtour#teaser"><img src="media/teaser.gif" alt="dbtour in motion: every table of a database on one page, ranked by size, found by search, and a page for each table" width="720"></a>
 
-**[Watch the tour](https://skills.victorsaly.com/dbtour#film)**: the setup, a table's entry, the map and a query,
-against a real SQL Server in about a minute.
+**[Watch it in 30 seconds](https://skills.victorsaly.com/dbtour#teaser)**, what it does with no setup, or
+**[the whole tour](https://skills.victorsaly.com/dbtour#film)** in a minute and a half, with sound: the setup,
+the catalogue, a table's page, the map, queries, and your agent asking over MCP, against a real SQL Server.
 
 </div>
 
@@ -22,6 +23,156 @@ Markdown GitHub shows with diagrams, and as a page developers search, follow rel
 It reads the catalogue, never the rows, and an agent gets the same model through `dbtour mcp` and the
 Claude Code plugin ([below](#ask-claude)). It works with SQL Server, Azure SQL and SQLite today; PostgreSQL
 and MySQL follow the [plan](PLAN.md). Free and MIT licensed, for Claude Code, Codex, Cursor and any MCP client.
+
+## The family
+
+One model of your database, and six ways to use it. Each reads the same `schema.json`.
+
+| | | What it is | Get it |
+|---|---|---|---|
+| <img src="brand/family/app.svg#gh-light-mode-only" alt="" width="32"><img src="brand/family/app-light.svg#gh-dark-mode-only" alt="" width="32"> | **The app** | The page: set a database up, search the catalogue, read a table's entry, open the map, write and run read-only SQL. On your machine through `dbtour serve`, or one HTML file you deploy. | [one line](#start-in-one-line) |
+| <img src="brand/family/cli.svg#gh-light-mode-only" alt="" width="32"><img src="brand/family/cli-light.svg#gh-dark-mode-only" alt="" width="32"> | **The CLI** | `init`, `extract`, `render`, `sql`, `serve`, `mcp`: the model and its Markdown kept in your repository and checked in CI. | `npm i -D dbtour` |
+| <img src="brand/family/skill.svg#gh-light-mode-only" alt="" width="32"><img src="brand/family/skill-light.svg#gh-dark-mode-only" alt="" width="32"> | **The skill** | Teaches an agent when to reach for dbtour and to write SQL only from the names the model has. | `npx skills add victorsaly/dbtour -g` |
+| <img src="brand/family/mcp.svg#gh-light-mode-only" alt="" width="32"><img src="brand/family/mcp-light.svg#gh-dark-mode-only" alt="" width="32"> | **The MCP server** | The model a piece at a time for any MCP client: overview, search, table, the joins between two. | `claude mcp add dbtour -- npx dbtour mcp` |
+| <img src="brand/family/plugin.svg#gh-light-mode-only" alt="" width="32"><img src="brand/family/plugin-light.svg#gh-dark-mode-only" alt="" width="32"> | **The Claude Code plugin** | The skill and the MCP server in one install. | `/plugin marketplace add victorsaly/dbtour`, then `/plugin install dbtour@dbtour` |
+| <img src="brand/family/packages.svg#gh-light-mode-only" alt="" width="32"><img src="brand/family/packages-light.svg#gh-dark-mode-only" alt="" width="32"> | **The packages** | A source per database, the page, and the keychain, so you install only what you use. | [`dbtour-source-mssql`](https://www.npmjs.com/package/dbtour-source-mssql), [`dbtour-source-sqlite`](https://www.npmjs.com/package/dbtour-source-sqlite), [`dbtour-addon-explorer`](https://www.npmjs.com/package/dbtour-addon-explorer), [`dbtour-keychain`](https://www.npmjs.com/package/dbtour-keychain) |
+
+### Each one, in and out
+
+Every output below is what dbtour printed, run on [`examples/shop`](examples/shop) or a two-table SQLite file;
+the skill's is an agent's reply from one of the [evals](evals), graded. `[…]` marks where an output is cut.
+
+<details>
+<summary><b>The app</b>: one line in, a page out</summary>
+
+```bash
+npx -y -p dbtour -p dbtour-source-mssql -p dbtour-source-sqlite -p dbtour-addon-explorer -p dbtour-keychain dbtour serve
+```
+
+```text
+Serving the setup at http://127.0.0.1:4321
+Nothing is set up yet: the page at http://127.0.0.1:4321/ walks you through it. Ctrl+C to stop.
+```
+
+The browser opens on the setup; five steps later, on the database's catalogue.
+</details>
+
+<details>
+<summary><b>The CLI</b>: a model in, Markdown and a page out</summary>
+
+```bash
+cd examples/shop && npx dbtour render
+```
+
+```text
+Wrote 8 files to docs.
+```
+
+`docs/tables/dbo.Orders.md`, one of them:
+
+```markdown
+# dbo.Orders
+
+One row per checkout. The lines are in dbo.OrderLines.
+
+About 312,904 rows · 29 MB of data · 9.3 MB of indexes, as the database counted them on 2026-11-01.
+
+| Column | Type | Nullable | Default | Key | Description |
+|---|---|---|---|---|---|
+| Id | int | no |  | PK, identity |  |
+| CustomerId | int | no |  | FK → [dbo.Customers](dbo.Customers.md).Id |  |
+| Status | tinyint | no | `((0))` |  | 0 draft, 1 paid, 2 shipped, 9 cancelled |
+```
+</details>
+
+<details>
+<summary><b>The skill</b>: a question in, a plan from the real names out</summary>
+
+Asked, with dbtour set up and its MCP server connected:
+
+> Write me a SQL Server query for each customer's total of paid orders this year, largest first. Don't run
+> anything: tell me how you'll find the tables and columns, then the query.
+
+The agent, with the skill (`sql-reads-first`; graded *reads the tables first*: pass):
+
+> I'm not going to fill the query in with likely-sounding names like `dbo.Orders` or `Total`. A guessed name
+> can look right and still sum the wrong column. […]
+> 1. **`overview`**: lists the databases and their tables, largest first. […]
+> 2. **`search`** for `order`, `customer`, `paid` / `payment` / `status`, and `total` / `amount`. […]
+> 3. **`table`** on each table I'll use […] If it's a status code, I'll look at the descriptions or
+>    `dbtour.notes.yaml` for which value means paid. If nothing says, I'll ask you rather than guess.
+> 4. **`path`** between orders and customers if they aren't directly related, to get the JOIN.
+</details>
+
+<details>
+<summary><b>The MCP server</b>: a tool call in, the joins out</summary>
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"path","arguments":{"from":"dbo.OrderLines","to":"dbo.Customers"}}}
+```
+
+````text
+dbo.OrderLines to dbo.Customers: 2 joins.
+
+```sql
+FROM [dbo].[OrderLines]
+JOIN [dbo].[Orders] ON [dbo].[Orders].[Id] = [dbo].[OrderLines].[OrderId]
+JOIN [dbo].[Customers] ON [dbo].[Customers].[Id] = [dbo].[Orders].[CustomerId]
+```
+
+Each JOIN follows a relation as the docs record it; read the tables to choose the columns and whether a LEFT JOIN suits.
+````
+</details>
+
+<details>
+<summary><b>The Claude Code plugin</b>: two commands in, the skill and the server out</summary>
+
+```text
+/plugin marketplace add victorsaly/dbtour
+/plugin install dbtour@dbtour
+```
+
+It adds the `dbtour` skill and the `dbtour` MCP server (`npx -y dbtour mcp`), with the tools `overview`,
+`search`, `table` and `path`, and `query` when a source has a reader. Its `search` tool, given `customer email`,
+answers from the model:
+
+```text
+- column dbo.Customers.Email: Login address.
+```
+</details>
+
+<details>
+<summary><b>The packages</b>: a SQLite file in, a model and a read-only query out</summary>
+
+```yaml
+# dbtour.yaml, beside notes.db
+out: docs
+sources:
+  - type: sqlite
+    name: Notes
+    file: notes.db
+    reader: read-only
+```
+
+```text
+$ npx dbtour extract
+Notes: 2 tables, 1 relations
+Wrote docs/schema.json. Run dbtour render to write the docs.
+
+$ npx dbtour sql "SELECT a.name, COUNT(*) AS notes FROM notes n JOIN authors a ON a.id = n.author_id GROUP BY a.name"
+| name | notes |
+|---|---|
+| Ada | 2 |
+| Lin | 1 |
+
+2 rows.
+
+$ npx dbtour sql "DELETE FROM notes"
+The query starts with DELETE: dbtour runs only a SELECT, or a WITH followed by a SELECT.
+```
+
+The last exits 1: the reader is read-only, and dbtour checks the query before it reaches the file.
+</details>
 
 ## Start in one line
 
@@ -100,6 +251,13 @@ leave the database out wherever only one database has the table, and are told wh
 
 `docs/dbtour/index.html` is one file with the model inlined: open it from disk, or deploy the folder as it is.
 It holds the structure and never the rows.
+
+| | |
+|---|---|
+| <img src="media/catalogue.png" alt="The catalogue: every table numbered by schema, each drawn as a line with a peak per key and a bar of its rows and bytes" width="420"> | <img src="media/entry.png" alt="A table's entry: dbo.Member, 160 rows, the 3rd largest of 35 tables, its references both ways and a map of its neighbourhood" width="420"> |
+| **The catalogue**: every table, its keys and its size | **An entry**: what a table holds, how big, what it links to |
+| <img src="media/map.png" alt="The map of dbo.Member and the tables around it, every column drawn, joined by its keys" width="420"> | <img src="media/write.png" alt="Write SQL: autocomplete offering the join between dbo.Member and dbo.MemberMeasurement from their relation" width="420"> |
+| **The map**: a table and its neighbours, drawn large | **Write SQL**: autocomplete that knows the joins |
 
 - `/` searches tables, columns and groups; arrows and Enter open a result.
 - A table shows its columns with type, nullability, default, keys and description, the relations in and out
@@ -234,6 +392,17 @@ makes `dbtour_reader` with `db_datareader` alone and a password nobody sees, onc
 database again. With several databases set up, `sql`, `mcp` and `serve --database` must name one; dbtour never
 picks for you. `dbtour list` shows them, and `dbtour remove` forgets one and its passwords. The home lists each
 database with a green dot when it has a reader, and each database's page has the others in its rail.
+
+## Roadmap
+
+The detail and the order are in [PLAN.md](PLAN.md).
+
+- **Released**: SQL Server and Azure SQL; SQLite; the page with search, entries, the map and SQL; the MCP
+  server, the skill and the Claude Code plugin; setup on the page with passwords in the keychain.
+- **Next**: PostgreSQL.
+- **Planned**: MySQL, and schemas from tbls or pasted in; OpenAPI, linking each endpoint to the tables it reads;
+  a deploy workflow and `dbtour check` for CI; index and table usage on each entry; descriptions an agent
+  suggests, kept for your review; lookup values you choose to keep, shown beside their codes.
 
 ## Develop
 
