@@ -129,6 +129,114 @@ test('the page searches, opens a table, draws its neighbourhood, expands it and 
   }
 });
 
+test('the map answers a click: a table or a line is selected, its card says what it is and acts on it, and a dragged table stays put', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  try {
+    const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+    const file = join(mkdtempSync(join(tmpdir(), 'dbtour-page-')), 'index.html');
+    writeFileSync(file, render(model)['index.html']);
+    const url = pathToFileURL(file).href;
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    const node = (name: string) => page.locator('.react-flow__node', { hasText: name }).first();
+    const card = page.locator('.map-card');
+
+    await page.goto(`${url}#diagram/dbo.Orders,dbo.Customers,dbo.OrderLines`);
+    await page.waitForFunction(nodeCount(3));
+    await page.waitForFunction(edgeCount(2));
+    assert.equal(await card.count(), 0, 'no card before a click');
+
+    // A click on a table selects it: its card, the red edge, and nothing faded since all three touch it.
+    await node('Orders').locator('.node-name').click();
+    await card.waitFor();
+    assert.equal(new URL(page.url()).hash, '#diagram/dbo.Orders,dbo.Customers,dbo.OrderLines', 'a click selects; it does not leave the map');
+    assert.equal(await card.locator('h2').textContent(), 'dbo.Orders');
+    assert.match((await card.textContent()) ?? '', /312,904 rows · 39 MB · 5 columns · key Id/);
+    assert.match((await card.locator('.card-links').first().textContent()) ?? '', /CustomerId →\s*dbo\.Customers/);
+    assert.equal(await page.locator('.react-flow__node.is-picked').count(), 1);
+    assert.equal(await page.locator('.react-flow__node.is-faded').count(), 0);
+    assert.match((await card.locator('.card-links').nth(1).textContent()) ?? '', /billing\.Invoices \+/, 'a table that references it but is not on the map can be added');
+
+    // A link on the card goes to that table; from Customers, OrderLines is two steps away and fades.
+    await card.locator('.card-go', { hasText: 'dbo.Customers' }).click();
+    await page.waitForFunction(`document.querySelector('.map-card h2')?.textContent === 'dbo.Customers'`);
+    assert.equal(await page.locator('.react-flow__node.is-faded').count(), 1);
+    assert.match((await page.locator('.react-flow__node.is-faded').textContent()) ?? '', /OrderLines/);
+    assert.equal(await page.locator('.react-flow__edge.is-faded').count(), 1);
+
+    // The keyboard selects too, and the empty field lets go.
+    await node('OrderLines').locator('.node').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(`document.querySelector('.map-card h2')?.textContent === 'dbo.OrderLines'`);
+    await page.locator('.react-flow__pane').click({ position: { x: 20, y: 20 } });
+    await page.waitForFunction(`!document.querySelector('.map-card')`);
+    assert.equal(await page.locator('.react-flow__node.is-faded').count(), 0);
+
+    // A line is selected by a click on it: its card names the columns and writes the join.
+    // A straight line has no height for a locator to aim at, so the mouse clicks its middle, as a hand would.
+    const middle = await page.locator('.react-flow__edge[data-id="dbo.Orders>dbo.Customers"] .react-flow__edge-path').evaluate((path) => {
+      const at = (path as unknown as { getPointAtLength(n: number): { x: number; y: number }; getTotalLength(): number; getScreenCTM(): { a: number; d: number; e: number; f: number } });
+      const point = at.getPointAtLength(at.getTotalLength() * 0.2);
+      const m = at.getScreenCTM();
+      return { x: point.x * m.a + m.e, y: point.y * m.d + m.f };
+    });
+    await page.mouse.click(middle.x, middle.y);
+    await card.waitFor();
+    assert.equal((await card.locator('h2').textContent())?.replace(/\s+/g, ' '), 'dbo.Orders → dbo.Customers');
+    assert.match((await card.textContent()) ?? '', /CustomerId = dbo\.Customers\.Id/);
+    await card.locator('a', { hasText: 'Write this join' }).click();
+    await page.locator('.sql-page .cm-content').waitFor();
+    assert.equal(new URL(page.url()).hash, '#sql/dbo.Orders/dbo.Customers');
+    assert.match(await textOf(page.locator('.sql-page .cm-content'), /JOIN dbo\.Customers AS c ON c\.Id = o\.CustomerId;/), /JOIN dbo\.Customers AS c ON c\.Id = o\.CustomerId;/);
+    assert.match((await page.locator('.sql-seed').textContent()) ?? '', /Started from dbo\.Orders joined to dbo\.Customers/);
+
+    // Back on the map: Write SQL from a table opens that table's starter, and Hide takes it off the map.
+    await page.goBack();
+    await page.waitForFunction(nodeCount(3));
+    await node('OrderLines').click();
+    await card.locator('a', { hasText: 'Write SQL' }).click();
+    await page.locator('.sql-page .cm-content').waitFor();
+    assert.equal(new URL(page.url()).hash, '#sql/dbo.OrderLines');
+    assert.match(await textOf(page.locator('.sql-page .cm-content'), /FROM dbo\.OrderLines AS ol/), /FROM dbo\.OrderLines AS ol/);
+    await page.goBack();
+    await page.waitForFunction(nodeCount(3));
+    await node('OrderLines').click();
+    await card.locator('a', { hasText: 'Hide from the map' }).click();
+    await page.waitForFunction(nodeCount(2));
+    assert.equal(new URL(page.url()).hash, '#diagram/dbo.Orders,dbo.Customers');
+    assert.equal(await card.count(), 0, 'what was selected has left the map, and its card with it');
+
+    // A dragged table stays where it was put when the detail changes, until the layout is reset.
+    // The card has just closed and the map is fitting itself to the room it got back: the drag waits for it.
+    await page.waitForTimeout(400);
+    const before = await node('Customers').boundingBox();
+    await page.mouse.move(before!.x + 120, before!.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(before!.x + 120, before!.y + 210, { steps: 6 });
+    await page.mouse.up();
+    await page.locator('.map-controls button', { hasText: 'Reset layout' }).waitFor();
+    const order = async () => (await node('Customers').boundingBox())!.y - (await node('Orders').boundingBox())!.y;
+    assert.ok((await order()) > 100, 'Customers now sits well below Orders');
+    await page.locator('.map-controls .seg button', { hasText: 'Names' }).click();
+    await page.waitForFunction(nodeCount(2));
+    await page.waitForTimeout(300);
+    assert.ok((await order()) > 60, 'and still does at another level of detail');
+    await page.locator('.map-controls button', { hasText: 'Reset layout' }).click();
+    await page.waitForFunction(`!document.querySelector('.map-controls')?.textContent.includes('Reset layout')`);
+    await page.waitForFunction(nodeCount(2));
+    await page.waitForTimeout(300);
+    assert.ok(Math.abs(await order()) < 40, 'reset, the two are side by side again');
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('with sizes, a bar beside each line shows the bytes, the index orders and remembers it, and an entry opens on its size', async (t) => {
   const browser = await launch();
   if (!browser) {

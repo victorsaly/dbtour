@@ -1,14 +1,24 @@
 // The map: the chosen tables as entries on the black field, their relations as hairlines, laid out by ELK,
 // drawn by React Flow. Three levels of detail keep a wide table readable (names, keys, every column), and
-// the links panel switches any relation off. "+" on a node adds its neighbours by changing the hash, so
-// back undoes it. Embedded, the same map sits on an entry page at names level with a link to the full one.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Background, BackgroundVariant, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
+// the links panel switches any relation off. A click selects a table or a line: what it touches stays inked,
+// the rest fades, and a card beside the map says what it is and what can be done with it (open it, write
+// its query or its join, add its neighbours, hide it). "+" on a node adds its neighbours by changing the
+// hash, so back undoes it. Embedded, the same map sits on an entry page at names level, a picture with a link
+// to the full one.
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { applyNodeChanges, Background, BackgroundVariant, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeChange, type NodeProps, type ReactFlowInstance } from '@xyflow/react';
 import { findTable, relationsOf, type Column, type Model, type Relation, type Table } from 'dbtour/model';
 import type { Catalogue } from './catalogue.ts';
+import { CopyButton } from './Copy.tsx';
 import { expand, mergeParallel, relationId, subgraph, type Subgraph } from './graph.ts';
 import { layout, type Position as Placed } from './layout.ts';
-import { diagramHash, tableHash } from './route.ts';
+import { inked, linkCard, tableCard, without, type Selection } from './mapcard.ts';
+import { prompt } from './prompt.ts';
+import { diagramHash, sqlFromHash, sqlJoinHash, tableHash } from './route.ts';
+import { storedTool } from './tools.ts';
+
+/** Selecting a table from inside its node, for the keyboard: the map's own click is React Flow's. */
+const SelectTable = createContext<((ref: string) => void) | undefined>(undefined);
 
 export type MapMode = 'names' | 'keys' | 'columns';
 const modes: { id: MapMode; label: string }[] = [
@@ -60,18 +70,33 @@ interface TableNodeData extends Record<string, unknown> {
 type TableNode = Node<TableNodeData, 'table'>;
 
 function TableNodeView({ data }: NodeProps<TableNode>) {
+  const select = useContext(SelectTable);
+  // On the full map the whole node is the button: a click or Enter selects it, and its card opens the entry.
+  // Embedded there is no card, so the name is the link it always was.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!select || event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault();
+    select(data.ref);
+  };
   return (
-    <div className={`node${data.focus ? ' is-focus' : ''}${data.rows.length === 0 ? ' is-bare' : ''}`}>
+    <div
+      className={`node${data.focus ? ' is-focus' : ''}${data.rows.length === 0 ? ' is-bare' : ''}`}
+      {...(select ? { role: 'button', tabIndex: 0, 'aria-label': `${data.ref}: select it`, onKeyDown } : {})}
+    >
       <Handle type="target" position={Position.Left} className="handle" />
       <div className="node-head">
         <span className="block" style={{ background: data.colour }} />
         <span className="no">{data.number}</span>
-        <a className="nodrag node-name" href={tableHash(data.ref)} title={`Open ${data.ref}`}>
-          {data.name}
-        </a>
+        {select ? (
+          <span className="node-name">{data.name}</span>
+        ) : (
+          <a className="nodrag node-name" href={tableHash(data.ref)} title={`Open ${data.ref}`}>
+            {data.name}
+          </a>
+        )}
         {data.kind === 'view' && <span className="tag">view</span>}
         {data.expandHash && (
-          <a className="nodrag node-expand" href={data.expandHash} title="Add its neighbours" aria-label={`Add the neighbours of ${data.ref}`}>
+          <a className="nodrag node-expand" href={data.expandHash} title="Add its neighbours" aria-label={`Add the neighbours of ${data.ref}`} onClick={(event) => event.stopPropagation()}>
             +
           </a>
         )}
@@ -133,32 +158,76 @@ export function DiagramView({ model, cat, refs, title, description, defaultMode 
   const [mode, setModeState] = useState<MapMode>(() => (embedded ? 'names' : storedMode(defaultMode)));
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const [linksOpen, setLinksOpen] = useState(false);
-  const [placed, setPlaced] = useState<{ key: string; positions: Map<string, Placed> }>();
+  // The nodes as React Flow draws them, with the layout they were made for: a map is shown only once its own
+  // nodes are placed, never the last one's for a frame.
+  const [drawn, setDrawn] = useState<{ key: string; nodes: TableNode[] }>();
+  const [selection, setSelection] = useState<Selection>();
+  // Where the reader dragged a table to: kept through a change of detail or of links, until the tables change
+  // or the layout is reset.
+  const moved = useRef(new Map<string, Placed>());
+  const [movedCount, setMovedCount] = useState(0);
+  const [resets, setResets] = useState(0);
+  const flow = useRef<ReactFlowInstance<TableNode, Edge>>(null);
+  // Whether the reader has panned or zoomed this map themselves: until they do, the map is kept whole in view.
+  const touched = useRef(false);
 
   const setMode = (next: MapMode) => {
     setModeState(next);
     rememberMode(next);
   };
-  useEffect(() => setHidden(new Set()), [key]);
+  useEffect(() => {
+    setHidden(new Set());
+    setSelection(undefined);
+    moved.current = new Map();
+    setMovedCount(0);
+    touched.current = false;
+  }, [key]);
 
   const foreignOf = useCallback((ref: string) => relationsOf(model, ref).out.flatMap((r) => r.from.columns), [model]);
-  const layoutKey = `${key}|${mode}`;
+  const layoutKey = `${key}|${mode}|${resets}`;
   useEffect(() => {
     let current = true;
     const rows = (ref: string) => rowsShown(mode, findTable(model, ref)!.table, foreignOf(ref)).length;
     layout(model, graph, rows).then((positions) => {
-      if (current) setPlaced({ key: layoutKey, positions });
+      if (!current) return;
+      const placed = new Map([...positions, ...moved.current]);
+      setDrawn({ key: layoutKey, nodes: toNodes(model, cat, graph, placed, mode, foreignOf, embedded) });
     });
     return () => {
       current = false;
     };
-  }, [model, graph, layoutKey, mode, foreignOf]);
+  }, [model, cat, graph, layoutKey, mode, foreignOf, embedded]);
 
-  const positions = placed?.key === layoutKey ? placed.positions : undefined;
+  const ready = drawn?.key === layoutKey ? drawn.nodes : undefined;
   const shown = useMemo(() => graph.relations.filter((r) => !hidden.has(relationId(r))), [graph, hidden]);
-  const nodes = useMemo(() => (positions ? toNodes(model, cat, graph, positions, mode, foreignOf, embedded) : []), [model, cat, graph, positions, mode, foreignOf, embedded]);
-  const edges = useMemo(() => toEdges(shown), [shown]);
-  const flowKey = `${layoutKey}|${[...hidden].sort().join('|')}`;
+  // A selection that has left the map (its table hidden, its line switched off) is no selection.
+  const lit = useMemo(() => inked({ tables: graph.tables, relations: shown }, selection), [graph, shown, selection]);
+  const picked = lit ? selection : undefined;
+  const nodes = useMemo(
+    () => (ready ?? []).map((node) => ({ ...node, className: !lit ? '' : picked?.kind === 'table' && picked.ref === node.id ? 'is-picked' : lit.tables.has(node.id) ? 'is-lit' : 'is-faded' })),
+    [ready, lit, picked],
+  );
+  const edges = useMemo(() => toEdges(shown, lit?.links, embedded), [shown, lit, embedded]);
+  const onNodesChange = useCallback((changes: NodeChange<TableNode>[]) => setDrawn((d) => (d ? { ...d, nodes: applyNodeChanges(changes, d.nodes) } : d)), []);
+  const selectTable = useCallback((ref: string) => {
+    setSelection({ kind: 'table', ref });
+    // Brought to the middle when it is elsewhere on a large map, at the zoom the reader chose.
+    const node = flow.current?.getNode(ref);
+    if (node) flow.current?.setCenter(node.position.x + (node.measured?.width ?? 240) / 2, node.position.y + (node.measured?.height ?? 34) / 2, { zoom: flow.current.getZoom(), duration: 250 });
+  }, []);
+  // The card takes its width from the map. A map the reader has not moved is fitted again to what is left,
+  // so no table ends up under the card; one they have moved is theirs and stays as they left it.
+  const cardOpen = lit !== undefined && !embedded;
+  useEffect(() => {
+    if (touched.current) return;
+    const frame = requestAnimationFrame(() => flow.current?.fitView({ padding: 0.15, maxZoom: 1, duration: 200 }));
+    return () => cancelAnimationFrame(frame);
+  }, [cardOpen]);
+  const resetLayout = () => {
+    moved.current = new Map();
+    setMovedCount(0);
+    setResets((n) => n + 1);
+  };
 
   const toggle = (id: string) =>
     setHidden((set) => {
@@ -180,11 +249,15 @@ export function DiagramView({ model, cat, refs, title, description, defaultMode 
   const canvas =
     graph.tables.length === 0 ? (
       <p className="page muted">None of these tables is in the model.</p>
-    ) : positions ? (
-      <ReactFlow
-        key={flowKey}
-        defaultNodes={nodes}
-        defaultEdges={edges}
+    ) : ready ? (
+      <ReactFlow<TableNode, Edge>
+        key={layoutKey}
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onInit={(instance) => {
+          flow.current = instance;
+        }}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: embedded ? 0.1 : 0.15, maxZoom: 1 }}
@@ -192,9 +265,26 @@ export function DiagramView({ model, cat, refs, title, description, defaultMode 
         colorMode="system"
         nodesConnectable={false}
         elementsSelectable={false}
+        nodesFocusable={false}
+        edgesFocusable={false}
         nodesDraggable={!embedded}
         zoomOnScroll={!embedded}
         preventScrolling={!embedded}
+        {...(embedded
+          ? {}
+          : {
+              onNodeClick: (_event, node) => setSelection({ kind: 'table', ref: node.id }),
+              onEdgeClick: (_event, edge) => setSelection({ kind: 'link', id: edge.id }),
+              onPaneClick: () => setSelection(undefined),
+              // A move the reader made carries its event; one the map made for itself has none.
+              onMoveEnd: (event) => {
+                if (event) touched.current = true;
+              },
+              onNodeDragStop: (_event, node) => {
+                moved.current.set(node.id, node.position);
+                setMovedCount(moved.current.size);
+              },
+            })}
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Lines} gap={32} lineWidth={1} color="var(--grid)" bgColor="var(--bg)" />
@@ -203,6 +293,121 @@ export function DiagramView({ model, cat, refs, title, description, defaultMode 
     ) : (
       <p className="page muted">Laying out…</p>
     );
+
+  // The card of what is selected, in the links panel's place while there is a selection.
+  let card;
+  if (!embedded && picked?.kind === 'table') {
+    const about = tableCard(model, cat, graph, picked.ref);
+    const grown = expand(model, graph.tables, picked.ref);
+    const linkRow = (link: { columns: string[]; table: string; onMap: boolean; virtual: boolean }, out: boolean) => (
+      <li key={`${link.table}.${link.columns.join(',')}`}>
+        <span className="card-cols">
+          {out ? `${link.columns.join(', ')} →` : '←'}
+        </span>
+        {link.onMap ? (
+          <button type="button" className="card-go" onClick={() => selectTable(link.table)}>
+            {link.table}
+          </button>
+        ) : (
+          <a className="card-go is-off" href={diagramHash([...graph.tables, link.table])} title="Not on this map: add it">
+            {link.table} +
+          </a>
+        )}
+        {!out && <span className="card-cols">.{link.columns.join(', ')}</span>}
+        {link.virtual && <span className="tag">notes</span>}
+      </li>
+    );
+    card = about && (
+      <aside className="map-card" aria-label={`Selected: ${about.ref}`}>
+        <header>
+          <span className="block" style={{ background: cat.colours.get(findTable(model, about.ref)!.schema.name) }} />
+          <span className="no">{about.number}</span>
+          <h2>{about.ref}</h2>
+          {about.kind === 'view' && <span className="tag">view</span>}
+          <button type="button" className="card-close" aria-label="Close" onClick={() => setSelection(undefined)}>
+            ×
+          </button>
+        </header>
+        {about.description && <p className="card-about">{about.description}</p>}
+        <p className="label">
+          {[about.size, `${about.columns} ${about.columns === 1 ? 'column' : 'columns'}`, about.keys.length ? `key ${about.keys.join(', ')}` : 'no key'].filter(Boolean).join(' · ')}
+        </p>
+        <div className="card-actions">
+          <a className="button" href={tableHash(about.ref)}>
+            Open the entry
+          </a>
+          <a className="button" href={sqlFromHash(about.ref)}>
+            Write SQL
+          </a>
+          {grown.length > graph.tables.length && (
+            <a className="button" href={diagramHash(grown)}>
+              Add its neighbours
+            </a>
+          )}
+          <CopyButton className="button" label={`Copy for ${storedTool().name}`} text={() => prompt(model, [about.ref])} />
+          {graph.tables.length > 1 && (
+            <a className="button" href={diagramHash(without(graph.tables, about.ref))}>
+              Hide from the map
+            </a>
+          )}
+        </div>
+        <h3>
+          References <span className="count">{about.references.length}</span>
+        </h3>
+        {about.references.length > 0 ? <ul className="card-links">{about.references.map((l) => linkRow(l, true))}</ul> : <p className="muted">No other table.</p>}
+        <h3>
+          Referenced by <span className="count">{about.referencedBy.length}</span>
+        </h3>
+        {about.referencedBy.length > 0 ? <ul className="card-links">{about.referencedBy.map((l) => linkRow(l, false))}</ul> : <p className="muted">No other table.</p>}
+      </aside>
+    );
+  } else if (!embedded && picked?.kind === 'link') {
+    const about = linkCard({ tables: graph.tables, relations: shown }, picked.id);
+    card = about && (
+      <aside className="map-card" aria-label={`Selected: the relation from ${about.from} to ${about.to}`}>
+        <header>
+          <h2>
+            {about.from} → {about.to}
+          </h2>
+          <button type="button" className="card-close" aria-label="Close" onClick={() => setSelection(undefined)}>
+            ×
+          </button>
+        </header>
+        <p className="label">{about.joins.length === 1 ? 'One relation' : `${about.joins.length} relations on one line`}</p>
+        <ul className="card-links">
+          {about.joins.map((j) => (
+            <li key={j.from.join(',')}>
+              <span className="card-join">
+                {j.from.join(', ')} = {about.to}.{j.to.join(', ')}
+              </span>
+              {j.virtual && <span className="tag">notes</span>}
+            </li>
+          ))}
+        </ul>
+        <div className="card-actions">
+          <a className="button" href={sqlJoinHash(about.from, about.to)}>
+            Write this join
+          </a>
+          <button type="button" className="button" onClick={() => selectTable(about.from)}>
+            Select {findTable(model, about.from)?.table.name}
+          </button>
+          <button type="button" className="button" onClick={() => selectTable(about.to)}>
+            Select {findTable(model, about.to)?.table.name}
+          </button>
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              setAll(graph.relations.filter((r) => r.from.table === about.from && r.to.table === about.to), false);
+              setSelection(undefined);
+            }}
+          >
+            Hide this line
+          </button>
+        </div>
+      </aside>
+    );
+  }
 
   if (embedded) {
     return (
@@ -231,7 +436,7 @@ export function DiagramView({ model, cat, refs, title, description, defaultMode 
           {description && <p className="muted">{description}</p>}
         </div>
         <p className="label">
-          {graph.tables.length} tables · {shown.length} of {graph.relations.length} relations · drag to pan · scroll to zoom · + adds neighbours
+          {graph.tables.length} tables · {shown.length} of {graph.relations.length} relations · click a table or a line · drag to move · scroll to zoom
         </p>
       </header>
       <div className="map-controls">
@@ -246,10 +451,18 @@ export function DiagramView({ model, cat, refs, title, description, defaultMode 
         <button type="button" className={`button${linksOpen ? ' is-on' : ''}`} aria-pressed={linksOpen} onClick={() => setLinksOpen((o) => !o)}>
           Links {shown.length}/{graph.relations.length}
         </button>
+        {movedCount > 0 && (
+          <button type="button" className="button" onClick={resetLayout}>
+            Reset layout
+          </button>
+        )}
       </div>
       <div className="map-body">
-        <div className="canvas">{canvas}</div>
-        {linksOpen && (
+        <div className={`canvas${lit ? ' has-selection' : ''}`}>
+          <SelectTable.Provider value={selectTable}>{canvas}</SelectTable.Provider>
+        </div>
+        {card}
+        {!card && linksOpen && (
           <aside className="map-links" aria-label="Links">
             <h2>Links</h2>
             {declared.length > 0 && <GroupBox label="Declared" relations={declared} hidden={hidden} onChange={(on) => setAll(declared, on)} />}
@@ -304,13 +517,19 @@ function toNodes(model: Model, cat: Catalogue, graph: Subgraph, positions: Map<s
 }
 
 /** Parallel relations share one line, so neither hides the other; the label names each one's columns. */
-function toEdges(relations: Relation[]): Edge[] {
+function toEdges(relations: Relation[], lit: Set<string> | undefined, embedded: boolean): Edge[] {
   return mergeParallel(relations).map((link) => ({
     id: link.id,
     source: link.from,
     target: link.to,
     label: link.relations.map((r) => r.from.columns.join(', ') + (r.virtual ? ' (notes)' : '')).join(' · '),
+    className: !lit ? '' : lit.has(link.id) ? 'is-lit' : 'is-faded',
+    // A hairline is hard to hit: the line answers a click this many pixels to either side of it.
+    interactionWidth: embedded ? 0 : edgeReach,
     style: link.relations.every((r) => r.virtual) ? { strokeDasharray: '4 4' } : undefined,
     markerEnd: { type: MarkerType.Arrow, width: 14, height: 14, color: 'var(--ink)' },
   }));
 }
+
+/** How wide a line is to a click, in pixels: wide enough for a finger, narrow enough that two lines stay apart. */
+const edgeReach = 24;

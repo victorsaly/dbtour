@@ -12,8 +12,8 @@ export type Route =
   | { kind: 'database'; name: string; map?: true }
   /** #map: the whole catalogue as a graph. */
   | { kind: 'map' }
-  /** #sql: an editor for a query across the tables. */
-  | { kind: 'sql' };
+  /** #sql: an editor for a query across the tables; #sql/dbo.Orders, seeded from that table; #sql/a.b/c.d, from their join. */
+  | { kind: 'sql'; table?: string; to?: string };
 
 export function parseRoute(hash: string): Route {
   const raw = hash.replace(/^#\/?/, '');
@@ -22,7 +22,13 @@ export function parseRoute(hash: string): Route {
   const head = slash === -1 ? raw : raw.slice(0, slash);
   const rest = slash === -1 ? '' : raw.slice(slash + 1);
   if (head === 'map' && rest === '') return { kind: 'map' };
-  if (head === 'sql' && rest === '') return { kind: 'sql' };
+  if (head === 'sql') {
+    if (rest === '') return { kind: 'sql' };
+    // One table, or two for their join; anything else is no address the editor has.
+    const seeds = rest.split('/').map(decode);
+    if (seeds.length > 2 || !seeds.every(isRef)) return { kind: 'home' };
+    return seeds.length === 2 ? { kind: 'sql', table: seeds[0], to: seeds[1] } : { kind: 'sql', table: seeds[0] };
+  }
   if (head === 'diagram') {
     // A ref that is not schema.table is dropped; the rest still draw, and none at all goes home.
     const refs = rest.split(',').filter((r) => r !== '').map(decode).filter(isRef);
@@ -66,7 +72,7 @@ export function routeHash(route: Route): string {
     case 'map':
       return '#map';
     case 'sql':
-      return '#sql';
+      return `#sql${route.table ? `/${encode(route.table)}` : ''}${route.table && route.to ? `/${encode(route.to)}` : ''}`;
   }
 }
 
@@ -79,6 +85,7 @@ export function canonicalRoute(route: Route, model: Model): Route {
   const named = (ref: string) => findTable(model, ref)?.ref ?? ref;
   if (route.kind === 'table') return { ...route, ref: named(route.ref) };
   if (route.kind === 'diagram') return { ...route, refs: route.refs.map(named) };
+  if (route.kind === 'sql' && route.table) return { ...route, table: named(route.table), ...(route.to ? { to: named(route.to) } : {}) };
   return route;
 }
 
@@ -88,6 +95,8 @@ export const groupHash = (name: string): string => routeHash({ kind: 'group', na
 export const databaseHash = (name: string): string => routeHash({ kind: 'database', name });
 export const databaseMapHash = (name: string): string => routeHash({ kind: 'database', name, map: true });
 export const sqlHash = '#sql';
+export const sqlFromHash = (table: string): string => routeHash({ kind: 'sql', table });
+export const sqlJoinHash = (table: string, to: string): string => routeHash({ kind: 'sql', table, to });
 export const mapHash = '#map';
 
 /** Dots and colons stay readable in the address bar; commas and slashes are separators, so they are encoded. */

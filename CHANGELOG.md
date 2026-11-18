@@ -1,6 +1,25 @@
 # Changelog
 
-## 0.11.2 (unreleased)
+## 0.11.3 (unreleased)
+
+- The map answers a click. A click on a table selects it: it carries the red edge, the tables it relates to
+  and the lines between them stay inked, and the rest fades. A card beside the map says what it is (its
+  description, rows and size, columns and key), lists each relation out and in, and acts on it: open its
+  entry, write SQL from it, add its neighbours, copy it for an agent, hide it from the map. A relation on the
+  card goes to that table, or adds it when it is not on the map. Enter or Space selects a table from the
+  keyboard, and a click on the empty field lets go. Before, only a table's name did anything, and it left the
+  map.
+- A line can be clicked too, with a reach wider than the hairline: its card names the columns it joins, every
+  relation when two run on one line, and offers to write the join, select either table, or hide the line.
+- The editor opens seeded: `#sql/dbo.Orders` starts from that table's query, sharing the draft its entry
+  keeps, and `#sql/dbo.Orders/dbo.Customers` from the join of the two, with both tables' columns, the
+  protected ones left out and a name both have told apart by its table. The page says what it started from.
+- A table dragged on the map stays where it was put when the detail changes or a line is hidden; Reset layout
+  puts every table back. Hiding a line no longer redraws the map from the start.
+- A map the reader has not panned or zoomed is fitted again when the card opens or closes, so no table sits
+  under it.
+
+## 0.11.2 (18 November 2026)
 
 - A live example on the web: the page `render` writes for `examples/several`, three databases on one page, is at
   [skills.victorsaly.com/dbtour/example](https://skills.victorsaly.com/dbtour/example), so the catalogue, an

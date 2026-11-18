@@ -11,11 +11,12 @@ export function tablesOf(database: Database): string[] {
 
 /**
  * The database a view is in, when all it shows is in one: a database's own home or map, a table, a diagram
- * of one database's tables. The whole map, the editor, a group and the home are in none.
+ * of one database's tables, the editor seeded from a table. The whole map, the bare editor, a group and the
+ * home are in none.
  */
 export function databaseOf(model: Model, route: Route): string | undefined {
   if (route.kind === 'database') return model.databases.find((d) => d.name === route.name)?.name;
-  const refs = route.kind === 'table' ? [route.ref] : route.kind === 'diagram' ? route.refs : [];
+  const refs = route.kind === 'table' ? [route.ref] : route.kind === 'diagram' ? route.refs : route.kind === 'sql' && route.table ? [route.table] : [];
   const names = new Set(refs.map((ref) => findTable(model, ref)?.database.name));
   const [only] = names;
   return names.size === 1 ? only : undefined;

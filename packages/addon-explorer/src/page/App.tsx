@@ -91,7 +91,8 @@ function CatalogueApp({ model }: { model: Model }) {
       view = <DiagramView model={model} cat={cat} refs={allTables(model)} title="The whole catalogue" description="Every table and every relation. Names keeps it readable; Keys and Columns add detail." defaultMode="names" />;
       break;
     case 'sql':
-      view = <SqlPage model={model} database={database} />;
+      // Keyed by what it is seeded from: another table is another editor, not this one with a stale choice.
+      view = <SqlPage key={`${route.table ?? ''}>${route.to ?? ''}`} model={model} database={database} table={route.table} to={route.to} />;
       break;
     case 'group': {
       const group = model.groups.find((g) => g.name === route.name);
