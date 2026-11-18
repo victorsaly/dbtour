@@ -1,10 +1,11 @@
-// Writes the brand files from the mark's one geometry: brand/mark.svg and mark-light.svg, brand/logo.svg and
+// Writes the brand files from the mark's one geometry: brand/mark.svg and mark-light.svg, brand/family/ (an icon per
+// way to use dbtour, in ink and paper), brand/logo.svg and
 // logo-light.svg (mark and outlined wordmark), brand/social.png (1200 by 630, for link previews) and brand/mark.png (256
 // square, the plugin's icon) drawn in Google Chrome through Playwright. Run after changing packages/addon-explorer/src/mark.ts; the files are committed.
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { logoSvg, markSvg } from '../packages/addon-explorer/src/mark.ts';
+import { familyMembers, familySvg, logoSvg, markSvg } from '../packages/addon-explorer/src/mark.ts';
 
 const repo = fileURLToPath(new URL('..', import.meta.url));
 const out = `${repo}brand`;
@@ -18,6 +19,13 @@ writeFileSync(`${out}/mark-light.svg`, markSvg(96, paper) + '\n');
 // The logo: the mark and the outlined wordmark, "tour" muted.
 writeFileSync(`${out}/logo.svg`, logoSvg(ink, muted.dark) + '\n');
 writeFileSync(`${out}/logo-light.svg`, logoSvg(paper, muted.light) + '\n');
+// The family: one icon per way to use dbtour (the app, the CLI, the skill, the MCP server, the plugin, the
+// packages), in ink and in paper, for the README and the site.
+mkdirSync(`${out}/family`, { recursive: true });
+for (const member of familyMembers) {
+  writeFileSync(`${out}/family/${member}.svg`, familySvg(member, 48, ink) + '\n');
+  writeFileSync(`${out}/family/${member}-light.svg`, familySvg(member, 48, paper) + '\n');
+}
 
 // The social image's text is set from the page's own font files, so it needs nothing installed.
 const fonts = `${repo}packages/addon-explorer/fonts/`;

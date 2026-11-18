@@ -21,6 +21,35 @@ function markShapes(): string {
   return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"/><path d="${markCylinderBody}"/><polyline points="${markPulse}"/>`;
 }
 
+// The family: each way to use dbtour is the mark's cylinder with a sign of its own where the pulse runs, drawn
+// with the same pen, so the six read as one family. The signs sit inside the body, y 9.75 to 18.5.
+export const familyMembers = ['app', 'cli', 'skill', 'mcp', 'plugin', 'packages'] as const;
+export type FamilyMember = (typeof familyMembers)[number];
+const familySigns: Record<FamilyMember, string> = {
+  // The page: a window with its bar.
+  app: '<rect x="7.5" y="10.75" width="9" height="6.5" rx="1"/><path d="M7.5 13H16.5"/>',
+  // The command line: a prompt and its caret.
+  cli: '<polyline points="7.5,11 10.5,13.75 7.5,16.5"/><path d="M12.5 16.5H16.5"/>',
+  // The skill: what an agent learns, a spark.
+  skill: '<path d="M12 10 L13.15 12.85 L16 14 L13.15 15.15 L12 18 L10.85 15.15 L8 14 L10.85 12.85 Z"/>',
+  // The MCP server: questions in, answers out.
+  mcp: '<path d="M7 11.75H16.5M14.25 9.75 16.5 11.75 14.25 13.75M17 16.25H7.5M9.75 14.25 7.5 16.25 9.75 18.25"/>',
+  // The plugin: a plug.
+  plugin: '<path d="M10 9.75V12M14 9.75V12"/><rect x="8.25" y="12" width="7.5" height="3.75" rx="1"/><path d="M12 15.75V18.5"/>',
+  // The packages: a box.
+  packages: '<path d="M12 10 16.25 12.1V16.4L12 18.5 7.75 16.4V12.1Z"/><path d="M7.75 12.1 12 14.25 16.25 12.1M12 14.25V18.5"/>',
+};
+
+/** One member of the family: the cylinder and its sign, in the mark's box and pen. */
+export function familySvg(member: FamilyMember, size: number, ink: string, strokeWidth = 2): string {
+  const { cx, cy, rx, ry } = markCylinderTop;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${ink}" ` +
+    `stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">` +
+    `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"/><path d="${markCylinderBody}"/>${familySigns[member]}</svg>`
+  );
+}
+
 /** For <link rel="icon">: the mark as a data URI, in the ink that reads on both light and dark tabs. */
 export function markDataUri(ink = '#8c8c8c'): string {
   return `data:image/svg+xml,${encodeURIComponent(markSvg(32, ink, 2))}`;
