@@ -166,6 +166,7 @@ dbtour find users           # search from the terminal, same index as the page
 dbtour mcp                  # the model to an agent over MCP: overview, search, table, path; later gaps, suggest
 dbtour accept dbo.Orders    # a suggestion into the notes; reject drops it
 dbtour script               # T-SQL that writes the accepted descriptions into the database, for a person to run
+dbtour push                 # later: the model, notes and suggestions to a hosted dbtour, from CI
 ```
 
 ## The page
@@ -196,6 +197,29 @@ table or the canvas in the centre, relations and notes on the right.
 Pages or a bucket, with a workflow template in the repo. The page holds structure only, never rows, unless
 the owner listed lookups to keep (their `values.json`), and a private database still belongs behind the
 host's access control.
+
+### Hosted
+
+A static folder reaches people; it does not reach their agents, and access control is left to whatever
+hosts it. A hosted model does both, as an option beside the local and static ways, which keep working as
+they do:
+
+- **CI pushes, the host never connects.** The deploy workflow (milestone 9) runs `extract` with its own
+  connection and `dbtour push` sends the model, the notes and the suggestions to the host with a token for
+  that project. The host has no connection string and no reader, so it cannot run a query; queries stay on
+  the machines that have a reader.
+- **Never rows.** The host takes the model and nothing read from a table: `values.json` is not pushed, even
+  when the owner keeps it locally.
+- **The page and the MCP server, behind sign-in.** Each project's page, and `dbtour mcp`'s tools over HTTP,
+  so every teammate's agent can read the model without a checkout (`claude mcp add --transport http`).
+  People sign in with the team's own identity (GitHub or Entra organisation), and a project is seen only by
+  its members.
+- **What the history says.** Each push is kept, so the host can show what changed between two pushes of the
+  model, as `git diff docs/dbtour/` does in a repository.
+
+This repository gets `dbtour push` (core, HTTP with what Node ships, so still no dependency) and the
+remote MCP's contract, which is the local one's. The host itself is a service of its own, outside this
+repository. Who runs it, what it costs and whether it is paid are decided with the owner before it is built.
 
 ## The agent skill
 
@@ -285,6 +309,9 @@ shop window, and nothing goes on the page before it is released.
     refused for protected or oversized tables and wherever the protection could not be read; the rows on
     the lookup's entry and beside each column that references it, with the day they were read; search over
     them; `table` over MCP including them; `render --without-values` for what is committed or deployed.
+14. **Hosted**: `dbtour push` from the deploy workflow (after 9), the page and the MCP server over HTTP
+    behind the team's sign-in, the model's history between pushes; never a connection to the database and
+    never a row. Who runs the host and what it costs are decided first.
 
 ## Borrowed from
 
