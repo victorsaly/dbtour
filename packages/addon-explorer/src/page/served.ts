@@ -60,6 +60,14 @@ export function connectionFor(served: Served | undefined, database: string | und
   return { state: 'no reader', source: database ?? served.sources[0]?.name ?? '' };
 }
 
+/**
+ * Where a page that is not served was opened, for the editor's note: a file on disk, or a website it was
+ * deployed to. Neither can reach the database, but a reader of a deployed page never opened a file.
+ */
+export function openedFrom(protocol: string): string {
+  return protocol === 'file:' ? 'opened from a file' : 'opened from a website';
+}
+
 export type Tone = 'off' | 'idle' | 'ok' | 'failed' | 'live';
 
 /**

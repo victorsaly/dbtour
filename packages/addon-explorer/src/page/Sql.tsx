@@ -19,7 +19,7 @@ import { formatQuery } from './format.ts';
 import { sqlPrompt } from './query.ts';
 import { sqlHighlighter, sqlTokens } from './sql.ts';
 import { storedTool } from './tools.ts';
-import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, parseServed, statusOf, type Served } from './served.ts';
+import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, openedFrom, parseServed, statusOf, type Served } from './served.ts';
 
 export function SqlBlock({ code, driver, label = 'SQL definition' }: { code: string; driver: string; label?: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -447,7 +447,7 @@ export function SqlEditor({ model, database, initial, draft, autoFocus = false }
         )}
         {connection.state === 'not served' && (
           <>
-            Not connected: opened from a file, the page cannot reach the database. Run <code>npx dbtour serve</code> and open the address it prints to run
+            Not connected: {openedFrom(location.protocol)}, the page cannot reach the database. Run <code>npx dbtour serve</code> and open the address it prints to run
             queries here, or run this one with <code>npx dbtour sql</code> or an agent's MCP <code>query</code> tool.
           </>
         )}

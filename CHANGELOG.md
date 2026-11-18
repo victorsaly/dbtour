@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.11.1 (unreleased)
+## 0.11.2 (unreleased)
+
+- A live example on the web: the page `render` writes for `examples/shop`, a made-up shop of six tables, is at
+  [skills.victorsaly.com/dbtour/example](https://skills.victorsaly.com/dbtour/example), so the catalogue, an
+  entry, the map and the editor can be tried before anything is installed. It is the one file as rendered; the
+  README links it.
+- A deployed page no longer says it was opened from a file. Its editor still cannot reach the database, and
+  now says so as a website: "Not connected: opened from a website, the page cannot reach the database", with
+  the same ways to run the query. Found putting the example on the web. A browser test opens the page from a
+  static host and checks that it is whole from the one file, with nothing else asked for.
+
+## 0.11.1 (18 November 2026)
 
 - A SQL Server on this machine can be set up: one in Docker, or a developer's own, has a certificate it signed
   itself, which dbtour refused. It is trusted when the server is this machine (`localhost`, `127.0.0.1`, `::1`,

@@ -4,6 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -373,6 +375,7 @@ test('the Query section: a starter from the model, autocomplete of its tables, a
     assert.equal(new URL(page.url()).hash, '#sql');
     const sqlEditor = page.locator('.sql-page .cm-content');
     assert.match((await sqlEditor.textContent()) ?? '', /A query against Shop/);
+    assert.match((await page.locator('.sql-hint').last().textContent()) ?? '', /^Not connected: opened from a file, the page cannot reach the database/);
 
     // A snippet writes the start of a read and opens the tables, and Tab takes one; Tab after * writes the
     // columns; Format lays it out.
@@ -447,6 +450,48 @@ test('on a phone, a suggestion\'s description sits clear of the list, and a name
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
+  }
+});
+
+test('deployed to a website, the page is whole and its editor says a website cannot reach the database', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no browser: install Google Chrome, or set DBTOUR_E2E_BROWSER to a Chromium binary');
+    return;
+  }
+  // A static host: the one file render wrote, and nothing else to ask for.
+  const model: Model = JSON.parse(readFileSync(new URL('../../../core/test/fixtures/shop.json', import.meta.url), 'utf8'));
+  const html = render(model)['index.html'];
+  const asked: string[] = [];
+  const host = createServer((request, response) => {
+    asked.push(request.url ?? '');
+    if (request.url !== '/shop') {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(html);
+  });
+  await new Promise<void>((resolve) => host.listen(0, '127.0.0.1', resolve));
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${(host.address() as AddressInfo).port}/shop`);
+    await page.getByRole('heading', { name: 'Shop' }).waitFor();
+    await page.keyboard.press('/');
+    await page.keyboard.type('cust');
+    await page.keyboard.press('Enter');
+    await page.locator('h1', { hasText: 'Customers' }).waitFor();
+    await page.locator('a', { hasText: 'Write SQL' }).click();
+    await page.locator('.sql-page .cm-content').waitFor();
+    assert.equal((await page.locator('.sql-state .status').textContent())?.trim(), 'Not connected');
+    assert.match((await page.locator('.sql-hint').last().textContent()) ?? '', /^Not connected: opened from a website, the page cannot reach the database/);
+    assert.equal(await page.locator('.sql-run').count(), 0, 'nothing to run a query through');
+    assert.deepEqual(asked, ['/shop'], 'the page is one file: fonts, script and model are in it');
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    host.close();
   }
 });
 

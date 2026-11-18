@@ -5,7 +5,7 @@
 
 **Schema docs for your database, kept in your repository, for people and agents.**
 
-[![version](https://img.shields.io/badge/version-0.11.1-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.11.2-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 [![npm](https://img.shields.io/npm/v/dbtour)](https://www.npmjs.com/package/dbtour)
 
@@ -14,6 +14,9 @@
 **[Watch it in 30 seconds](https://skills.victorsaly.com/dbtour#teaser)**, what it does with no setup, or
 **[the whole tour](https://skills.victorsaly.com/dbtour#film)** in a minute and a half, with sound: the setup,
 the catalogue, a table's page, the map, queries, and your agent asking over MCP, against a real SQL Server.
+
+Or **[try the live example](https://skills.victorsaly.com/dbtour/example)**: the page itself, rendered from
+[`examples/shop`](examples/shop), a made-up shop of six tables. Nothing to install.
 
 </div>
 

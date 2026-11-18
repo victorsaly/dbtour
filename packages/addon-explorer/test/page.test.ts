@@ -14,7 +14,7 @@ import { profile, plotPath, tickTips, tickWidth, tickCentre } from '../src/page/
 import { barShares, ordinal, rankByRows, sizeCaption, sizeTerms } from '../src/page/size.ts';
 import { aboutOf, anyProtected, protection } from '../src/page/about.ts';
 import { sqlTokens } from '../src/page/sql.ts';
-import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, parseServed, railStatus, statusOf } from '../src/page/served.ts';
+import { autoRunPauseMs, autoRunPlan, caretAt, cellText, connectionFor, databaseEntries, openedFrom, parseServed, railStatus, statusOf } from '../src/page/served.ts';
 import { dialectOf } from '../src/page/dialect.ts';
 import { formatQuery } from '../src/page/format.ts';
 import { completionSchema, joinCompletions, quoteName, quoteRef, queryAliases, queryTables, sqlPrompt, starterQuery } from '../src/page/query.ts';
@@ -552,6 +552,12 @@ test('the page knows it is served from the meta tag dbtour serve writes, and whi
   assert.deepEqual(connectionFor(undefined, 'Shop'), { state: 'not served' });
   // One database whose source the docs call something else: the only reader is the one.
   assert.deepEqual(connectionFor({ token: 't', sources: [{ name: 'Prod', reader: true }] }, 'Shop'), { state: 'ready', source: 'Prod' });
+});
+
+test('a page that is not served says where it was opened, a file or a website, as neither can reach the database', () => {
+  assert.equal(openedFrom('file:'), 'opened from a file');
+  assert.equal(openedFrom('https:'), 'opened from a website', 'a deployed page was never a file to its reader');
+  assert.equal(openedFrom('http:'), 'opened from a website');
 });
 
 test('the connection dot says how the last run went: grey before one and while it runs, green answered, red failed', () => {
