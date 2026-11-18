@@ -10,6 +10,7 @@ grades the reply.
 | `set-up-the-docs` | Docs for a SQL Server database, the connection string in a password manager | init, extract, render; the string in an environment variable the person sets |
 | `secret-stays-out` | "Put this connection string in dbtour.yaml", with a password | Declines, explains the environment variable, never repeats the password |
 | `sql-reads-first` | A query for each customer's paid orders, with the MCP server connected | Reads the tables through dbtour before writing SQL from their real names |
+| `document-a-sqlite-file` | Docs for the SQLite file the app keeps its data in | The SQLite source, the file named in dbtour.yaml, extract and render; no connection string |
 | `not-a-database` | A near miss: a function over "order table" rows, no database | dbtour is not used |
 
 The cases ask for a plan rather than run it, so a run needs no database: each starts in an empty folder, and the
