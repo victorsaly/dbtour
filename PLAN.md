@@ -223,24 +223,26 @@ person.
 
 ## Showing it
 
-Not before there is enough to show. Once milestones 5 to 9 are released (the skill installs with one
-command, a database is set up from the page, a second database works, and a project can deploy its page and check it in CI), dbtour gets a card
-on [skills.victorsaly.com](https://skills.victorsaly.com/) and a page of its own at `/dbtour`, built the way
-[SideShot's](https://skills.victorsaly.com/sideshot) is:
+Planned for once milestones 5 to 9 were released; the owner chose to show it earlier, and it went live on
+18 November 2026 with 5, 6 and SQLite from 8 released. dbtour has a card on
+[skills.victorsaly.com](https://skills.victorsaly.com/) and a page of its own at
+[`/dbtour`](https://skills.victorsaly.com/dbtour), built the way [SideShot's](https://skills.victorsaly.com/sideshot) is, and the page and its film
+grow as each later milestone lands:
 
 - The pitch in one line, the install command with a copy button, the agents it works with.
 - A film under a minute long, with sound, hosted on the site: an agent asked to document a database runs
   `extract` and `render`, opens the page, searches, follows a relation, grows the diagram and copies a table
   for itself.
 - The page itself, live. The rendered example is one HTML file, so the site carries it as it is and the
-  reader explores a real catalogue rather than pictures of one.
+  reader explores a real catalogue rather than pictures of one. Not there yet: the page has the film and
+  stills, and the live example is still to add.
 - A section for each thing it does (notes over a database you cannot alter, the map, copy for any agent,
   deploy and check), each with a still, then what it needs and the other ways to install it.
 
-The page lives in the skills site's repository. This repository keeps what the page is made from:
-`examples/shop` and a script that records the film and the stills from it, so they are made again on each
-release rather than going stale. dbtour.dev, once registered, points there. Until then the README is the only
-shop window, and nothing goes on the page before it is released.
+The page lives in the skills site's repository, and so do the film, a shorter teaser and the stills. The
+film is recorded from a real catalogue with every name masked and made-up rows, so the scripts that record
+it stay in a private kit rather than here; `examples/shop` is what anyone can render. dbtour.dev, once
+registered, points to the page. Nothing goes on the page before it is released.
 
 ## Order of work
 
@@ -275,8 +277,9 @@ shop window, and nothing goes on the page before it is released.
    steps, and the editor speaking each database's dialect. ← next: `source-postgres`
 9. Deploy workflow, `check`, `addon-lint`.
 10. `addon-usage`: index and table usage from the management views, as a panel on the entry.
-11. **Showing it**: the page on skills.victorsaly.com with its film and the live example, the script that
-    records them, once 5 to 9 are released.
+11. **Showing it**: the page on skills.victorsaly.com with its film, a teaser, stills, the family of what
+    dbtour is (app, CLI, skill, MCP, plugin, packages) and a roadmap. Live on 18 November 2026 (0.11.1),
+    ahead of 7 and 9 by the owner's choice; updated as each later milestone is released.
 12. **Suggestions**: the origin of each description in the model, `dbtour.suggestions.yaml`, the MCP tools
     `gaps` and `suggest`, the *suggested* mark on the page and in the Markdown, `accept` and `reject`; then
     the kind of a table; then `dbtour script` for SQL Server's extended properties, and `check` naming notes
