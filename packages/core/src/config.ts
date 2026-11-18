@@ -1,4 +1,5 @@
 // dbtour.yaml: where the model goes, where it comes from, where the notes are.
+import { basename, extname } from 'node:path';
 import { parse } from 'yaml';
 
 export interface SourceConfig {
@@ -69,22 +70,41 @@ function parseAddons(value: unknown): AddonConfig[] {
   });
 }
 
-export function defaultConfigText(type: string): string {
-  const variable = `DBTOUR_${type.toUpperCase()}`;
+/** Sources that read a file rather than a server: no login, so no connection string, and a read-only reader. */
+export const fileTypes: readonly string[] = ['sqlite'];
+
+/** dbtour.yaml as init writes it: a file's source names the file, a server's the variable its connection is in. */
+export function defaultConfigText(type: string, file?: string): string {
+  const source = fileTypes.includes(type) ? fileSource(type, file ?? 'my-database.db') : serverSource(type);
   return `# dbtour: see https://github.com/victorsaly/dbtour
 out: docs/dbtour
 sources:
-  - type: ${type}
+${source}# Descriptions, relations and groups the database cannot say. Optional.
+notes: dbtour.notes.yaml
+# What else render writes. explorer is the page: npm install --save-dev dbtour-addon-explorer
+addons:
+  - explorer
+`;
+}
+
+function serverSource(type: string): string {
+  const variable = `DBTOUR_${type.toUpperCase()}`;
+  return `  - type: ${type}
     name: ${type === 'mssql' ? 'MyDatabase' : 'my-database'}
     # The name of the environment variable holding the connection string. Never the string itself.
     connection: \${${variable}}
     # Optional: a read-only login of its own (db_datareader), for dbtour sql and the MCP query tool.
     # reader: \${${variable}_READER}
-# Descriptions, relations and groups the database cannot say. Optional.
-notes: dbtour.notes.yaml
-# What else render writes. explorer is the page: npm install --save-dev dbtour-addon-explorer
-addons:
-  - explorer
+`;
+}
+
+function fileSource(type: string, file: string): string {
+  return `  - type: ${type}
+    name: ${basename(file, extname(file)) || 'my-database'}
+    # The database's file, from the folder this file is in. A file has no login, so no connection string.
+    file: ${file}
+    # Queries (dbtour sql, the MCP query tool, the page) open the file read-only.
+    reader: ${readOnlyReader}
 `;
 }
 

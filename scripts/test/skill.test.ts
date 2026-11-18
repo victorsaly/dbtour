@@ -75,10 +75,18 @@ test('the setup installs all three packages before init, since npx alone fetches
 });
 
 test('every eval\'s frontmatter is YAML a runner can read', () => {
-  for (const name of readdirSync(new URL('evals/', root), { withFileTypes: true }).filter((d) => d.isDirectory() && d.name !== 'results')) {
+  // mocks/ is the eval tool's, for the servers it stands in for, not a case.
+  for (const name of readdirSync(new URL('evals/', root), { withFileTypes: true }).filter((d) => d.isDirectory() && d.name !== 'results' && d.name !== 'mocks')) {
     const files = [`evals/${name.name}/prompt.md`, ...readdirSync(new URL(`evals/${name.name}/graders/`, root)).map((g) => `evals/${name.name}/graders/${g}`)];
     for (const file of files) assert.doesNotThrow(() => frontmatter(read(file)), file);
   }
+});
+
+test('the evals\' stand-in MCP server offers the tools dbtour mcp does without a reader', () => {
+  const listed = JSON.parse(read('evals/mocks/dbtour/_tools.json')) as { tools: { name: string }[] };
+  const real = toolList.map((t) => t.name);
+  assert.deepEqual(listed.tools.map((t) => t.name), real, '_tools.json is the real tools/list');
+  assert.deepEqual(frontmatter(read('evals/mocks/dbtour/_server.md')).tools, real, '_server.md answers each of them');
 });
 
 test('the skill says how to run a query: the query tool and dbtour sql, through a reader, never asking for a login', () => {

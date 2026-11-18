@@ -29,18 +29,26 @@ CREATE INDEX IX_e2e_Orders_Open ON dbtour_e2e.Orders (CustomerId) WHERE Status <
 ALTER TABLE dbtour_e2e.Orders NOCHECK CONSTRAINT CK_e2e_Orders_Status;
 CREATE TABLE dbtour_e2e.OrderLines (
   OrderId int NOT NULL CONSTRAINT FK_e2e_OrderLines_Orders REFERENCES dbtour_e2e.Orders (Id) ON DELETE CASCADE,
-  LineNo smallint NOT NULL,
+  [LineNo] smallint NOT NULL,
   Quantity int NOT NULL,
-  CONSTRAINT PK_e2e_OrderLines PRIMARY KEY (OrderId, LineNo)
+  CONSTRAINT PK_e2e_OrderLines PRIMARY KEY (OrderId, [LineNo])
 );
 CREATE TABLE dbtour_e2e.Shipments (
   Id uniqueidentifier NOT NULL DEFAULT NEWID() PRIMARY KEY,
   OrderId int NOT NULL,
-  LineNo smallint NOT NULL,
-  CONSTRAINT FK_e2e_Shipments_OrderLines FOREIGN KEY (OrderId, LineNo) REFERENCES dbtour_e2e.OrderLines (OrderId, LineNo)
+  [LineNo] smallint NOT NULL,
+  CONSTRAINT FK_e2e_Shipments_OrderLines FOREIGN KEY (OrderId, [LineNo]) REFERENCES dbtour_e2e.OrderLines (OrderId, [LineNo])
 );
 -- A clustered columnstore: rows this few stay in its delta store, which sys.partitions does not list.
 CREATE TABLE dbtour_e2e.PageViews (Id int NOT NULL, At datetime2 NOT NULL, INDEX CCI_e2e_PageViews CLUSTERED COLUMNSTORE);
+-- System-versioned, its period columns HIDDEN: left out of SELECT *, which the model marks.
+CREATE TABLE dbtour_e2e.Prices (
+  Id int NOT NULL CONSTRAINT PK_e2e_Prices PRIMARY KEY,
+  Amount decimal(9,2) NOT NULL,
+  ValidFrom datetime2 GENERATED ALWAYS AS ROW START HIDDEN NOT NULL,
+  ValidTo datetime2 GENERATED ALWAYS AS ROW END HIDDEN NOT NULL,
+  PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo)
+) WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbtour_e2e.PricesHistory));
 GO
 CREATE TRIGGER dbtour_e2e.trOrdersTouch ON dbtour_e2e.Orders AFTER INSERT, UPDATE AS SET NOCOUNT ON;
 GO
@@ -54,8 +62,10 @@ EXEC sys.sp_addextendedproperty @name = 'MS_Description', @value = 'Login addres
 `;
 
 const teardown = `
+-- A versioned table cannot be dropped while it is versioned.
+IF OBJECT_ID('dbtour_e2e.Prices') IS NOT NULL ALTER TABLE dbtour_e2e.Prices SET (SYSTEM_VERSIONING = OFF);
 DROP VIEW IF EXISTS dbtour_e2e.vOrderTotals;
-DROP TABLE IF EXISTS dbtour_e2e.Shipments, dbtour_e2e.OrderLines, dbtour_e2e.Orders, dbtour_e2e.Customers, dbtour_e2e.PageViews;
+DROP TABLE IF EXISTS dbtour_e2e.Shipments, dbtour_e2e.OrderLines, dbtour_e2e.Orders, dbtour_e2e.Customers, dbtour_e2e.PageViews, dbtour_e2e.Prices, dbtour_e2e.PricesHistory;
 DROP SCHEMA IF EXISTS dbtour_e2e;
 `;
 
@@ -77,7 +87,7 @@ test('extract reads a real SQL Server', { skip: connection ? false : 'DBTOUR_E2E
     const database = await extract({ type: 'mssql', name: 'E2E', connection });
     const schema = database.schemas.find((s) => s.name === 'dbtour_e2e');
     assert.ok(schema, 'the dbtour_e2e schema is in the model');
-    assert.deepEqual(schema.tables.map((t) => `${t.name}:${t.kind}`), ['Customers:table', 'OrderLines:table', 'Orders:table', 'PageViews:table', 'Shipments:table', 'vOrderTotals:view']);
+    assert.deepEqual(schema.tables.map((t) => `${t.name}:${t.kind}`), ['Customers:table', 'OrderLines:table', 'Orders:table', 'PageViews:table', 'Prices:table', 'PricesHistory:table', 'Shipments:table', 'vOrderTotals:view']);
     const customers = schema.tables[0];
     assert.equal(customers.description, 'One row per account.');
     assert.deepEqual(customers.columns.map((c) => c.type), ['int', 'nvarchar(320)', 'varchar(max)']);
@@ -111,6 +121,10 @@ test('extract reads a real SQL Server', { skip: connection ? false : 'DBTOUR_E2E
     const pageViews = schema.tables.find((t) => t.name === 'PageViews')!.stats!;
     assert.equal(pageViews.rows, 2);
     assert.ok(pageViews.dataBytes > 0, 'the delta store holding the rows is counted');
+    const prices = schema.tables.find((t) => t.name === 'Prices')!;
+    assert.deepEqual(prices.temporal, { history: 'dbtour_e2e.PricesHistory', start: 'ValidFrom', end: 'ValidTo' });
+    assert.equal(schema.tables.find((t) => t.name === 'PricesHistory')!.historyOf, 'dbtour_e2e.Prices');
+    assert.deepEqual(prices.columns.filter((c) => c.hidden).map((c) => c.name), ['ValidFrom', 'ValidTo']);
     assert.match(database.statsReadAt!, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
 
     // Running a query: the rows, a limit that stops it, two columns of one name, and a rollback.
@@ -123,7 +137,7 @@ test('extract reads a real SQL Server', { skip: connection ? false : 'DBTOUR_E2E
     const two = await runQuery(config, 'WITH c AS (SELECT Id FROM dbtour_e2e.Customers) SELECT Id FROM c ORDER BY Id', { ...options, limit: 2 });
     assert.deepEqual([two.rows.length, two.truncated], [2, true], 'the limit stops it, and says so');
     // dbtour refuses a write before it gets here; handed one anyway, the source still keeps nothing of it.
-    await runQuery(config, "UPDATE dbtour_e2e.Customers SET Email = 'changed@example.com'", options);
+    await runQuery(config, "UPDATE dbtour_e2e.Customers SET Email = 'changed@example.com' WHERE Id = 1", options);
     const after = await runQuery(config, 'SELECT COUNT(*) FROM dbtour_e2e.Customers WHERE Email = \'changed@example.com\'', options);
     assert.deepEqual(after.rows, [[0]], 'rolled back');
     assert.deepEqual(after.columns, ['(column 1)']);

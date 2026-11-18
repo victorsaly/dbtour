@@ -26,6 +26,13 @@ test('the default config parses and names an environment variable', () => {
   assert.match(String(config.sources[0].connection), /^\$\{DBTOUR_MSSQL\}$/);
 });
 
+test('the default config for a SQLite file names the file and a read-only reader, never a connection', () => {
+  const config = parseConfig(defaultConfigText('sqlite', 'data/app.db'));
+  assert.deepEqual(config.sources, [{ type: 'sqlite', name: 'app', file: 'data/app.db', reader: 'read-only' }]);
+  assert.doesNotMatch(defaultConfigText('sqlite'), /^\s*connection:|DBTOUR_/m);
+  assert.equal(parseConfig(defaultConfigText('sqlite')).sources[0].file, 'my-database.db');
+});
+
 test('resolveConnection reads the named environment variable and refuses a literal', () => {
   assert.equal(resolveConnection('${DBTOUR_MSSQL}', { DBTOUR_MSSQL: 'Server=x' }), 'Server=x');
   assert.throws(() => resolveConnection('${DBTOUR_MSSQL}', {}), /DBTOUR_MSSQL/);

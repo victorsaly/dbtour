@@ -5,7 +5,7 @@
 
 **Schema docs for your database, kept in your repository, for people and agents.**
 
-[![version](https://img.shields.io/badge/version-0.11.1-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.11.2-blue)](CHANGELOG.md)
 [![check](https://github.com/victorsaly/dbtour/actions/workflows/check.yml/badge.svg)](https://github.com/victorsaly/dbtour/actions/workflows/check.yml)
 [![npm](https://img.shields.io/npm/v/dbtour)](https://www.npmjs.com/package/dbtour)
 
@@ -197,6 +197,9 @@ export DBTOUR_MSSQL='Server=localhost,1433;Database=Shop;User Id=reader;Password
 npx dbtour extract                               # → docs/dbtour/schema.json
 npx dbtour render                                # → docs/dbtour/README.md, one page per table, index.html
 ```
+
+A SQLite file has no login and so no connection string: install `dbtour-source-sqlite` instead, and
+`npx dbtour init --file data/app.db` writes its path and a read-only reader into `dbtour.yaml`.
 
 The SQL Server source reads the catalogue and nothing else: a login with `VIEW DEFINITION` on the database is
 enough. Each table's rows and bytes come from the catalogue too, as SQL Server counts them, without reading a

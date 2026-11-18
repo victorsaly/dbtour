@@ -8,7 +8,7 @@ import type { Readable, Writable } from 'node:stream';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { configFile, defaultConfigText, modelFile, parseConfig, readOnlyReader, resolveConnection, resolveReader, type AddonConfig, type Config, type SourceConfig } from './config.ts';
+import { configFile, defaultConfigText, fileTypes, modelFile, parseConfig, readOnlyReader, resolveConnection, resolveReader, type AddonConfig, type Config, type SourceConfig } from './config.ts';
 import { emptyModel, scope, validate, type Api, type Database, type Model } from './model.ts';
 import { applyNotes, parseNotes } from './notes.ts';
 import { answerLine, type ToolResult } from './mcp.ts';
@@ -64,7 +64,7 @@ export const startCommand = 'npx -y -p dbtour -p dbtour-source-mssql -p dbtour-s
 
 const help = `Usage: dbtour <command>
 
-  init [--source mssql]   write ${configFile} here
+  init [--source mssql]   write ${configFile} here; --file <path> for a SQLite file
   extract                 read every source in ${configFile}, write <out>/${modelFile}
   render                  read <out>/${modelFile} and the notes, write the Markdown and what the
                           add-ons in ${configFile} render (explorer: index.html) under <out>
@@ -126,7 +126,7 @@ export async function main(argv: string[], io: Io = { cwd: process.cwd(), log: c
   try {
     switch (command) {
       case 'init':
-        return init(io, typeof values.source === 'string' ? values.source : 'mssql');
+        return init(io, text('source') ?? (text('file') === undefined ? 'mssql' : 'sqlite'), text('file'));
       case 'extract':
         return await extract(here(io));
       case 'render':
@@ -181,14 +181,18 @@ function missing(message: string): Error {
   return Object.assign(new Error(message), { exitCode: 2 });
 }
 
-function init(io: Io, source: string): number {
+function init(io: Io, source: string, file?: string): number {
   const path = join(io.cwd, configFile);
   if (existsSync(path)) {
     io.error(`${configFile} already exists here. Edit it, or delete it and run dbtour init again.`);
     return 1;
   }
-  writeFileSync(path, defaultConfigText(source));
-  io.log(`Wrote ${configFile}. Set the connection string in DBTOUR_${source.toUpperCase()}, then run dbtour extract.`);
+  writeFileSync(path, defaultConfigText(source, file));
+  io.log(
+    fileTypes.includes(source)
+      ? `Wrote ${configFile}. Check that its file is the database's path from here, then run dbtour extract.`
+      : `Wrote ${configFile}. Set the connection string in DBTOUR_${source.toUpperCase()}, then run dbtour extract.`,
+  );
   return 0;
 }
 

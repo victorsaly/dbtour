@@ -1,0 +1,92 @@
+{
+  "tools": [
+    {
+      "name": "overview",
+      "title": "Overview",
+      "description": "The databases, how many tables and relations each has, and their tables largest first by rows (all of them up to 100), with the groups people defined. Call it first, to know what there is.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "search",
+      "title": "Search",
+      "description": "Find tables, views, columns and groups by any part of their name, type or description. Every word must match. Use it to find where something is kept before reading the table.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words to look for, like \"customer email\"."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "table",
+      "title": "Table",
+      "description": "One table or view as Markdown: its columns with types, keys and descriptions, the relations both ways, indexes, constraints, a view's SQL and a diagram of its neighbours. Read it before writing SQL against the table.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "schema.table, like dbo.Orders, or Sales:dbo.Orders with several databases. A shorter name works when only one table has it."
+          }
+        },
+        "required": [
+          "ref"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "path",
+      "title": "Join path",
+      "description": "The shortest chain of relations between two tables, written as the JOINs that follow them, through any tables between. Use it to join tables that are not related directly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "The table to start from, named as table takes it."
+          },
+          "to": {
+            "type": "string",
+            "description": "The table to reach, named as table takes it."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  ]
+}
