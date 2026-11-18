@@ -1,0 +1,37 @@
+# With several databases a table is named with its own: Database:schema.table.
+tables:
+  Shop:dbo.Orders:
+    description: One row per checkout. The lines are in dbo.OrderLines.
+    columns:
+      Status: 0 draft, 1 paid, 2 shipped, 9 cancelled
+  Shop:dbo.Products:
+    description: What can be ordered. Sku is what the warehouse calls it.
+  Chinook:main.Track:
+    description: One row per song or episode sold. Its album, genre and media type are their own tables.
+    columns:
+      Milliseconds: How long it plays.
+      UnitPrice: What one download costs, in US dollars.
+  Chinook:main.PlaylistTrack:
+    description: Which tracks are on which playlist; a track can be on many.
+  Chinook:main.InvoiceLine:
+    description: One track on one invoice, at the price it was sold for.
+  Northwind:main.Order Details:
+    description: The lines of an order, one per product. The largest table here by far.
+    columns:
+      Discount: A fraction of the price, 0 to 1.
+  Northwind:main.Orders:
+    description: One row per order a customer placed, with who took it and who shipped it.
+relations:
+  # vOrderTotals is a view, so the database declares nothing; the notes say where its rows come from.
+  - from: Shop:dbo.vOrderTotals.OrderId
+    to: Shop:dbo.Orders.Id
+groups:
+  - name: Billing
+    description: Money in, at the shop.
+    tables: [Shop:dbo.Orders, Shop:dbo.OrderLines, Shop:billing.Invoices]
+  - name: Music
+    description: What Chinook sells, from the artist down to the track.
+    tables: [Chinook:main.Artist, Chinook:main.Album, Chinook:main.Track, Chinook:main.Genre, Chinook:main.MediaType]
+  - name: Orders everywhere
+    description: The same idea in each database, an order and its lines, under three sets of names.
+    tables: [Shop:dbo.Orders, Shop:dbo.OrderLines, Chinook:main.Invoice, Chinook:main.InvoiceLine, Northwind:main.Orders, "Northwind:main.Order Details"]

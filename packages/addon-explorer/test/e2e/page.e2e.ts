@@ -298,6 +298,10 @@ test('two databases with a table of the same name: each is its own entry, an old
     await page.goto(url);
     await page.locator('.tree').waitFor();
     assert.equal(await page.locator('.tree li a').count(), 4, 'both databases\' tables are listed, the two Customers apart');
+    // Each database opens the home with a heading of its own, set apart from the one above it.
+    const heads = await page.locator('.home .entry-head').evaluateAll((all) => all.map((h) => h.getBoundingClientRect()).map((r) => ({ top: r.top, bottom: r.bottom })));
+    assert.equal(heads.length, 2);
+    assert.ok(heads[1].top - heads[0].bottom >= 24, `a database's heading stands clear of the one before it, not ${heads[1].top - heads[0].bottom}px under it`);
     await page.keyboard.press('/');
     await page.keyboard.type('customers');
     const hits = (await page.locator('.hits a').allTextContents()).slice(0, 2).join(' | ');

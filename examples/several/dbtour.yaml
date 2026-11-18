@@ -1,0 +1,19 @@
+# The example with several databases: one page for three of them, of two kinds. The model is already extracted
+# (docs/schema.json), so `npm run example` renders without a server or the files. To read the two files again,
+# `npm run example:several` downloads them into data/ and extracts; Shop is made up and has no server to ask.
+out: docs
+sources:
+  - type: mssql
+    name: Shop
+    connection: ${DBTOUR_MSSQL}
+  - type: sqlite
+    name: Chinook
+    file: data/chinook.db
+    reader: read-only
+  - type: sqlite
+    name: Northwind
+    file: data/northwind.db
+    reader: read-only
+notes: dbtour.notes.yaml
+addons:
+  - explorer

@@ -4,6 +4,8 @@ node_modules
 examples/*/docs/README.md
 examples/*/docs/tables/
 examples/*/docs/index.html
+# The sample databases `npm run example:several` downloads; the model read from them is kept.
+examples/*/data/
 # What `npm run build` bundles for the page.
 packages/*/dist/
 # The licence the build copies into each package for npm; the repository's is the one kept.

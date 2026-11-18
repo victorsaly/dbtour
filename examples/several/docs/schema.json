@@ -1,0 +1,3189 @@
+{
+  "dbtour": 1,
+  "databases": [
+    {
+      "name": "Shop",
+      "driver": "mssql",
+      "version": "16.0.1000",
+      "description": "The web shop.",
+      "statsReadAt": "2026-11-01T09:30:00Z",
+      "schemas": [
+        {
+          "name": "dbo",
+          "tables": [
+            {
+              "name": "Customers",
+              "kind": "table",
+              "stats": {
+                "rows": 48213,
+                "dataBytes": 7397376,
+                "indexBytes": 1654784
+              },
+              "description": "One row per account.",
+              "columns": [
+                {
+                  "name": "Id",
+                  "type": "int",
+                  "nullable": false,
+                  "identity": true,
+                  "identitySeed": "1",
+                  "identityIncrement": "1"
+                },
+                {
+                  "name": "Email",
+                  "type": "nvarchar(320)",
+                  "nullable": false,
+                  "description": "Login address.",
+                  "masked": "email()",
+                  "sensitivity": {
+                    "label": "Confidential",
+                    "informationType": "Contact Info",
+                    "rank": "medium"
+                  },
+                  "properties": {
+                    "Source": "sign-up form"
+                  }
+                },
+                {
+                  "name": "Name",
+                  "type": "nvarchar(100)",
+                  "nullable": true
+                }
+              ],
+              "primaryKey": [
+                "Id"
+              ],
+              "indexes": [
+                {
+                  "name": "UX_Customers_Email",
+                  "columns": [
+                    "Email"
+                  ],
+                  "unique": true,
+                  "type": "nonclustered"
+                }
+              ],
+              "constraints": [
+                {
+                  "name": "PK_Customers",
+                  "kind": "primary",
+                  "columns": [
+                    "Id"
+                  ]
+                },
+                {
+                  "name": "UX_Customers_Email",
+                  "kind": "unique",
+                  "columns": [
+                    "Email"
+                  ]
+                }
+              ],
+              "created": "2024-01-08T09:12:30.900",
+              "properties": {
+                "Owner": "Accounts"
+              }
+            },
+            {
+              "name": "Orders",
+              "kind": "table",
+              "stats": {
+                "rows": 312904,
+                "dataBytes": 30859264,
+                "indexBytes": 9764864
+              },
+              "columns": [
+                {
+                  "name": "Id",
+                  "type": "int",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "CustomerId",
+                  "type": "int",
+                  "nullable": false
+                },
+                {
+                  "name": "Status",
+                  "type": "tinyint",
+                  "nullable": false,
+                  "default": "((0))"
+                },
+                {
+                  "name": "CreatedAt",
+                  "type": "datetime2(7)",
+                  "nullable": false,
+                  "default": "(sysutcdatetime())"
+                },
+                {
+                  "name": "Total",
+                  "type": "decimal(18,2)",
+                  "nullable": true,
+                  "computed": "([Net]+[Tax])"
+                }
+              ],
+              "primaryKey": [
+                "Id"
+              ],
+              "indexes": [
+                {
+                  "name": "IX_Orders_CustomerId",
+                  "columns": [
+                    "CustomerId"
+                  ],
+                  "unique": false,
+                  "type": "nonclustered"
+                }
+              ],
+              "constraints": [
+                {
+                  "name": "PK_Orders",
+                  "kind": "primary",
+                  "columns": [
+                    "Id"
+                  ]
+                },
+                {
+                  "name": "CK_Orders_Status",
+                  "kind": "check",
+                  "columns": [
+                    "Status"
+                  ],
+                  "definition": "([Status]<=(9))",
+                  "untrusted": true
+                }
+              ],
+              "properties": {
+                "Retention": "7 years",
+                "Steward": "Finance"
+              },
+              "created": "2024-01-08T09:12:31.200",
+              "altered": "2026-10-30T17:04:11.517",
+              "partitioning": {
+                "scheme": "psOrdersByYear",
+                "function": "pfOrdersByYear",
+                "column": "CreatedAt",
+                "partitions": 6
+              },
+              "compression": "page",
+              "changeTracking": true,
+              "triggers": [
+                {
+                  "name": "trOrdersAudit",
+                  "timing": "after",
+                  "events": [
+                    "insert",
+                    "update"
+                  ],
+                  "enabled": true,
+                  "definition": "CREATE TRIGGER dbo.trOrdersAudit ON dbo.Orders AFTER INSERT, UPDATE AS\nSET NOCOUNT ON;\nINSERT INTO audit.Changes (TableName, RowId, ChangedAt)\nSELECT N'dbo.Orders', i.Id, SYSUTCDATETIME() FROM inserted i;"
+                }
+              ]
+            },
+            {
+              "name": "OrderLines",
+              "kind": "table",
+              "stats": {
+                "rows": 1204377,
+                "dataBytes": 81920000,
+                "indexBytes": 25165824
+              },
+              "columns": [
+                {
+                  "name": "OrderId",
+                  "type": "int",
+                  "nullable": false
+                },
+                {
+                  "name": "ProductId",
+                  "type": "int",
+                  "nullable": false
+                },
+                {
+                  "name": "Quantity",
+                  "type": "int",
+                  "nullable": false
+                }
+              ],
+              "primaryKey": [
+                "OrderId",
+                "ProductId"
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "PK_OrderLines",
+                  "kind": "primary",
+                  "columns": [
+                    "OrderId",
+                    "ProductId"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Products",
+              "kind": "table",
+              "stats": {
+                "rows": 1874,
+                "dataBytes": 491520,
+                "indexBytes": 65536
+              },
+              "columns": [
+                {
+                  "name": "Id",
+                  "type": "int",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "Sku",
+                  "type": "varchar(32)",
+                  "nullable": false
+                },
+                {
+                  "name": "Price",
+                  "type": "money",
+                  "nullable": false
+                }
+              ],
+              "primaryKey": [
+                "Id"
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "PK_Products",
+                  "kind": "primary",
+                  "columns": [
+                    "Id"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "vOrderTotals",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "OrderId",
+                  "type": "int",
+                  "nullable": false
+                },
+                {
+                  "name": "Total",
+                  "type": "decimal(38,2)",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW dbo.vOrderTotals AS SELECT OrderId, SUM(Quantity) AS Total FROM dbo.OrderLines GROUP BY OrderId"
+            }
+          ],
+          "properties": {
+            "Purpose": "Trading: customers, orders and what they buy"
+          }
+        },
+        {
+          "name": "billing",
+          "tables": [
+            {
+              "name": "Invoices",
+              "kind": "table",
+              "stats": {
+                "rows": 298551,
+                "dataBytes": 41943040,
+                "indexBytes": 0
+              },
+              "columns": [
+                {
+                  "name": "Id",
+                  "type": "int",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "OrderId",
+                  "type": "int",
+                  "nullable": false
+                },
+                {
+                  "name": "IssuedAt",
+                  "type": "date",
+                  "nullable": false
+                }
+              ],
+              "primaryKey": [
+                "Id"
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "PK_Invoices",
+                  "kind": "primary",
+                  "columns": [
+                    "Id"
+                  ]
+                }
+              ],
+              "ledger": "append-only",
+              "created": "2025-03-02T11:40:05.000"
+            }
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "name": "FK_Orders_Customers",
+          "from": {
+            "table": "dbo.Orders",
+            "columns": [
+              "CustomerId"
+            ]
+          },
+          "to": {
+            "table": "dbo.Customers",
+            "columns": [
+              "Id"
+            ]
+          }
+        },
+        {
+          "name": "FK_OrderLines_Orders",
+          "from": {
+            "table": "dbo.OrderLines",
+            "columns": [
+              "OrderId"
+            ]
+          },
+          "to": {
+            "table": "dbo.Orders",
+            "columns": [
+              "Id"
+            ]
+          }
+        },
+        {
+          "name": "FK_OrderLines_Products",
+          "from": {
+            "table": "dbo.OrderLines",
+            "columns": [
+              "ProductId"
+            ]
+          },
+          "to": {
+            "table": "dbo.Products",
+            "columns": [
+              "Id"
+            ]
+          }
+        },
+        {
+          "name": "FK_Invoices_Orders",
+          "from": {
+            "table": "billing.Invoices",
+            "columns": [
+              "OrderId"
+            ]
+          },
+          "to": {
+            "table": "dbo.Orders",
+            "columns": [
+              "Id"
+            ]
+          }
+        }
+      ],
+      "collation": "Latin1_General_CI_AS",
+      "properties": {
+        "Owner": "Shop team"
+      }
+    },
+    {
+      "name": "Chinook",
+      "driver": "sqlite",
+      "version": "3.54.1",
+      "schemas": [
+        {
+          "name": "main",
+          "tables": [
+            {
+              "name": "Album",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "AlbumId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "Title",
+                  "type": "NVARCHAR(160)",
+                  "nullable": false
+                },
+                {
+                  "name": "ArtistId",
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              ],
+              "indexes": [
+                {
+                  "name": "IFK_AlbumArtistId",
+                  "columns": [
+                    "ArtistId"
+                  ],
+                  "unique": false
+                }
+              ],
+              "constraints": [
+                {
+                  "name": "PK_Album",
+                  "kind": "primary",
+                  "columns": [
+                    "AlbumId"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "ArtistId"
+                  ],
+                  "definition": "main.Artist (ArtistId)"
+                }
+              ],
+              "primaryKey": [
+                "AlbumId"
+              ],
+              "stats": {
+                "rows": 347,
+                "dataBytes": 13312,
+                "indexBytes": 5120
+              }
+            },
+            {
+              "name": "Artist",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "ArtistId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "Name",
+                  "type": "NVARCHAR(120)",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "PK_Artist",
+                  "kind": "primary",
+                  "columns": [
+                    "ArtistId"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "ArtistId"
+              ],
+              "stats": {
+                "rows": 275,
+                "dataBytes": 9216,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "Customer",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "CustomerId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "FirstName",
+                  "type": "NVARCHAR(40)",
+                  "nullable": false
+                },
+                {
+                  "name": "LastName",
+                  "type": "NVARCHAR(20)",
+                  "nullable": false
+                },
+                {
+                  "name": "Company",
+                  "type": "NVARCHAR(80)",
+                  "nullable": true
+                },
+                {
+                  "name": "Address",
+                  "type": "NVARCHAR(70)",
+                  "nullable": true
+                },
+                {
+                  "name": "City",
+                  "type": "NVARCHAR(40)",
+                  "nullable": true
+                },
+                {
+                  "name": "State",
+                  "type": "NVARCHAR(40)",
+                  "nullable": true
+                },
+                {
+                  "name": "Country",
+                  "type": "NVARCHAR(40)",
+                  "nullable": true
+                },
+                {
+                  "name": "PostalCode",
+                  "type": "NVARCHAR(10)",
+                  "nullable": true
+                },
+                {
+                  "name": "Phone",
+                  "type": "NVARCHAR(24)",
+                  "nullable": true
+                },
+                {
+                  "name": "Fax",
+                  "type": "NVARCHAR(24)",
+                  "nullable": true
+                },
+                {
+                  "name": "Email",
+                  "type": "NVARCHAR(60)",
+                  "nullable": false
+                },
+                {
+                  "name": "SupportRepId",
+                  "type": "INTEGER",
+                  "nullable": true
+                }
+              ],
+              "indexes": [
+                {
+                  "name": "IFK_CustomerSupportRepId",
+                  "columns": [
+                    "SupportRepId"
+                  ],
+                  "unique": false
+                }
+              ],
+              "constraints": [
+                {
+                  "name": "PK_Customer",
+                  "kind": "primary",
+                  "columns": [
+                    "CustomerId"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "SupportRepId"
+                  ],
+                  "definition": "main.Employee (EmployeeId)"
+                }
+              ],
+              "primaryKey": [
+                "CustomerId"
+              ],
+              "stats": {
+                "rows": 59,
+                "dataBytes": 8192,
+                "indexBytes": 1024
+              }
+            },
+            {
+              "name": "Employee",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "EmployeeId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "LastName",
+                  "type": "NVARCHAR(20)",
+                  "nullable": false
+                },
+                {
+                  "name": "FirstName",
+                  "type": "NVARCHAR(20)",
+                  "nullable": false
+                },
+                {
+                  "name": "Title",
+                  "type": "NVARCHAR(30)",
+                  "nullable": true
+                },
+                {
+                  "name": "ReportsTo",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "BirthDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "HireDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "Address",
+                  "type": "NVARCHAR(70)",
+                  "nullable": true
+                },
+                {
+                  "name": "City",
+                  "type": "NVARCHAR(40)",
+                  "nullable": true
+                },
+                {
+                  "name": "State",
+                  "type": "NVARCHAR(40)",
+                  "nullable": true
+                },
+                {
+                  "name": "Country",
+                  "type": "NVARCHAR(40)",
+                  "nullable": true
+                },
+                {
+                  "name": "PostalCode",
+                  "type": "NVARCHAR(10)",
+                  "nullable": true
+                },
+                {
+                  "name": "Phone",
+                  "type": "NVARCHAR(24)",
+                  "nullable": true
+                },
+                {
+                  "name": "Fax",
+                  "type": "NVARCHAR(24)",
+                  "nullable": true
+                },
+                {
+                  "name": "Email",
+                  "type": "NVARCHAR(60)",
+                  "nullable": true
+                }
+              ],
+              "indexes": [
+                {
+                  "name": "IFK_EmployeeReportsTo",
+                  "columns": [
+                    "ReportsTo"
+                  ],
+                  "unique": false
+                }
+              ],
+              "constraints": [
+                {
+                  "name": "PK_Employee",
+                  "kind": "primary",
+                  "columns": [
+                    "EmployeeId"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "ReportsTo"
+                  ],
+                  "definition": "main.Employee (EmployeeId)"
+                }
+              ],
+              "primaryKey": [
+                "EmployeeId"
+              ],
+              "stats": {
+                "rows": 8,
+                "dataBytes": 3072,
+                "indexBytes": 1024
+              }
+            },
+            {
+              "name": "Genre",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "GenreId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "Name",
+                  "type": "NVARCHAR(120)",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "PK_Genre",
+                  "kind": "primary",
+                  "columns": [
+                    "GenreId"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "GenreId"
+              ],
+              "stats": {
+                "rows": 25,
+                "dataBytes": 1024,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "Invoice",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "InvoiceId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "CustomerId",
+                  "type": "INTEGER",
+                  "nullable": false
+                },
+                {
+                  "name": "InvoiceDate",
+                  "type": "DATETIME",
+                  "nullable": false
+                },
+                {
+                  "name": "BillingAddress",
+                  "type": "NVARCHAR(70)",
+                  "nullable": true
+                },
+                {
+                  "name": "BillingCity",
+                  "type": "NVARCHAR(40)",
+                  "nullable": true
+                },
+                {
+                  "name": "BillingState",
+                  "type": "NVARCHAR(40)",
+                  "nullable": true
+                },
+                {
+                  "name": "BillingCountry",
+                  "type": "NVARCHAR(40)",
+                  "nullable": true
+                },
+                {
+                  "name": "BillingPostalCode",
+                  "type": "NVARCHAR(10)",
+                  "nullable": true
+                },
+                {
+                  "name": "Total",
+                  "type": "NUMERIC(10,2)",
+                  "nullable": false
+                }
+              ],
+              "indexes": [
+                {
+                  "name": "IFK_InvoiceCustomerId",
+                  "columns": [
+                    "CustomerId"
+                  ],
+                  "unique": false
+                }
+              ],
+              "constraints": [
+                {
+                  "name": "PK_Invoice",
+                  "kind": "primary",
+                  "columns": [
+                    "InvoiceId"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "CustomerId"
+                  ],
+                  "definition": "main.Customer (CustomerId)"
+                }
+              ],
+              "primaryKey": [
+                "InvoiceId"
+              ],
+              "stats": {
+                "rows": 412,
+                "dataBytes": 36864,
+                "indexBytes": 5120
+              }
+            },
+            {
+              "name": "InvoiceLine",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "InvoiceLineId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "InvoiceId",
+                  "type": "INTEGER",
+                  "nullable": false
+                },
+                {
+                  "name": "TrackId",
+                  "type": "INTEGER",
+                  "nullable": false
+                },
+                {
+                  "name": "UnitPrice",
+                  "type": "NUMERIC(10,2)",
+                  "nullable": false
+                },
+                {
+                  "name": "Quantity",
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              ],
+              "indexes": [
+                {
+                  "name": "IFK_InvoiceLineInvoiceId",
+                  "columns": [
+                    "InvoiceId"
+                  ],
+                  "unique": false
+                },
+                {
+                  "name": "IFK_InvoiceLineTrackId",
+                  "columns": [
+                    "TrackId"
+                  ],
+                  "unique": false
+                }
+              ],
+              "constraints": [
+                {
+                  "name": "PK_InvoiceLine",
+                  "kind": "primary",
+                  "columns": [
+                    "InvoiceLineId"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "InvoiceId"
+                  ],
+                  "definition": "main.Invoice (InvoiceId)"
+                },
+                {
+                  "name": "(foreign key 2)",
+                  "kind": "foreign",
+                  "columns": [
+                    "TrackId"
+                  ],
+                  "definition": "main.Track (TrackId)"
+                }
+              ],
+              "primaryKey": [
+                "InvoiceLineId"
+              ],
+              "stats": {
+                "rows": 2240,
+                "dataBytes": 53248,
+                "indexBytes": 51200
+              }
+            },
+            {
+              "name": "MediaType",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "MediaTypeId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "Name",
+                  "type": "NVARCHAR(120)",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "PK_MediaType",
+                  "kind": "primary",
+                  "columns": [
+                    "MediaTypeId"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "MediaTypeId"
+              ],
+              "stats": {
+                "rows": 5,
+                "dataBytes": 1024,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "Playlist",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "PlaylistId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "Name",
+                  "type": "NVARCHAR(120)",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "PK_Playlist",
+                  "kind": "primary",
+                  "columns": [
+                    "PlaylistId"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "PlaylistId"
+              ],
+              "stats": {
+                "rows": 18,
+                "dataBytes": 1024,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "PlaylistTrack",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "PlaylistId",
+                  "type": "INTEGER",
+                  "nullable": false
+                },
+                {
+                  "name": "TrackId",
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              ],
+              "indexes": [
+                {
+                  "name": "IFK_PlaylistTrackTrackId",
+                  "columns": [
+                    "TrackId"
+                  ],
+                  "unique": false
+                }
+              ],
+              "constraints": [
+                {
+                  "name": "PK_PlaylistTrack",
+                  "kind": "primary",
+                  "columns": [
+                    "PlaylistId",
+                    "TrackId"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "PlaylistId"
+                  ],
+                  "definition": "main.Playlist (PlaylistId)"
+                },
+                {
+                  "name": "(foreign key 2)",
+                  "kind": "foreign",
+                  "columns": [
+                    "TrackId"
+                  ],
+                  "definition": "main.Track (TrackId)"
+                }
+              ],
+              "primaryKey": [
+                "PlaylistId",
+                "TrackId"
+              ],
+              "stats": {
+                "rows": 8715,
+                "dataBytes": 95232,
+                "indexBytes": 216064
+              }
+            },
+            {
+              "name": "Track",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "TrackId",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "Name",
+                  "type": "NVARCHAR(200)",
+                  "nullable": false
+                },
+                {
+                  "name": "AlbumId",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "MediaTypeId",
+                  "type": "INTEGER",
+                  "nullable": false
+                },
+                {
+                  "name": "GenreId",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Composer",
+                  "type": "NVARCHAR(220)",
+                  "nullable": true
+                },
+                {
+                  "name": "Milliseconds",
+                  "type": "INTEGER",
+                  "nullable": false
+                },
+                {
+                  "name": "Bytes",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitPrice",
+                  "type": "NUMERIC(10,2)",
+                  "nullable": false
+                }
+              ],
+              "indexes": [
+                {
+                  "name": "IFK_TrackAlbumId",
+                  "columns": [
+                    "AlbumId"
+                  ],
+                  "unique": false
+                },
+                {
+                  "name": "IFK_TrackGenreId",
+                  "columns": [
+                    "GenreId"
+                  ],
+                  "unique": false
+                },
+                {
+                  "name": "IFK_TrackMediaTypeId",
+                  "columns": [
+                    "MediaTypeId"
+                  ],
+                  "unique": false
+                }
+              ],
+              "constraints": [
+                {
+                  "name": "PK_Track",
+                  "kind": "primary",
+                  "columns": [
+                    "TrackId"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "AlbumId"
+                  ],
+                  "definition": "main.Album (AlbumId)"
+                },
+                {
+                  "name": "(foreign key 2)",
+                  "kind": "foreign",
+                  "columns": [
+                    "GenreId"
+                  ],
+                  "definition": "main.Genre (GenreId)"
+                },
+                {
+                  "name": "(foreign key 3)",
+                  "kind": "foreign",
+                  "columns": [
+                    "MediaTypeId"
+                  ],
+                  "definition": "main.MediaType (MediaTypeId)"
+                }
+              ],
+              "primaryKey": [
+                "TrackId"
+              ],
+              "stats": {
+                "rows": 3503,
+                "dataBytes": 243712,
+                "indexBytes": 108544
+              }
+            }
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "from": {
+            "table": "main.Album",
+            "columns": [
+              "ArtistId"
+            ]
+          },
+          "to": {
+            "table": "main.Artist",
+            "columns": [
+              "ArtistId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Customer",
+            "columns": [
+              "SupportRepId"
+            ]
+          },
+          "to": {
+            "table": "main.Employee",
+            "columns": [
+              "EmployeeId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Employee",
+            "columns": [
+              "ReportsTo"
+            ]
+          },
+          "to": {
+            "table": "main.Employee",
+            "columns": [
+              "EmployeeId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Invoice",
+            "columns": [
+              "CustomerId"
+            ]
+          },
+          "to": {
+            "table": "main.Customer",
+            "columns": [
+              "CustomerId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.InvoiceLine",
+            "columns": [
+              "InvoiceId"
+            ]
+          },
+          "to": {
+            "table": "main.Invoice",
+            "columns": [
+              "InvoiceId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.InvoiceLine",
+            "columns": [
+              "TrackId"
+            ]
+          },
+          "to": {
+            "table": "main.Track",
+            "columns": [
+              "TrackId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.PlaylistTrack",
+            "columns": [
+              "PlaylistId"
+            ]
+          },
+          "to": {
+            "table": "main.Playlist",
+            "columns": [
+              "PlaylistId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.PlaylistTrack",
+            "columns": [
+              "TrackId"
+            ]
+          },
+          "to": {
+            "table": "main.Track",
+            "columns": [
+              "TrackId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Track",
+            "columns": [
+              "AlbumId"
+            ]
+          },
+          "to": {
+            "table": "main.Album",
+            "columns": [
+              "AlbumId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Track",
+            "columns": [
+              "GenreId"
+            ]
+          },
+          "to": {
+            "table": "main.Genre",
+            "columns": [
+              "GenreId"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Track",
+            "columns": [
+              "MediaTypeId"
+            ]
+          },
+          "to": {
+            "table": "main.MediaType",
+            "columns": [
+              "MediaTypeId"
+            ]
+          }
+        }
+      ],
+      "statsReadAt": "2026-11-18T07:42:44.745Z"
+    },
+    {
+      "name": "Northwind",
+      "driver": "sqlite",
+      "version": "3.54.1",
+      "schemas": [
+        {
+          "name": "main",
+          "tables": [
+            {
+              "name": "Categories",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "CategoryID",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "CategoryName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Description",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Picture",
+                  "type": "BLOB",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "(primary key)",
+                  "kind": "primary",
+                  "columns": [
+                    "CategoryID"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "CategoryID"
+              ],
+              "stats": {
+                "rows": 8,
+                "dataBytes": 102400,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "CustomerCustomerDemo",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "CustomerID",
+                  "type": "TEXT",
+                  "nullable": false
+                },
+                {
+                  "name": "CustomerTypeID",
+                  "type": "TEXT",
+                  "nullable": false
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "sqlite_autoindex_CustomerCustomerDemo_1",
+                  "kind": "primary",
+                  "columns": [
+                    "CustomerID",
+                    "CustomerTypeID"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "CustomerID"
+                  ],
+                  "definition": "main.Customers (CustomerID)"
+                },
+                {
+                  "name": "(foreign key 2)",
+                  "kind": "foreign",
+                  "columns": [
+                    "CustomerTypeID"
+                  ],
+                  "definition": "main.CustomerDemographics (CustomerTypeID)"
+                }
+              ],
+              "primaryKey": [
+                "CustomerID",
+                "CustomerTypeID"
+              ],
+              "stats": {
+                "rows": 0,
+                "dataBytes": 4096,
+                "indexBytes": 4096
+              }
+            },
+            {
+              "name": "CustomerDemographics",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "CustomerTypeID",
+                  "type": "TEXT",
+                  "nullable": false
+                },
+                {
+                  "name": "CustomerDesc",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "sqlite_autoindex_CustomerDemographics_1",
+                  "kind": "primary",
+                  "columns": [
+                    "CustomerTypeID"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "CustomerTypeID"
+              ],
+              "stats": {
+                "rows": 0,
+                "dataBytes": 4096,
+                "indexBytes": 4096
+              }
+            },
+            {
+              "name": "Customers",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "CustomerID",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CompanyName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ContactName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ContactTitle",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Address",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "City",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Region",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "PostalCode",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Country",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Phone",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Fax",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "sqlite_autoindex_Customers_1",
+                  "kind": "primary",
+                  "columns": [
+                    "CustomerID"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "CustomerID"
+              ],
+              "stats": {
+                "rows": 93,
+                "dataBytes": 20480,
+                "indexBytes": 4096
+              }
+            },
+            {
+              "name": "Employees",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "EmployeeID",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "LastName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "FirstName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Title",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "TitleOfCourtesy",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "BirthDate",
+                  "type": "DATE",
+                  "nullable": true
+                },
+                {
+                  "name": "HireDate",
+                  "type": "DATE",
+                  "nullable": true
+                },
+                {
+                  "name": "Address",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "City",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Region",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "PostalCode",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Country",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "HomePhone",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Extension",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Photo",
+                  "type": "BLOB",
+                  "nullable": true
+                },
+                {
+                  "name": "Notes",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ReportsTo",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "PhotoPath",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "(primary key)",
+                  "kind": "primary",
+                  "columns": [
+                    "EmployeeID"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "ReportsTo"
+                  ],
+                  "definition": "main.Employees (EmployeeID)"
+                }
+              ],
+              "primaryKey": [
+                "EmployeeID"
+              ],
+              "stats": {
+                "rows": 9,
+                "dataBytes": 122880,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "EmployeeTerritories",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "EmployeeID",
+                  "type": "INTEGER",
+                  "nullable": false
+                },
+                {
+                  "name": "TerritoryID",
+                  "type": "TEXT",
+                  "nullable": false
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "sqlite_autoindex_EmployeeTerritories_1",
+                  "kind": "primary",
+                  "columns": [
+                    "EmployeeID",
+                    "TerritoryID"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "EmployeeID"
+                  ],
+                  "definition": "main.Employees (EmployeeID)"
+                },
+                {
+                  "name": "(foreign key 2)",
+                  "kind": "foreign",
+                  "columns": [
+                    "TerritoryID"
+                  ],
+                  "definition": "main.Territories (TerritoryID)"
+                }
+              ],
+              "primaryKey": [
+                "EmployeeID",
+                "TerritoryID"
+              ],
+              "stats": {
+                "rows": 49,
+                "dataBytes": 4096,
+                "indexBytes": 4096
+              }
+            },
+            {
+              "name": "Order Details",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "OrderID",
+                  "type": "INTEGER",
+                  "nullable": false
+                },
+                {
+                  "name": "ProductID",
+                  "type": "INTEGER",
+                  "nullable": false
+                },
+                {
+                  "name": "UnitPrice",
+                  "type": "NUMERIC",
+                  "nullable": false,
+                  "default": "0"
+                },
+                {
+                  "name": "Quantity",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "default": "1"
+                },
+                {
+                  "name": "Discount",
+                  "type": "REAL",
+                  "nullable": false,
+                  "default": "0"
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "sqlite_autoindex_Order Details_1",
+                  "kind": "primary",
+                  "columns": [
+                    "OrderID",
+                    "ProductID"
+                  ]
+                },
+                {
+                  "name": "(check 1)",
+                  "kind": "check",
+                  "columns": [],
+                  "definition": "[Discount]>=(0) AND [Discount]<=(1)"
+                },
+                {
+                  "name": "(check 2)",
+                  "kind": "check",
+                  "columns": [],
+                  "definition": "[Quantity]>(0)"
+                },
+                {
+                  "name": "(check 3)",
+                  "kind": "check",
+                  "columns": [],
+                  "definition": "[UnitPrice]>=(0)"
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "OrderID"
+                  ],
+                  "definition": "main.Orders (OrderID)"
+                },
+                {
+                  "name": "(foreign key 2)",
+                  "kind": "foreign",
+                  "columns": [
+                    "ProductID"
+                  ],
+                  "definition": "main.Products (ProductID)"
+                }
+              ],
+              "primaryKey": [
+                "OrderID",
+                "ProductID"
+              ],
+              "stats": {
+                "rows": 609283,
+                "dataBytes": 12357632,
+                "indexBytes": 9035776
+              }
+            },
+            {
+              "name": "Orders",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "OrderID",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "CustomerID",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "EmployeeID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "OrderDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "RequiredDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "ShippedDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipVia",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Freight",
+                  "type": "NUMERIC",
+                  "nullable": true,
+                  "default": "0"
+                },
+                {
+                  "name": "ShipName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipAddress",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipCity",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipRegion",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipPostalCode",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipCountry",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "(primary key)",
+                  "kind": "primary",
+                  "columns": [
+                    "OrderID"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "EmployeeID"
+                  ],
+                  "definition": "main.Employees (EmployeeID)"
+                },
+                {
+                  "name": "(foreign key 2)",
+                  "kind": "foreign",
+                  "columns": [
+                    "CustomerID"
+                  ],
+                  "definition": "main.Customers (CustomerID)"
+                },
+                {
+                  "name": "(foreign key 3)",
+                  "kind": "foreign",
+                  "columns": [
+                    "ShipVia"
+                  ],
+                  "definition": "main.Shippers (ShipperID)"
+                }
+              ],
+              "primaryKey": [
+                "OrderID"
+              ],
+              "stats": {
+                "rows": 16282,
+                "dataBytes": 2969600,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "Products",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "ProductID",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": false
+                },
+                {
+                  "name": "SupplierID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "CategoryID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "QuantityPerUnit",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitPrice",
+                  "type": "NUMERIC",
+                  "nullable": true,
+                  "default": "0"
+                },
+                {
+                  "name": "UnitsInStock",
+                  "type": "INTEGER",
+                  "nullable": true,
+                  "default": "0"
+                },
+                {
+                  "name": "UnitsOnOrder",
+                  "type": "INTEGER",
+                  "nullable": true,
+                  "default": "0"
+                },
+                {
+                  "name": "ReorderLevel",
+                  "type": "INTEGER",
+                  "nullable": true,
+                  "default": "0"
+                },
+                {
+                  "name": "Discontinued",
+                  "type": "TEXT",
+                  "nullable": false,
+                  "default": "'0'"
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "(primary key)",
+                  "kind": "primary",
+                  "columns": [
+                    "ProductID"
+                  ]
+                },
+                {
+                  "name": "(check 1)",
+                  "kind": "check",
+                  "columns": [],
+                  "definition": "[UnitPrice]>=(0)"
+                },
+                {
+                  "name": "(check 2)",
+                  "kind": "check",
+                  "columns": [],
+                  "definition": "[ReorderLevel]>=(0)"
+                },
+                {
+                  "name": "(check 3)",
+                  "kind": "check",
+                  "columns": [],
+                  "definition": "[UnitsInStock]>=(0)"
+                },
+                {
+                  "name": "(check 4)",
+                  "kind": "check",
+                  "columns": [],
+                  "definition": "[UnitsOnOrder]>=(0)"
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "CategoryID"
+                  ],
+                  "definition": "main.Categories (CategoryID)"
+                },
+                {
+                  "name": "(foreign key 2)",
+                  "kind": "foreign",
+                  "columns": [
+                    "SupplierID"
+                  ],
+                  "definition": "main.Suppliers (SupplierID)"
+                }
+              ],
+              "primaryKey": [
+                "ProductID"
+              ],
+              "stats": {
+                "rows": 77,
+                "dataBytes": 12288,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "Regions",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "RegionID",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "RegionDescription",
+                  "type": "TEXT",
+                  "nullable": false
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "(primary key)",
+                  "kind": "primary",
+                  "columns": [
+                    "RegionID"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "RegionID"
+              ],
+              "stats": {
+                "rows": 4,
+                "dataBytes": 4096,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "Shippers",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "ShipperID",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "CompanyName",
+                  "type": "TEXT",
+                  "nullable": false
+                },
+                {
+                  "name": "Phone",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "(primary key)",
+                  "kind": "primary",
+                  "columns": [
+                    "ShipperID"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "ShipperID"
+              ],
+              "stats": {
+                "rows": 3,
+                "dataBytes": 4096,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "Suppliers",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "SupplierID",
+                  "type": "INTEGER",
+                  "nullable": false,
+                  "identity": true
+                },
+                {
+                  "name": "CompanyName",
+                  "type": "TEXT",
+                  "nullable": false
+                },
+                {
+                  "name": "ContactName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ContactTitle",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Address",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "City",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Region",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "PostalCode",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Country",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Phone",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Fax",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "HomePage",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "(primary key)",
+                  "kind": "primary",
+                  "columns": [
+                    "SupplierID"
+                  ]
+                }
+              ],
+              "primaryKey": [
+                "SupplierID"
+              ],
+              "stats": {
+                "rows": 29,
+                "dataBytes": 12288,
+                "indexBytes": 0
+              }
+            },
+            {
+              "name": "Territories",
+              "kind": "table",
+              "columns": [
+                {
+                  "name": "TerritoryID",
+                  "type": "TEXT",
+                  "nullable": false
+                },
+                {
+                  "name": "TerritoryDescription",
+                  "type": "TEXT",
+                  "nullable": false
+                },
+                {
+                  "name": "RegionID",
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              ],
+              "indexes": [],
+              "constraints": [
+                {
+                  "name": "sqlite_autoindex_Territories_1",
+                  "kind": "primary",
+                  "columns": [
+                    "TerritoryID"
+                  ]
+                },
+                {
+                  "name": "(foreign key 1)",
+                  "kind": "foreign",
+                  "columns": [
+                    "RegionID"
+                  ],
+                  "definition": "main.Regions (RegionID)"
+                }
+              ],
+              "primaryKey": [
+                "TerritoryID"
+              ],
+              "stats": {
+                "rows": 53,
+                "dataBytes": 4096,
+                "indexBytes": 4096
+              }
+            },
+            {
+              "name": "Alphabetical list of products",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "ProductID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "SupplierID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "CategoryID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "QuantityPerUnit",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitPrice",
+                  "type": "NUMERIC",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitsInStock",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitsOnOrder",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "ReorderLevel",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Discontinued",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CategoryName",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Alphabetical list of products] \nAS\nSELECT Products.*, \n       Categories.CategoryName\nFROM Categories \n   INNER JOIN Products ON Categories.CategoryID = Products.CategoryID\nWHERE (((Products.Discontinued)=0))"
+            },
+            {
+              "name": "Current Product List",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "ProductID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Current Product List] \nAS\nSELECT ProductID,\n       ProductName \nFROM Products \nWHERE Discontinued=0"
+            },
+            {
+              "name": "Customer and Suppliers by City",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "City",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CompanyName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ContactName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Relationship",
+                  "type": "ANY",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Customer and Suppliers by City] \nAS\nSELECT City, \n       CompanyName, \n       ContactName, \n       'Customers' AS Relationship \nFROM Customers\nUNION \nSELECT City, \n       CompanyName, \n       ContactName, \n       'Suppliers'\nFROM Suppliers \nORDER BY City, CompanyName"
+            },
+            {
+              "name": "Invoices",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "ShipName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipAddress",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipCity",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipRegion",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipPostalCode",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipCountry",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CustomerID",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CustomerName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Address",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "City",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Region",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "PostalCode",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Country",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Salesperson",
+                  "type": "ANY",
+                  "nullable": true
+                },
+                {
+                  "name": "OrderID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "OrderDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "RequiredDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "ShippedDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipperName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitPrice",
+                  "type": "NUMERIC",
+                  "nullable": true
+                },
+                {
+                  "name": "Quantity",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Discount",
+                  "type": "REAL",
+                  "nullable": true
+                },
+                {
+                  "name": "ExtendedPrice",
+                  "type": "ANY",
+                  "nullable": true
+                },
+                {
+                  "name": "Freight",
+                  "type": "NUMERIC",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Invoices] \nAS\nSELECT Orders.ShipName,\n       Orders.ShipAddress,\n       Orders.ShipCity,\n       Orders.ShipRegion, \n       Orders.ShipPostalCode,\n       Orders.ShipCountry,\n       Orders.CustomerID,\n       Customers.CompanyName AS CustomerName, \n       Customers.Address,\n       Customers.City,\n       Customers.Region,\n       Customers.PostalCode,\n       Customers.Country,\n       (Employees.FirstName + ' ' + Employees.LastName) AS Salesperson, \n       Orders.OrderID,\n       Orders.OrderDate,\n       Orders.RequiredDate,\n       Orders.ShippedDate, \n       Shippers.CompanyName As ShipperName,\n       [Order Details].ProductID,\n       Products.ProductName, \n       [Order Details].UnitPrice,\n       [Order Details].Quantity,\n       [Order Details].Discount, \n       ((([Order Details].UnitPrice*Quantity*(1-Discount))/100)*100) AS ExtendedPrice,\n       Orders.Freight \nFROM Customers \n  JOIN Orders ON Customers.CustomerID = Orders.CustomerID  \n    JOIN Employees ON Employees.EmployeeID = Orders.EmployeeID    \n     JOIN [Order Details] ON Orders.OrderID = [Order Details].OrderID     \n      JOIN Products ON Products.ProductID = [Order Details].ProductID      \n       JOIN Shippers ON Shippers.ShipperID = Orders.ShipVia"
+            },
+            {
+              "name": "Orders Qry",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "OrderID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "CustomerID",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "EmployeeID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "OrderDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "RequiredDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "ShippedDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipVia",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Freight",
+                  "type": "NUMERIC",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipAddress",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipCity",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipRegion",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipPostalCode",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShipCountry",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CompanyName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Address",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "City",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Region",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "PostalCode",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Country",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Orders Qry] AS\nSELECT Orders.OrderID,\n       Orders.CustomerID,\n       Orders.EmployeeID, \n       Orders.OrderDate, \n       Orders.RequiredDate,\n       Orders.ShippedDate, \n       Orders.ShipVia, \n       Orders.Freight,\n       Orders.ShipName, \n       Orders.ShipAddress, \n       Orders.ShipCity,\n       Orders.ShipRegion,\n       Orders.ShipPostalCode,\n       Orders.ShipCountry,\n       Customers.CompanyName,\n       Customers.Address,\n       Customers.City,\n       Customers.Region,\n       Customers.PostalCode, \n       Customers.Country\nFROM Customers \n     JOIN Orders ON Customers.CustomerID = Orders.CustomerID"
+            },
+            {
+              "name": "Order Subtotals",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "OrderID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Subtotal",
+                  "type": "ANY",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Order Subtotals] AS\nSELECT [Order Details].OrderID, \nSum(([Order Details].UnitPrice*Quantity*(1-Discount)/100)*100) AS Subtotal\nFROM [Order Details]\nGROUP BY [Order Details].OrderID"
+            },
+            {
+              "name": "Product Sales for 1997",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "CategoryName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductSales",
+                  "type": "ANY",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Product Sales for 1997] AS\nSELECT Categories.CategoryName, \n       Products.ProductName, \n       Sum(([Order Details].UnitPrice*Quantity*(1-Discount)/100)*100) AS ProductSales\nFROM Categories\n JOIN    Products On Categories.CategoryID = Products.CategoryID\n    JOIN  [Order Details] on Products.ProductID = [Order Details].ProductID     \n     JOIN  [Orders] on Orders.OrderID = [Order Details].OrderID \nWHERE Orders.ShippedDate Between DATETIME('1997-01-01') And DATETIME('1997-12-31')\nGROUP BY Categories.CategoryName, Products.ProductName"
+            },
+            {
+              "name": "Products Above Average Price",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitPrice",
+                  "type": "NUMERIC",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Products Above Average Price] AS\nSELECT Products.ProductName, \n       Products.UnitPrice\nFROM Products\nWHERE Products.UnitPrice>(SELECT AVG(UnitPrice) From Products)"
+            },
+            {
+              "name": "Products by Category",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "CategoryName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "QuantityPerUnit",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitsInStock",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Discontinued",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Products by Category] AS\nSELECT Categories.CategoryName, \n       Products.ProductName, \n       Products.QuantityPerUnit, \n       Products.UnitsInStock, \n       Products.Discontinued\nFROM Categories \n     INNER JOIN Products ON Categories.CategoryID = Products.CategoryID\nWHERE Products.Discontinued <> 1"
+            },
+            {
+              "name": "Quarterly Orders",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "CustomerID",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CompanyName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "City",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "Country",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Quarterly Orders] AS\nSELECT DISTINCT Customers.CustomerID, \n                Customers.CompanyName, \n                Customers.City, \n                Customers.Country\nFROM Customers \n     JOIN Orders ON Customers.CustomerID = Orders.CustomerID\nWHERE Orders.OrderDate BETWEEN DATETIME('1997-01-01') And DATETIME('1997-12-31')"
+            },
+            {
+              "name": "Sales Totals by Amount",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "SaleAmount",
+                  "type": "ANY",
+                  "nullable": true
+                },
+                {
+                  "name": "OrderID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "CompanyName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ShippedDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Sales Totals by Amount] AS\nSELECT [Order Subtotals].Subtotal AS SaleAmount, \n                  Orders.OrderID, \n               Customers.CompanyName, \n                  Orders.ShippedDate\nFROM Customers \n JOIN Orders ON Customers.CustomerID = Orders.CustomerID\n    JOIN [Order Subtotals] ON Orders.OrderID = [Order Subtotals].OrderID \nWHERE ([Order Subtotals].Subtotal >2500) \nAND (Orders.ShippedDate BETWEEN DATETIME('1997-01-01') And DATETIME('1997-12-31'))"
+            },
+            {
+              "name": "Summary of Sales by Quarter",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "ShippedDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "OrderID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Subtotal",
+                  "type": "ANY",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Summary of Sales by Quarter] AS\nSELECT Orders.ShippedDate, \n       Orders.OrderID, \n       [Order Subtotals].Subtotal\nFROM Orders \n     INNER JOIN [Order Subtotals] ON Orders.OrderID = [Order Subtotals].OrderID\nWHERE Orders.ShippedDate IS NOT NULL"
+            },
+            {
+              "name": "Summary of Sales by Year",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "ShippedDate",
+                  "type": "DATETIME",
+                  "nullable": true
+                },
+                {
+                  "name": "OrderID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Subtotal",
+                  "type": "ANY",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Summary of Sales by Year] AS\nSELECT      Orders.ShippedDate, \n            Orders.OrderID, \n [Order Subtotals].Subtotal\nFROM Orders \n     INNER JOIN [Order Subtotals] ON Orders.OrderID = [Order Subtotals].OrderID\nWHERE Orders.ShippedDate IS NOT NULL"
+            },
+            {
+              "name": "Category Sales for 1997",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "CategoryName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CategorySales",
+                  "type": "ANY",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Category Sales for 1997] AS\nSELECT     [Product Sales for 1997].CategoryName, \n       Sum([Product Sales for 1997].ProductSales) AS CategorySales\nFROM [Product Sales for 1997]\nGROUP BY [Product Sales for 1997].CategoryName"
+            },
+            {
+              "name": "Order Details Extended",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "OrderID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitPrice",
+                  "type": "NUMERIC",
+                  "nullable": true
+                },
+                {
+                  "name": "Quantity",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Discount",
+                  "type": "REAL",
+                  "nullable": true
+                },
+                {
+                  "name": "ExtendedPrice",
+                  "type": "ANY",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Order Details Extended] AS\nSELECT [Order Details].OrderID, \n       [Order Details].ProductID, \n       Products.ProductName, \n\t   [Order Details].UnitPrice, \n       [Order Details].Quantity, \n       [Order Details].Discount, \n      ([Order Details].UnitPrice*Quantity*(1-Discount)/100)*100 AS ExtendedPrice\nFROM Products \n     JOIN [Order Details] ON Products.ProductID = [Order Details].ProductID"
+            },
+            {
+              "name": "Sales by Category",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "CategoryID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "CategoryName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductSales",
+                  "type": "ANY",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [Sales by Category] AS\nSELECT Categories.CategoryID, \n       Categories.CategoryName, \n         Products.ProductName, \n\tSum([Order Details Extended].ExtendedPrice) AS ProductSales\nFROM  Categories \n    JOIN Products \n      ON Categories.CategoryID = Products.CategoryID\n       JOIN [Order Details Extended] \n         ON Products.ProductID = [Order Details Extended].ProductID                \n           JOIN Orders \n             ON Orders.OrderID = [Order Details Extended].OrderID \nWHERE Orders.OrderDate BETWEEN DATETIME('1997-01-01') And DATETIME('1997-12-31')\nGROUP BY Categories.CategoryID, Categories.CategoryName, Products.ProductName"
+            },
+            {
+              "name": "ProductDetails_V",
+              "kind": "view",
+              "columns": [
+                {
+                  "name": "ProductID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "ProductName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "SupplierID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "CategoryID",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "QuantityPerUnit",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitPrice",
+                  "type": "NUMERIC",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitsInStock",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "UnitsOnOrder",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "ReorderLevel",
+                  "type": "INTEGER",
+                  "nullable": true
+                },
+                {
+                  "name": "Discontinued",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CategoryName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "CategoryDescription",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "SupplierName",
+                  "type": "TEXT",
+                  "nullable": true
+                },
+                {
+                  "name": "SupplierRegion",
+                  "type": "TEXT",
+                  "nullable": true
+                }
+              ],
+              "indexes": [],
+              "constraints": [],
+              "definition": "CREATE VIEW [ProductDetails_V] as\nselect \np.*, \nc.CategoryName, c.Description as [CategoryDescription],\ns.CompanyName as [SupplierName], s.Region as [SupplierRegion]\nfrom [Products] p\njoin [Categories] c on p.CategoryId = c.CategoryId\njoin [Suppliers] s on s.SupplierId = p.SupplierId"
+            }
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "from": {
+            "table": "main.CustomerCustomerDemo",
+            "columns": [
+              "CustomerID"
+            ]
+          },
+          "to": {
+            "table": "main.Customers",
+            "columns": [
+              "CustomerID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.CustomerCustomerDemo",
+            "columns": [
+              "CustomerTypeID"
+            ]
+          },
+          "to": {
+            "table": "main.CustomerDemographics",
+            "columns": [
+              "CustomerTypeID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Employees",
+            "columns": [
+              "ReportsTo"
+            ]
+          },
+          "to": {
+            "table": "main.Employees",
+            "columns": [
+              "EmployeeID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.EmployeeTerritories",
+            "columns": [
+              "EmployeeID"
+            ]
+          },
+          "to": {
+            "table": "main.Employees",
+            "columns": [
+              "EmployeeID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.EmployeeTerritories",
+            "columns": [
+              "TerritoryID"
+            ]
+          },
+          "to": {
+            "table": "main.Territories",
+            "columns": [
+              "TerritoryID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Order Details",
+            "columns": [
+              "OrderID"
+            ]
+          },
+          "to": {
+            "table": "main.Orders",
+            "columns": [
+              "OrderID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Order Details",
+            "columns": [
+              "ProductID"
+            ]
+          },
+          "to": {
+            "table": "main.Products",
+            "columns": [
+              "ProductID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Orders",
+            "columns": [
+              "EmployeeID"
+            ]
+          },
+          "to": {
+            "table": "main.Employees",
+            "columns": [
+              "EmployeeID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Orders",
+            "columns": [
+              "CustomerID"
+            ]
+          },
+          "to": {
+            "table": "main.Customers",
+            "columns": [
+              "CustomerID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Orders",
+            "columns": [
+              "ShipVia"
+            ]
+          },
+          "to": {
+            "table": "main.Shippers",
+            "columns": [
+              "ShipperID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Products",
+            "columns": [
+              "CategoryID"
+            ]
+          },
+          "to": {
+            "table": "main.Categories",
+            "columns": [
+              "CategoryID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Products",
+            "columns": [
+              "SupplierID"
+            ]
+          },
+          "to": {
+            "table": "main.Suppliers",
+            "columns": [
+              "SupplierID"
+            ]
+          }
+        },
+        {
+          "from": {
+            "table": "main.Territories",
+            "columns": [
+              "RegionID"
+            ]
+          },
+          "to": {
+            "table": "main.Regions",
+            "columns": [
+              "RegionID"
+            ]
+          }
+        }
+      ],
+      "statsReadAt": "2026-11-18T07:42:44.762Z"
+    }
+  ],
+  "apis": [],
+  "links": [],
+  "groups": [],
+  "generatedAt": "2026-11-18T07:42:44.737Z"
+}

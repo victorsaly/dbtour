@@ -2,10 +2,19 @@
 
 ## 0.11.2 (unreleased)
 
-- A live example on the web: the page `render` writes for `examples/shop`, a made-up shop of six tables, is at
+- A live example on the web: the page `render` writes for `examples/several`, three databases on one page, is at
   [skills.victorsaly.com/dbtour/example](https://skills.victorsaly.com/dbtour/example), so the catalogue, an
   entry, the map and the editor can be tried before anything is installed. It is the one file as rendered; the
   README links it.
+- An example with several databases, `examples/several`: one page for three, of two kinds. Shop is the made-up
+  shop on SQL Server; Chinook and Northwind are two well-known samples, read as SQLite files, catalogue only.
+  Its notes name each table with its database, and a group gathers the orders of all three. The model is
+  committed, so `npm run example` renders it with nothing installed; `npm run example:several` downloads the
+  two files (each checked against its SHA-256) and reads them again. The live example is this one.
+- On the home of several databases, each database's heading stands clear of the one before it; they sat with
+  no space between them.
+- A test holds both examples to the code: each model is one dbtour accepts, `dbtour.yaml` lists its databases,
+  and every note finds its table.
 - A deployed page no longer says it was opened from a file. Its editor still cannot reach the database, and
   now says so as a website: "Not connected: opened from a website, the page cannot reach the database", with
   the same ways to run the query. Found putting the example on the web. A browser test opens the page from a

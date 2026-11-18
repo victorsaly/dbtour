@@ -16,7 +16,8 @@
 the catalogue, a table's page, the map, queries, and your agent asking over MCP, against a real SQL Server.
 
 Or **[try the live example](https://skills.victorsaly.com/dbtour/example)**: the page itself, rendered from
-[`examples/shop`](examples/shop), a made-up shop of six tables. Nothing to install.
+[`examples/several`](examples/several), three databases on one page: a made-up shop on SQL Server, and the
+Chinook and Northwind samples as SQLite files. Nothing to install.
 
 </div>
 
@@ -412,7 +413,7 @@ The detail and the order are in [PLAN.md](PLAN.md).
 ```bash
 npm install
 npm run check      # lint, typecheck, tests with coverage (builds the page first)
-npm run example    # renders examples/shop into examples/shop/docs; open examples/shop/docs/index.html
+npm run example    # renders examples/shop and examples/several; open examples/several/docs/index.html
 npm run e2e:page   # drives the page in Google Chrome
 npm run brand      # redraws brand/ from the mark in packages/addon-explorer/src/mark.ts
 ```
