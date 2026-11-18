@@ -198,6 +198,9 @@ npx dbtour extract                               # → docs/dbtour/schema.json
 npx dbtour render                                # → docs/dbtour/README.md, one page per table, index.html
 ```
 
+A SQLite file has no login and so no connection string: install `dbtour-source-sqlite` instead, and
+`npx dbtour init --file data/app.db` writes its path and a read-only reader into `dbtour.yaml`.
+
 The SQL Server source reads the catalogue and nothing else: a login with `VIEW DEFINITION` on the database is
 enough. Each table's rows and bytes come from the catalogue too, as SQL Server counts them, without reading a
 row. So does everything else the database keeps about its objects: every extended property, under any name;

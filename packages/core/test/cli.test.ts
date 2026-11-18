@@ -47,6 +47,20 @@ test('init writes dbtour.yaml once and refuses to overwrite it', async () => {
   assert.match(b.err.join('\n'), /already exists/);
 });
 
+test('init for a SQLite file writes its path and asks for no connection string', async () => {
+  const bySource = project();
+  const a = io();
+  assert.equal(await main(['init', '--source', 'sqlite'], { cwd: bySource, ...a.io }), 0);
+  assert.match(readFileSync(join(bySource, 'dbtour.yaml'), 'utf8'), /type: sqlite[\s\S]*file: my-database\.db[\s\S]*reader: read-only/);
+  assert.doesNotMatch(a.out.join('\n'), /connection string|DBTOUR_/);
+  assert.match(a.out.join('\n'), /file/);
+
+  const byFile = project();
+  const b = io();
+  assert.equal(await main(['init', '--file', 'data/app.db'], { cwd: byFile, ...b.io }), 0);
+  assert.match(readFileSync(join(byFile, 'dbtour.yaml'), 'utf8'), /type: sqlite\n\s+name: app\n[\s\S]*file: data\/app\.db/);
+});
+
 test('render without a config exits 2 and says to run init', async () => {
   const a = io();
   assert.equal(await main(['render'], { cwd: project(), ...a.io }), 2);

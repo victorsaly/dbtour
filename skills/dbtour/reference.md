@@ -33,7 +33,7 @@ their own shell: `export DBTOUR_MSSQL='…'`. It never goes in a file.
 
 | Command | What it does |
 |---|---|
-| `npx dbtour init` | Writes `dbtour.yaml` here, for SQL Server. |
+| `npx dbtour init [--file <path>]` | Writes `dbtour.yaml` here: for SQL Server, its connection in `DBTOUR_MSSQL`; with `--file`, for that SQLite file, read-only, with no secret. |
 | `npx dbtour extract` | Reads each source into `<out>/schema.json`. Says what the login could not read. |
 | `npx dbtour render` | Writes `<out>/README.md`, a page per table under `<out>/tables/` (a folder per database when there are several), and the add-ons' files. |
 | `npx dbtour mcp [project]` | Serves the model over MCP on stdin and stdout, for an agent. |

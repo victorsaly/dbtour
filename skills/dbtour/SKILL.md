@@ -24,7 +24,8 @@ Look for `dbtour.yaml` at the project's root and `docs/dbtour/schema.json` (or t
   1. `npm install --save-dev dbtour dbtour-source-mssql dbtour-addon-explorer`: the command, the SQL Server
      source and the page (`dbtour-source-sqlite` for a SQLite file, which `dbtour.yaml` names by `file:`
      and which needs no connection string). `npx dbtour` alone fetches only the command, which then has nothing to read a
-     database with. Then `npx dbtour init` writes `dbtour.yaml` for SQL Server; add `exclude` for tables
+     database with. Then `npx dbtour init` writes `dbtour.yaml` for SQL Server, or `npx dbtour init --file
+     <path>` for a SQLite file (its path, a read-only reader, no secret: skip 2); add `exclude` for tables
      nobody should read about.
   2. The connection string goes in the environment variable `dbtour.yaml` names (`DBTOUR_MSSQL`), set by the
      person in their own shell. **Never write it into `dbtour.yaml`, a file, a command you run, or a reply**;
