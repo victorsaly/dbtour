@@ -1035,9 +1035,6 @@ pre {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.node-name:hover {
-  text-decoration: underline;
-}
 .node-head .tag {
   margin-left: 0;
 }
