@@ -229,8 +229,17 @@ test('the map answers a click: a table or a line is selected, its card says what
 
     // A dragged table stays where it was put when the detail changes, until the layout is reset.
     // The card has just closed and the map is fitting itself to the room it got back: the drag waits for it.
-    await page.waitForTimeout(400);
-    const before = await node('Customers').boundingBox();
+    // A fixed wait was too short on a slow machine, and the press landed where the table no longer was: the
+    // table is asked where it is until two answers in a row agree.
+    const settleEveryMs = 150; // longer than a frame, so a table still gliding has moved between two looks
+    let before = await node('Customers').boundingBox();
+    for (let looks = 0; looks < 40; looks += 1) {
+      await page.waitForTimeout(settleEveryMs);
+      const now = await node('Customers').boundingBox();
+      const still = now!.x === before!.x && now!.y === before!.y;
+      before = now;
+      if (still) break;
+    }
     await page.mouse.move(before!.x + 120, before!.y + 10);
     await page.mouse.down();
     await page.mouse.move(before!.x + 120, before!.y + 210, { steps: 6 });
